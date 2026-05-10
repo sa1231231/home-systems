@@ -54,5 +54,26 @@ describe("transformRows", () => {
     expect(out[NEW_COLUMNS.indexOf("full_name")]).toBe("Alone");
     expect(out[NEW_COLUMNS.indexOf("google_resource_name")]).toBe("");
     expect(out[NEW_COLUMNS.indexOf("email")]).toBe("");
+    expect(out[NEW_COLUMNS.indexOf("legacy_notes")]).toBe("");
+  });
+
+  it("preserves non-empty dropped fields into legacy_notes", () => {
+    const oldHeaders = ["full_name", "facebook", "instagram", "education", "linkedin_companies", "id"];
+    const oldRows = [["Jane", "https://fb.com/jane", "@jane_ig", "MIT", "Acme, Beta", "abc-123"]];
+    const out = transformRows(oldHeaders, oldRows)[0];
+    const legacy = out[NEW_COLUMNS.indexOf("legacy_notes")];
+    expect(legacy).toContain("facebook: https://fb.com/jane");
+    expect(legacy).toContain("instagram: @jane_ig");
+    expect(legacy).toContain("education: MIT");
+    expect(legacy).toContain("linkedin_companies: Acme, Beta");
+    // id is on the never-preserve list (Dex internal UUID)
+    expect(legacy).not.toContain("id:");
+  });
+
+  it("leaves legacy_notes empty when no preservable old fields had values", () => {
+    const oldHeaders = ["full_name", "facebook", "education"];
+    const oldRows = [["Jane", "", ""]];
+    const out = transformRows(oldHeaders, oldRows)[0];
+    expect(out[NEW_COLUMNS.indexOf("legacy_notes")]).toBe("");
   });
 });
