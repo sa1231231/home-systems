@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   index,
   integer,
   jsonb,
@@ -65,5 +66,61 @@ export const aiCalls = pgTable(
   (t) => ({
     classifierIdx: index("ai_calls_classifier_created_idx").on(t.classifier, t.createdAt),
     statusIdx: index("ai_calls_status_created_idx").on(t.status, t.createdAt),
+  }),
+);
+
+export const rules = pgTable(
+  "rules",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    domain: text("domain").notNull(),
+    name: text("name").notNull(),
+    match: jsonb("match").notNull(),
+    action: jsonb("action").notNull(),
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    createdFromReviewId: bigint("created_from_review_id", { mode: "number" }),
+    createdBy: text("created_by").notNull(),
+    notes: text("notes"),
+  },
+  (t) => ({
+    domainEnabledPriorityIdx: index("rules_domain_enabled_priority_idx").on(
+      t.domain,
+      t.enabled,
+      t.priority,
+    ),
+    fromReviewIdx: index("rules_from_review_idx").on(t.createdFromReviewId),
+  }),
+);
+
+export const needsReview = pgTable(
+  "needs_review",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    domain: text("domain").notNull(),
+    subject: jsonb("subject").notNull().default(sql`'{}'::jsonb`),
+    subjectKind: text("subject_kind").notNull(),
+    subjectId: text("subject_id").notNull(),
+    aiCallId: bigint("ai_call_id", { mode: "number" }),
+    proposedAction: jsonb("proposed_action").notNull(),
+    status: text("status").notNull().default("pending"),
+    decision: jsonb("decision"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by"),
+    promotedToRuleId: bigint("promoted_to_rule_id", { mode: "number" }),
+    notes: text("notes"),
+  },
+  (t) => ({
+    domainStatusIdx: index("needs_review_domain_status_created_idx").on(
+      t.domain,
+      t.status,
+      t.createdAt,
+    ),
+    subjectIdx: index("needs_review_subject_idx").on(t.subjectKind, t.subjectId),
+    aiCallIdx: index("needs_review_ai_call_idx").on(t.aiCallId),
   }),
 );
