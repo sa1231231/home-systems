@@ -1,8 +1,16 @@
+import path from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import { sql } from "drizzle-orm";
-import { config } from "./config.js";
-import { db } from "./db/client.js";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { getConfig } from "./config.js";
+import { db, pool } from "./db/client.js";
 import { meta } from "./db/schema.js";
+
+const config = getConfig();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const migrationsFolder = path.resolve(__dirname, "../drizzle");
 
 const app = express();
 
@@ -27,6 +35,31 @@ app.get("/db-ping", async (_req, res) => {
   }
 });
 
-app.listen(config.PORT, () => {
-  console.log(`home-systems listening on :${config.PORT} (${config.NODE_ENV})`);
+async function start() {
+  console.log(`home-systems starting (${config.NODE_ENV})`);
+  console.log(`applying migrations from ${migrationsFolder}`);
+  await migrate(db, { migrationsFolder });
+  console.log("migrations applied");
+
+  const server = app.listen(config.PORT, () => {
+    console.log(`home-systems listening on :${config.PORT}`);
+  });
+
+  const shutdown = async (signal: string) => {
+    console.log(`${signal} received, draining connections`);
+    server.close(() => {
+      console.log("http server closed");
+    });
+    await pool.end();
+    console.log("pg pool closed");
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+}
+
+start().catch((err) => {
+  console.error("startup failed:", err);
+  process.exit(1);
 });

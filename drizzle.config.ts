@@ -1,16 +1,16 @@
 import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is required for drizzle-kit. Set it in .env (use the Postgres public URL from Railway for local migrations).");
-}
-
+// Note: DATABASE_URL is only consulted by `drizzle-kit push` / `studio`. Migrations
+// are applied at app startup via drizzle-orm's migrator (see src/index.ts), so the
+// normal flow doesn't require a local DATABASE_URL — only `generate` does, and that
+// runs purely on schema files. The placeholder keeps `generate` working without env.
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL,
+    url: process.env.DATABASE_URL ?? "postgresql://placeholder@localhost/placeholder",
     ssl: { rejectUnauthorized: false },
   },
 });
