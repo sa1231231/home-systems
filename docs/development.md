@@ -141,6 +141,24 @@ Both accept `?verbose=true` to include the full per-field diff for refreshes (ot
 
 **Ambiguous matches** (one Google contact's email/phone matches multiple unbound Sheet rows) are surfaced in the plan but never applied — resolve manually by setting `google_resource_name` on the right row, then re-sync.
 
+### One-time column cleanup
+
+`npm run cleanup:columns` rewrites the Contacts tab to drop legacy Dex auto-tracking columns (`*_last_interaction_*`, `*_message_link`, reminder fields, unused social handles, Dex internal IDs) and rename identity columns from `dex_*` prefixes to clean names (`dex_email` → `email`, `linkedin` → `linkedin_url`, etc.). The canonical 25-column layout is defined in `src/sync/cleanup.ts`.
+
+```bash
+# Dry run (default — prints the plan, writes nothing)
+GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
+GOOGLE_OAUTH_REFRESH_TOKEN=... CRM_SHEET_ID=... \
+npm run cleanup:columns
+
+# Apply
+... npm run cleanup:columns -- --apply
+```
+
+After applying, verify with `curl /contacts/sync/plan` — the resulting sync plan should show `unchanged` ≈ all bound rows. Sheet revision history is rollback.
+
+The sync code reads from BOTH old (`dex_email`, `dex_phone`, `linkedin`) and new (`email`, `phone`, `linkedin_url`) column names, so manual sync calls during the deploy/cleanup window remain safe.
+
 ### Nightly cron
 
 home-systems runs an in-process `node-cron` scheduler. To enable nightly sync on Railway:

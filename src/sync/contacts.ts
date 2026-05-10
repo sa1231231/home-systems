@@ -14,11 +14,14 @@ import { buildSheetIndex, findMatch } from "./match.js";
 const RESOURCE_NAME_COL = "google_resource_name";
 
 /**
- * Identity columns we refresh from Google. Order matches the listing in
- * personToIdentity. Enrichment columns (groups, tags, starred, archived,
- * location, etc.) are never written by sync.
+ * Identity columns we refresh from Google. New canonical names plus legacy
+ * dex_-prefixed and `linkedin` aliases so syncs work both before and after
+ * the one-time column-cleanup migration. Enrichment columns (groups, tags,
+ * starred, archived, location, etc.) are never written by sync regardless
+ * of state.
  */
 const IDENTITY_COLUMNS = [
+  // new canonical names (post-cleanup)
   "full_name",
   "first_name",
   "last_name",
@@ -28,8 +31,15 @@ const IDENTITY_COLUMNS = [
   "job_title",
   "company",
   "image_url",
-  "linkedin",
+  "linkedin_url",
   "website",
+  "email",
+  "emails",
+  "phone",
+  "phones",
+  "address",
+  // legacy names (pre-cleanup) — kept so a sync mid-migration writes to whichever set exists
+  "linkedin",
   "dex_email",
   "dex_emails",
   "dex_phone",
@@ -81,6 +91,12 @@ export type SyncSummary = {
 };
 
 function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
+  const primaryEmail = p.emails[0] ?? "";
+  const allEmails = p.emails.join(", ");
+  const primaryPhone = p.phones[0] ?? "";
+  const allPhones = p.phones.join(", ");
+  const linkedin = p.linkedin_url ?? "";
+  const address = p.address ?? "";
   return {
     full_name: p.display_name ?? "",
     first_name: p.given_name ?? "",
@@ -91,13 +107,21 @@ function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
     job_title: p.job_title ?? "",
     company: p.company ?? "",
     image_url: p.image_url ?? "",
-    linkedin: p.linkedin_url ?? "",
     website: p.website ?? "",
-    dex_email: p.emails[0] ?? "",
-    dex_emails: p.emails.join(", "),
-    dex_phone: p.phones[0] ?? "",
-    dex_phones: p.phones.join(", "),
-    dex_address: p.address ?? "",
+    // new canonical
+    linkedin_url: linkedin,
+    email: primaryEmail,
+    emails: allEmails,
+    phone: primaryPhone,
+    phones: allPhones,
+    address,
+    // legacy aliases — same values, different column names
+    linkedin,
+    dex_email: primaryEmail,
+    dex_emails: allEmails,
+    dex_phone: primaryPhone,
+    dex_phones: allPhones,
+    dex_address: address,
   };
 }
 

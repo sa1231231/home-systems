@@ -17,7 +17,12 @@ export type MatchResult =
   | { kind: "none" };
 
 function rowEmails(record: Record<string, string>): string[] {
-  const all = [record.dex_email, ...splitCsv(record.dex_emails)];
+  const all = [
+    record.email,
+    ...splitCsv(record.emails),
+    record.dex_email, // legacy column name (pre-cleanup)
+    ...splitCsv(record.dex_emails),
+  ];
   const out = new Set<string>();
   for (const e of all) {
     const n = normalizeEmail(e);
@@ -27,7 +32,12 @@ function rowEmails(record: Record<string, string>): string[] {
 }
 
 function rowPhones(record: Record<string, string>): string[] {
-  const all = [record.dex_phone, ...splitCsv(record.dex_phones)];
+  const all = [
+    record.phone,
+    ...splitCsv(record.phones),
+    record.dex_phone, // legacy column name (pre-cleanup)
+    ...splitCsv(record.dex_phones),
+  ];
   const out = new Set<string>();
   for (const p of all) {
     const n = normalizePhone(p);
