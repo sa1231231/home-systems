@@ -11,6 +11,8 @@ import { makeChangesRouter } from "./api/changes.js";
 import { makeAiCallsRouter } from "./api/ai-calls.js";
 import { makeRulesRouter } from "./api/rules.js";
 import { makeNeedsReviewRouter } from "./api/needs-review.js";
+import { makeEmailsRouter } from "./api/emails.js";
+import { registerEmailReverser } from "./sync/email-actions.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
@@ -39,6 +41,7 @@ app.use("/changes", makeChangesRouter());
 app.use("/ai-calls", makeAiCallsRouter());
 app.use("/rules", makeRulesRouter());
 app.use("/needs-review", makeNeedsReviewRouter());
+app.use("/emails", makeEmailsRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {
@@ -58,8 +61,10 @@ async function start() {
   console.log("migrations applied");
 
   if (hasGoogleCreds()) {
-    registerContactReversers(getOAuthClient());
-    console.log("contact reversers registered");
+    const oauth = getOAuthClient();
+    registerContactReversers(oauth);
+    registerEmailReverser(oauth);
+    console.log("contact + email reversers registered");
   }
 
   const server = app.listen(config.PORT, () => {

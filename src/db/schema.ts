@@ -124,3 +124,20 @@ export const needsReview = pgTable(
     aiCallIdx: index("needs_review_ai_call_idx").on(t.aiCallId),
   }),
 );
+
+export const processedEmails = pgTable(
+  "processed_emails",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastProcessedAt: timestamp("last_processed_at", { withTimezone: true }).notNull().defaultNow(),
+    outcome: text("outcome").notNull(),
+    outcomeId: bigint("outcome_id", { mode: "number" }),
+    error: text("error"),
+  },
+  (t) => ({
+    outcomeIdx: index("processed_emails_outcome_idx").on(t.outcome, t.lastProcessedAt),
+    threadIdx: index("processed_emails_thread_idx").on(t.threadId),
+  }),
+);
