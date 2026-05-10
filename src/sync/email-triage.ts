@@ -7,6 +7,8 @@ import { evaluate } from "../rules/engine.js";
 import { classify, ClassificationParseError } from "../ai/index.js";
 import { getMessageMetadata, listTriageInbox, type GmailMetadata } from "../integrations/google/gmail.js";
 import { applyEmailAction, type EmailAction } from "./email-actions.js";
+import { reviewAppliers } from "../needs-review/appliers.js";
+import type { OAuth2Client as OAuth2ClientType } from "google-auth-library";
 
 export const TRIAGE_DOMAIN = "email";
 export const TRIAGE_CLASSIFIER = "email.triage";
@@ -28,6 +30,18 @@ export const ProposedActionSchema = z.object({
 });
 
 export type TriageProposal = z.infer<typeof ProposedActionSchema>;
+
+/**
+ * Register a needs_review applier so approving an email-domain review actually
+ * runs the proposed action against the source message in Gmail.
+ */
+export function registerEmailApplier(client: OAuth2ClientType): void {
+  reviewAppliers.register("email", async (subjectId, decision, meta) => {
+    const proposal = ProposedActionSchema.parse(decision);
+    const action = mapCategoryToAction(proposal);
+    return applyEmailAction(client, subjectId, action, meta);
+  });
+}
 
 /**
  * Map a triage category to the Gmail label change it represents. Deterministic

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db/client.js";
 import { needsReview, rules } from "../db/schema.js";
 import { InvalidConditionError, validateCondition, type Cond } from "../rules/dsl.js";
+import { reviewAppliers } from "../needs-review/appliers.js";
 
 const ListQuery = z.object({
   domain: z.string().min(1).max(100).optional(),
@@ -183,7 +184,18 @@ export function makeNeedsReviewRouter(): Router {
         .where(eq(needsReview.id, id))
         .returning();
 
-      res.json({ ok: true, entry: rowToJson(row), promoted_rule_id: promotedRuleId });
+      const applyOutcome = await tryApply(pending.subjectKind, pending.subjectId, row.decision, {
+        sessionId: req.sessionId,
+        caller: "api:needs-review.approve",
+        intent: `review:${id}`,
+      });
+
+      res.json({
+        ok: true,
+        entry: rowToJson(row),
+        promoted_rule_id: promotedRuleId,
+        ...applyOutcome,
+      });
     } catch (err) {
       handleError(err, res);
     }
@@ -217,7 +229,7 @@ export function makeNeedsReviewRouter(): Router {
     try {
       const id = IdParam.parse(req.params.id);
       const body = CorrectBody.parse(req.body);
-      await loadPending(id);
+      const pending = await loadPending(id);
 
       const [row] = await db
         .update(needsReview)
@@ -231,13 +243,43 @@ export function makeNeedsReviewRouter(): Router {
         .where(eq(needsReview.id, id))
         .returning();
 
-      res.json({ ok: true, entry: rowToJson(row) });
+      const applyOutcome = await tryApply(pending.subjectKind, pending.subjectId, row.decision, {
+        sessionId: req.sessionId,
+        caller: "api:needs-review.correct",
+        intent: `review:${id}`,
+      });
+
+      res.json({ ok: true, entry: rowToJson(row), ...applyOutcome });
     } catch (err) {
       handleError(err, res);
     }
   });
 
   return router;
+}
+
+type ApplyOutcome = {
+  applied: boolean;
+  apply_result?: unknown;
+  apply_error?: string;
+};
+
+async function tryApply(
+  subjectKind: string,
+  subjectId: string,
+  decision: unknown,
+  meta: { sessionId: string; caller: string; intent?: string },
+): Promise<ApplyOutcome> {
+  if (!reviewAppliers.has(subjectKind)) {
+    return { applied: false, apply_error: `no applier registered for '${subjectKind}'` };
+  }
+  try {
+    const result = await reviewAppliers.apply(subjectKind, subjectId, decision, meta);
+    return { applied: true, apply_result: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { applied: false, apply_error: message };
+  }
 }
 
 function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>[1]): void {

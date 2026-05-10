@@ -13,6 +13,7 @@ import { makeRulesRouter } from "./api/rules.js";
 import { makeNeedsReviewRouter } from "./api/needs-review.js";
 import { makeEmailsRouter } from "./api/emails.js";
 import { registerEmailReverser } from "./sync/email-actions.js";
+import { registerEmailApplier } from "./sync/email-triage.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
@@ -64,7 +65,8 @@ async function start() {
     const oauth = getOAuthClient();
     registerContactReversers(oauth);
     registerEmailReverser(oauth);
-    console.log("contact + email reversers registered");
+    registerEmailApplier(oauth);
+    console.log("contact + email reversers + email applier registered");
   }
 
   const server = app.listen(config.PORT, () => {
