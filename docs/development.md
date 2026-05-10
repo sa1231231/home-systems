@@ -141,6 +141,19 @@ Both accept `?verbose=true` to include the full per-field diff for refreshes (ot
 
 **Ambiguous matches** (one Google contact's email/phone matches multiple unbound Sheet rows) are surfaced in the plan but never applied — resolve manually by setting `google_resource_name` on the right row, then re-sync.
 
+### Nightly cron
+
+home-systems runs an in-process `node-cron` scheduler. To enable nightly sync on Railway:
+
+```
+CONTACTS_SYNC_CRON_ENABLED=true
+CONTACTS_SYNC_CRON_SCHEDULE=0 7 * * *      # optional; default is 7am UTC = 3am ET
+```
+
+The cron only runs when `CONTACTS_SYNC_CRON_ENABLED=true` (so dev environments stay quiet). Schedule strings are evaluated in **UTC**, regardless of Railway region. Failures log to stderr but never crash the server. If a sync collides with a redeploy, that night's run is skipped — next night will catch up.
+
+To trigger a sync on demand at any time, just `curl -X POST` the `/contacts/sync` endpoint.
+
 ## Production notes
 
 - Railway deploys build the Dockerfile (multi-stage, `node:20-alpine`).

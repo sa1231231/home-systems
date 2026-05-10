@@ -8,7 +8,7 @@ describe("ConfigSchema", () => {
       NODE_ENV: "production",
       DATABASE_URL: "postgresql://u:p@host:5432/db",
     });
-    expect(parsed).toEqual({
+    expect(parsed).toMatchObject({
       PORT: 8080,
       NODE_ENV: "production",
       DATABASE_URL: "postgresql://u:p@host:5432/db",
@@ -71,5 +71,23 @@ describe("ConfigSchema", () => {
     expect(parsed.GOOGLE_CLIENT_SECRET).toBe("client-secret");
     expect(parsed.GOOGLE_OAUTH_REFRESH_TOKEN).toBe("1//refresh");
     expect(parsed.CRM_SHEET_ID).toBe("sheet123");
+  });
+
+  it("defaults the contacts sync cron to disabled with a 7am UTC schedule", () => {
+    const parsed = ConfigSchema.parse({ DATABASE_URL: "postgresql://u:p@host:5432/db" });
+    expect(parsed.CONTACTS_SYNC_CRON_ENABLED).toBe(false);
+    expect(parsed.CONTACTS_SYNC_CRON_SCHEDULE).toBe("0 7 * * *");
+  });
+
+  it("enables the cron when the env var is 'true' or '1'", () => {
+    expect(
+      ConfigSchema.parse({ DATABASE_URL: "x", CONTACTS_SYNC_CRON_ENABLED: "true" }).CONTACTS_SYNC_CRON_ENABLED,
+    ).toBe(true);
+    expect(
+      ConfigSchema.parse({ DATABASE_URL: "x", CONTACTS_SYNC_CRON_ENABLED: "1" }).CONTACTS_SYNC_CRON_ENABLED,
+    ).toBe(true);
+    expect(
+      ConfigSchema.parse({ DATABASE_URL: "x", CONTACTS_SYNC_CRON_ENABLED: "yes" }).CONTACTS_SYNC_CRON_ENABLED,
+    ).toBe(false);
   });
 });

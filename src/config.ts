@@ -9,6 +9,11 @@ export const ConfigSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
   CRM_SHEET_ID: z.string().optional(),
+  CONTACTS_SYNC_CRON_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  CONTACTS_SYNC_CRON_SCHEDULE: z.string().default("0 7 * * *"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

@@ -7,6 +7,7 @@ import { getConfig } from "./config.js";
 import { db, pool } from "./db/client.js";
 import { meta } from "./db/schema.js";
 import { makeContactsRouter } from "./api/contacts.js";
+import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 
 const config = getConfig();
 
@@ -48,8 +49,14 @@ async function start() {
     console.log(`home-systems listening on :${config.PORT}`);
   });
 
+  startContactsSyncCron({
+    enabled: config.CONTACTS_SYNC_CRON_ENABLED,
+    schedule: config.CONTACTS_SYNC_CRON_SCHEDULE,
+  });
+
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, draining connections`);
+    stopContactsSyncCron();
     server.close(() => {
       console.log("http server closed");
     });
