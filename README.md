@@ -67,7 +67,7 @@ The system gets cheaper and more reliable over time, not more expensive and frag
 
 Several things from Open Claw must explicitly NOT be carried into this project. If you find yourself adding any of these, stop and reconsider — you're recreating the problems we're moving away from.
 
-**No always-on agent.** No background LLM process that "wakes up" on a cron, re-reads its identity from markdown files, and decides what to do. The orchestration is plain Python; the AI is called as a function when needed.
+**No always-on agent.** No background LLM process that "wakes up" on a cron, re-reads its identity from markdown files, and decides what to do. The orchestration is plain TypeScript; the AI is called as a function when needed.
 
 **No markdown-as-memory.** No SOUL.md, IDENTITY.md, MEMORY.md, HEARTBEAT.md, or similar files acting as runtime state for an agent. State lives in Postgres. Documentation lives in `docs/`. These are different things and shouldn't be conflated.
 
@@ -271,7 +271,7 @@ This bounds the AI's tagging without preventing the system from learning your ta
 
 When calling the Anthropic API from cron-side classification functions:
 - Use tool use / structured output features to force JSON conformance
-- Define explicit schemas (Pydantic models, JSON Schema) for every AI call
+- Define explicit schemas (Zod schemas, JSON Schema) for every AI call
 - Treat malformed AI output as a classification failure (log it, skip it, surface in digest) — never as free-form instruction to interpret
 - Log every AI call's full input and output to a separate `ai_calls` audit table for later analysis
 
@@ -333,19 +333,21 @@ Initial layout. Evolve as needed but keep it boring and predictable.
 │   ├── api.md                 # API endpoint reference
 │   ├── salvage-notes.md       # References to old Open Claw code worth checking
 │   └── decisions/             # ADRs for significant choices
-├── migrations/                # Postgres schema migrations (Alembic)
+├── drizzle/                   # Postgres schema migrations (drizzle-kit)
 ├── src/
-│   ├── api/                   # HTTP API layer (FastAPI or similar)
+│   ├── api/                   # HTTP API layer (Express)
 │   ├── crons/                 # Scheduled jobs
 │   ├── rules/                 # Rules engine + rule definitions loader
 │   ├── ai/                    # Anthropic SDK wrappers, classification functions
 │   ├── mcp_server/            # MCP server exposing tools
 │   ├── integrations/          # External service clients (Gmail, Trello, Dex)
 │   ├── changelog/             # Audit log writer + rollback logic
-│   ├── models/                # SQLAlchemy or Pydantic models
-│   └── shared/                # Common utilities, db helpers
+│   ├── db/                    # Drizzle schema + db client
+│   ├── schemas/               # Zod schemas for I/O validation
+│   └── shared/                # Common utilities, helpers
 ├── tests/
-├── pyproject.toml
+├── package.json
+├── tsconfig.json
 └── .env.example
 ```
 
@@ -382,18 +384,22 @@ When starting a session, give Claude Code this README as context. Then state wha
 
 ## Tech Stack (defaults — revisit if there's a strong reason)
 
-- **Language**: Python 3.11+
-- **API framework**: FastAPI
-- **Database**: Postgres (Railway managed)
-- **ORM**: SQLAlchemy 2.x
-- **Migrations**: Alembic
-- **Validation**: Pydantic v2
-- **AI**: Anthropic Python SDK
-- **MCP**: Official MCP Python SDK
-- **Task scheduling**: Railway cron jobs (or APScheduler in-process for finer control)
-- **Backups**: pg_dump → R2 via boto3
-- **Testing**: pytest
-- **Linting/formatting**: ruff
+Aligned with the `servicecall-api` repo where it makes sense, so logging, testing, build, and deploy patterns stay consistent across the two Railway apps. The deliberate divergence: this project uses **Postgres**, not MongoDB. The two repos are otherwise unrelated — alignment is for operational consistency, not for sharing code.
+
+- **Language**: TypeScript (Node.js 20+, ES modules)
+- **API framework**: Express 5 (matches `servicecall-api`)
+- **Database**: Postgres (Railway managed) — *divergence from `servicecall-api`, which uses MongoDB*
+- **DB toolkit**: Drizzle ORM (TS-first, schema-as-code, close to SQL — replaces SQLAlchemy/Alembic)
+- **Migrations**: drizzle-kit
+- **Validation**: Zod (replaces Pydantic — used for HTTP input, AI output, and config schemas)
+- **AI**: `@anthropic-ai/sdk` (matches `servicecall-api`)
+- **MCP**: Official `@modelcontextprotocol/sdk` (TypeScript)
+- **Task scheduling**: Railway cron jobs (or `node-cron` in-process for finer control)
+- **Backups**: `pg_dump` → R2 via `@aws-sdk/client-s3` (R2 is S3-compatible; matches `servicecall-api`'s S3 client)
+- **Testing**: vitest (matches `servicecall-api`); Playwright if/when end-to-end browser flows show up
+- **Dev runner**: `tsx` watch (matches `servicecall-api`)
+- **Build**: `tsc` → `dist/`, run with `node dist/index.js`
+- **Linting/formatting**: Biome (single tool, fast — closest TS equivalent to `ruff`)
 
 ---
 
