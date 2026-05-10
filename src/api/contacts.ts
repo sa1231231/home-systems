@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
 import { listConnections } from "../integrations/google/people.js";
@@ -6,6 +7,13 @@ import { previewSheet } from "../integrations/google/sheets.js";
 import { runSync, type SyncPlan } from "../sync/contacts.js";
 import { runDedupe } from "../sync/dedupe-runner.js";
 import type { DedupePlan } from "../sync/dedupe.js";
+import {
+  addToCsvField,
+  ContactNotFoundError,
+  removeFromCsvField,
+  setBoolField,
+  UnknownColumnError,
+} from "../sync/contact-writes.js";
 
 const PreviewQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -13,6 +21,29 @@ const PreviewQuery = z.object({
 
 const SyncQuery = z.object({
   verbose: z.coerce.boolean().default(false),
+});
+
+const ResourceName = z.string().regex(/^people\/[A-Za-z0-9_-]+$/, "must look like 'people/c123…'");
+const NonEmptyString = z.string().trim().min(1).max(200);
+
+const CsvOpBody = z.object({
+  resource_name: ResourceName,
+  values: z.array(NonEmptyString).min(1).max(20),
+});
+
+const BoolOpBody = z.object({
+  resource_name: ResourceName,
+  value: z.boolean(),
+});
+
+// 60 write operations per minute per IP. Catches runaway loops without
+// constraining intentional bulk operations from a careful caller.
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "rate limit exceeded — wait a minute and retry" },
 });
 
 export function makeContactsRouter(): Router {
@@ -89,6 +120,79 @@ export function makeContactsRouter(): Router {
     }
   });
 
+  // --- Narrow per-contact write endpoints (1b-γ) -----------------------
+  router.post("/add-groups", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, values } = CsvOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await addToCsvField(client, creds.sheetId, resource_name, "groups", values);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/remove-groups", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, values } = CsvOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "groups", values);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/add-tags", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, values } = CsvOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await addToCsvField(client, creds.sheetId, resource_name, "tags", values);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/remove-tags", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, values } = CsvOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "tags", values);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/set-archived", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, value } = BoolOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await setBoolField(client, creds.sheetId, resource_name, "is_archived", value);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/set-starred", writeLimiter, async (req, res) => {
+    try {
+      const { resource_name, value } = BoolOpBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await setBoolField(client, creds.sheetId, resource_name, "starred", value);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
   return router;
 }
 
@@ -154,8 +258,16 @@ function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>
     res.status(503).json({ ok: false, error: err.message });
     return;
   }
+  if (err instanceof ContactNotFoundError) {
+    res.status(404).json({ ok: false, error: err.message, resource_name: err.resourceName });
+    return;
+  }
+  if (err instanceof UnknownColumnError) {
+    res.status(409).json({ ok: false, error: err.message, column: err.column });
+    return;
+  }
   if (err instanceof z.ZodError) {
-    res.status(400).json({ ok: false, error: "invalid query", issues: err.issues });
+    res.status(400).json({ ok: false, error: "invalid request", issues: err.issues });
     return;
   }
   const message = err instanceof Error ? err.message : String(err);

@@ -159,6 +159,50 @@ After applying, verify with `curl /contacts/sync/plan` — the resulting sync pl
 
 The sync code reads from BOTH old (`dex_email`, `dex_phone`, `linkedin`) and new (`email`, `phone`, `linkedin_url`) column names, so manual sync calls during the deploy/cleanup window remain safe.
 
+### Per-contact write endpoints (1b-γ)
+
+Six narrow, idempotent endpoints to update enrichment fields without editing the Sheet by hand. All take a `google_resource_name` to identify the contact. Rate-limited at 60 writes/min/IP. Each operation = one logical change = one Sheets API write.
+
+```bash
+# Add one or more groups (CSV-unioned, dedupe is case-insensitive)
+curl -X POST <base>/contacts/add-groups \
+  -H "content-type: application/json" \
+  -d '{"resource_name":"people/c123","values":["Real Estate","Personal"]}'
+
+# Remove groups
+curl -X POST <base>/contacts/remove-groups \
+  -H "content-type: application/json" \
+  -d '{"resource_name":"people/c123","values":["Real Estate"]}'
+
+# Tags follow the same shape:
+#   POST /contacts/add-tags
+#   POST /contacts/remove-tags
+
+# Booleans:
+curl -X POST <base>/contacts/set-archived \
+  -H "content-type: application/json" \
+  -d '{"resource_name":"people/c123","value":true}'
+
+curl -X POST <base>/contacts/set-starred \
+  -H "content-type: application/json" \
+  -d '{"resource_name":"people/c123","value":false}'
+```
+
+**Response shape:**
+
+```json
+{ "ok": true, "resource_name": "people/c123", "row_index": 5, "field": "groups", "value": "Real Estate, Personal", "changed": true }
+```
+
+`changed: false` means the operation was a no-op (group already present, etc.) — still returns 200, no Sheets write.
+
+**Errors:**
+- `404` `{"ok":false,"error":"contact people/c123 not found in sheet","resource_name":"people/c123"}`
+- `400` Zod validation failure (bad resource_name format, empty values, etc.)
+- `503` Google credentials not configured
+- `409` column missing from sheet (shouldn't happen post-cleanup; defensive)
+- `429` rate limit exceeded (60/min/IP)
+
 ### Duplicate detection / merge
 
 `/contacts/dedupe/plan` and `/contacts/dedupe` find Sheet rows that share an email or phone (after normalization) and merge them into one canonical row.
