@@ -3,9 +3,14 @@ import { z } from "zod";
 import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
 import { listConnections } from "../integrations/google/people.js";
 import { previewSheet } from "../integrations/google/sheets.js";
+import { runSync, type SyncPlan } from "../sync/contacts.js";
 
 const PreviewQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const SyncQuery = z.object({
+  verbose: z.coerce.boolean().default(false),
 });
 
 export function makeContactsRouter(): Router {
@@ -34,7 +39,67 @@ export function makeContactsRouter(): Router {
     }
   });
 
+  router.get("/sync/plan", async (req, res) => {
+    try {
+      const { verbose } = SyncQuery.parse(req.query);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await runSync(client, creds.sheetId, { dryRun: true });
+      res.json({ ok: true, dry_run: true, summary: result.summary, ...renderPlan(result.plan, verbose) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/sync", async (req, res) => {
+    try {
+      const { verbose } = SyncQuery.parse(req.query);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await runSync(client, creds.sheetId, { dryRun: false });
+      res.json({ ok: true, applied: true, summary: result.summary, ...renderPlan(result.plan, verbose) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
   return router;
+}
+
+function renderPlan(plan: SyncPlan, verbose: boolean): Record<string, unknown> {
+  const ambiguous = plan.ambiguous.map((a) => ({
+    resource_name: a.person.resource_name,
+    display_name: a.person.display_name,
+    matched_row_indices: a.matches,
+    via: a.via,
+  }));
+  const inserts = plan.inserts.map((i) => ({
+    resource_name: i.person.resource_name,
+    display_name: i.person.display_name,
+    primary_email: i.person.emails[0] ?? null,
+    primary_phone: i.person.phones[0] ?? null,
+  }));
+  const refreshes_summary = plan.refreshes.map((r) => ({
+    resource_name: r.person.resource_name,
+    display_name: r.person.display_name,
+    row_index: r.rowIndex,
+    via: r.via,
+    fields_changed: r.updates.map((u) => u.col),
+  }));
+  const out: Record<string, unknown> = {
+    needs_header_update: plan.needsHeaderUpdate,
+    inserts,
+    refreshes: refreshes_summary,
+    ambiguous,
+  };
+  if (verbose) {
+    out.refreshes_full = plan.refreshes.map((r) => ({
+      resource_name: r.person.resource_name,
+      row_index: r.rowIndex,
+      updates: r.updates,
+    }));
+  }
+  return out;
 }
 
 function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>[1]): void {

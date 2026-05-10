@@ -112,6 +112,35 @@ Railway auto-redeploys with the new vars.
 
 **Caveat**: refresh tokens issued by an OAuth app in **Testing** status (the unverified-personal-use state) **expire after 7 days**. If `/contacts/*` starts returning auth errors, re-run `npm run auth:google` and update Railway. Putting the app in **Production** status (still unverified, no Google review needed) keeps refresh tokens indefinitely.
 
+## Contacts sync (Phase 1b-β)
+
+Two endpoints under `/contacts`:
+
+- `GET /contacts/sync/plan` — dry-run. Returns what *would* change without writing anything. Always run this first.
+- `POST /contacts/sync` — apply the plan. Writes to the Sheet.
+
+Both accept `?verbose=true` to include the full per-field diff for refreshes (otherwise just the changed-column names).
+
+**Match strategy** (in priority order):
+1. `google_resource_name` column on the Sheet row matches the Google contact's resource name (the canonical key once a row is bound)
+2. Email match (`dex_email` or any of `dex_emails`, lowercased trimmed)
+3. Phone match (`dex_phone` or any of `dex_phones`, normalized to last 10 digits)
+
+**One-time effect of the first sync:**
+- A new column `google_resource_name` is appended to the Contacts tab if missing
+- Sheet rows that match a Google contact via email/phone get that column populated (binding them for future syncs)
+- Google contacts not present in the Sheet are appended as new rows with empty enrichment columns
+
+**What gets refreshed each sync** (identity columns owned by Google):
+`full_name`, `first_name`, `last_name`, `description`, `birthday`, `birthday_year`, `job_title`, `company`, `image_url`, `linkedin`, `website`, `dex_email`, `dex_emails`, `dex_phone`, `dex_phones`, `dex_address`, `updated_at`, `google_resource_name`
+
+**What is never touched** (enrichment, owned by the Sheet):
+`starred`, `is_archived`, `last_seen_at`, `location`, `dex_groups`, `dex_tags`, `created_at`, plus all legacy `*_last_interaction_*` / `*_message_link` / reminder columns.
+
+**Soft rule:** an empty Google value never overwrites a non-empty Sheet value. Keeps manually-added Sheet data safe when Google has no value for the field. Trade-off: removing data in Google does *not* propagate to the Sheet — clear the Sheet cell manually if needed.
+
+**Ambiguous matches** (one Google contact's email/phone matches multiple unbound Sheet rows) are surfaced in the plan but never applied — resolve manually by setting `google_resource_name` on the right row, then re-sync.
+
 ## Production notes
 
 - Railway deploys build the Dockerfile (multi-stage, `node:20-alpine`).
