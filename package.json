@@ -15,12 +15,15 @@
     "test:watch": "vitest",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "auth:google": "tsx scripts/auth-google.ts"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
+    "googleapis": "^171.4.0",
+    "open": "^11.0.0",
     "pg": "^8.20.0",
     "zod": "^3.23.8"
   },

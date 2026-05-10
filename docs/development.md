@@ -71,6 +71,47 @@ npm run db:studio
 
 Opens a web UI at the URL it prints — useful for inspecting rows/relationships without writing SQL.
 
+## Google OAuth one-time setup
+
+The `/contacts/google/preview` and `/contacts/sheet/preview` endpoints need a Google OAuth refresh token. Obtain it once locally with `npm run auth:google`, then paste it into Railway env vars.
+
+**1. Create OAuth credentials in Google Cloud Console**
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → create a new project (or reuse one)
+2. APIs & Services → Library → enable **People API** and **Google Sheets API**
+3. APIs & Services → OAuth consent screen → **External** → fill the required fields → add `samasra93@gmail.com` (Sheet owner) as a test user
+4. APIs & Services → Credentials → Create Credentials → OAuth Client ID → **Desktop app**
+5. Copy the **Client ID** and **Client Secret**
+
+**2. Run the helper**
+
+```bash
+GOOGLE_CLIENT_ID='...' GOOGLE_CLIENT_SECRET='...' npm run auth:google
+```
+
+The script:
+- Spins up a one-shot HTTP server on `http://localhost:8765`
+- Opens your browser to Google's consent screen
+- Sign in as `samasra93@gmail.com`
+- You'll see "this app isn't verified" — click **Advanced → Go to [app] (unsafe)**. This is expected for unverified personal-use apps.
+- Grant the requested scopes (read-only Contacts + Sheets read/write)
+- The script captures the auth code, exchanges for tokens, prints the refresh token
+
+**3. Set Railway env vars**
+
+In Railway → home-systems service → Variables, add:
+
+```
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_OAUTH_REFRESH_TOKEN=1//...
+CRM_SHEET_ID=12Eoq...FtuI    # the part of the sheet URL between /d/ and /edit
+```
+
+Railway auto-redeploys with the new vars.
+
+**Caveat**: refresh tokens issued by an OAuth app in **Testing** status (the unverified-personal-use state) **expire after 7 days**. If `/contacts/*` starts returning auth errors, re-run `npm run auth:google` and update Railway. Putting the app in **Production** status (still unverified, no Google review needed) keeps refresh tokens indefinitely.
+
 ## Production notes
 
 - Railway deploys build the Dockerfile (multi-stage, `node:20-alpine`).

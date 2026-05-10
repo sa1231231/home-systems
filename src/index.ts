@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { getConfig } from "./config.js";
 import { db, pool } from "./db/client.js";
 import { meta } from "./db/schema.js";
+import { makeContactsRouter } from "./api/contacts.js";
 
 const config = getConfig();
 
@@ -23,6 +24,8 @@ app.get("/", (_req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ ok: true, uptime_s: Math.round(process.uptime()) });
 });
+
+app.use("/contacts", makeContactsRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {

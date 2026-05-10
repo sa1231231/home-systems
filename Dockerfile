@@ -5,6 +5,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
+# Note: scripts/ (e.g. auth-google.ts) is intentionally not copied — it's a
+# local-only OAuth helper.
 
 FROM node:20-alpine
 WORKDIR /app

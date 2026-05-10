@@ -48,4 +48,28 @@ describe("ConfigSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("treats Google credentials as optional", () => {
+    const parsed = ConfigSchema.parse({
+      DATABASE_URL: "postgresql://u:p@host:5432/db",
+    });
+    expect(parsed.GOOGLE_CLIENT_ID).toBeUndefined();
+    expect(parsed.GOOGLE_CLIENT_SECRET).toBeUndefined();
+    expect(parsed.GOOGLE_OAUTH_REFRESH_TOKEN).toBeUndefined();
+    expect(parsed.CRM_SHEET_ID).toBeUndefined();
+  });
+
+  it("preserves Google credentials when present", () => {
+    const parsed = ConfigSchema.parse({
+      DATABASE_URL: "postgresql://u:p@host:5432/db",
+      GOOGLE_CLIENT_ID: "client-id",
+      GOOGLE_CLIENT_SECRET: "client-secret",
+      GOOGLE_OAUTH_REFRESH_TOKEN: "1//refresh",
+      CRM_SHEET_ID: "sheet123",
+    });
+    expect(parsed.GOOGLE_CLIENT_ID).toBe("client-id");
+    expect(parsed.GOOGLE_CLIENT_SECRET).toBe("client-secret");
+    expect(parsed.GOOGLE_OAUTH_REFRESH_TOKEN).toBe("1//refresh");
+    expect(parsed.CRM_SHEET_ID).toBe("sheet123");
+  });
 });
