@@ -159,6 +159,16 @@ After applying, verify with `curl /contacts/sync/plan` — the resulting sync pl
 
 The sync code reads from BOTH old (`dex_email`, `dex_phone`, `linkedin`) and new (`email`, `phone`, `linkedin_url`) column names, so manual sync calls during the deploy/cleanup window remain safe.
 
+### Duplicate detection / merge
+
+`/contacts/dedupe/plan` and `/contacts/dedupe` find Sheet rows that share an email or phone (after normalization) and merge them into one canonical row.
+
+- **Cluster definition**: union-find over rows; two rows are in the same cluster if they share any email OR phone (transitive — A–B via email, B–C via phone groups all three).
+- **Canonical pick**: row with `google_resource_name` set wins; else the row with the most non-empty fields; tiebreak on lowest row index.
+- **Merge rule**: for each column, if canonical's cell is empty AND any duplicate has a value, copy the first non-empty value into canonical. Never overwrites existing canonical data. `legacy_notes` are concatenated with `\n---\n` so all clusters' history is preserved.
+- **Delete**: non-canonical rows removed via `spreadsheets.batchUpdate` with `deleteDimension`, sorted bottom-up so indices stay valid as the API processes serially.
+- Rerun-safe — clusters that were already merged become no-ops; new clusters detected on subsequent runs.
+
 ### Nightly cron
 
 home-systems runs an in-process `node-cron` scheduler. To enable nightly sync on Railway:

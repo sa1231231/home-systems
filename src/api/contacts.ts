@@ -4,6 +4,8 @@ import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../
 import { listConnections } from "../integrations/google/people.js";
 import { previewSheet } from "../integrations/google/sheets.js";
 import { runSync, type SyncPlan } from "../sync/contacts.js";
+import { runDedupe } from "../sync/dedupe-runner.js";
+import type { DedupePlan } from "../sync/dedupe.js";
 
 const PreviewQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -63,7 +65,52 @@ export function makeContactsRouter(): Router {
     }
   });
 
+  router.get("/dedupe/plan", async (req, res) => {
+    try {
+      const { verbose } = SyncQuery.parse(req.query);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await runDedupe(client, creds.sheetId, { dryRun: true });
+      res.json({ ok: true, dry_run: true, summary: result.summary, ...renderDedupe(result.plan, verbose) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.post("/dedupe", async (req, res) => {
+    try {
+      const { verbose } = SyncQuery.parse(req.query);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const result = await runDedupe(client, creds.sheetId, { dryRun: false });
+      res.json({ ok: true, applied: true, summary: result.summary, ...renderDedupe(result.plan, verbose) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
   return router;
+}
+
+function renderDedupe(plan: DedupePlan, verbose: boolean): Record<string, unknown> {
+  const merges = plan.merges.map((m) => ({
+    canonical_row_index: m.canonicalRowIndex,
+    duplicate_row_indices: m.duplicateRowIndices,
+    fields_filled: Object.keys(m.fills),
+    shared_emails: m.sharedEmails,
+    shared_phones: m.sharedPhones,
+  }));
+  const out: Record<string, unknown> = { merges, rows_to_delete: plan.rowsToDelete };
+  if (verbose) {
+    out.merges_full = plan.merges.map((m) => ({
+      canonical_row_index: m.canonicalRowIndex,
+      duplicate_row_indices: m.duplicateRowIndices,
+      fills: m.fills,
+      shared_emails: m.sharedEmails,
+      shared_phones: m.sharedPhones,
+    }));
+  }
+  return out;
 }
 
 function renderPlan(plan: SyncPlan, verbose: boolean): Record<string, unknown> {

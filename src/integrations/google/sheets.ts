@@ -131,3 +131,49 @@ export async function batchUpdateCells(
     },
   });
 }
+
+export async function getSheetIdByTitle(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  title: string,
+): Promise<number> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  const res = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const match = res.data.sheets?.find((s) => s.properties?.title === title);
+  if (!match || match.properties?.sheetId == null) {
+    throw new Error(`tab "${title}" not found in spreadsheet ${spreadsheetId}`);
+  }
+  return match.properties.sheetId;
+}
+
+/**
+ * Delete data rows by their 0-based-after-header index. Sends one batchUpdate
+ * with the deletes sorted bottom-up so the indices stay valid as the API
+ * processes them serially.
+ */
+export async function deleteDataRows(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  sheetId: number,
+  rowIndices: number[],
+): Promise<void> {
+  if (rowIndices.length === 0) return;
+  const sheets = google.sheets({ version: "v4", auth: client });
+  // sort DESCENDING so deletes don't shift earlier-targeted indices
+  const sorted = [...rowIndices].sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: sorted.map((idx) => ({
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: idx + 1, // +1 because header is row 0 in absolute terms
+            endIndex: idx + 2,
+          },
+        },
+      })),
+    },
+  });
+}
