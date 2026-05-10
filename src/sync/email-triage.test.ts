@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildClassifierInput, buildSubject, ProposedActionSchema } from "./email-triage.js";
+import {
+  buildClassifierInput,
+  buildSubject,
+  mapCategoryToAction,
+  ProposedActionSchema,
+} from "./email-triage.js";
 import type { GmailMetadata } from "../integrations/google/gmail.js";
 
 const SAMPLE: GmailMetadata = {
@@ -72,25 +77,41 @@ describe("buildClassifierInput", () => {
 });
 
 describe("ProposedActionSchema", () => {
-  it("accepts a fully-specified action", () => {
-    const parsed = ProposedActionSchema.parse({
-      add_labels: ["IMPORTANT"],
-      remove_labels: ["INBOX"],
-      reasoning: "obvious newsletter",
-    });
-    expect(parsed.add_labels).toEqual(["IMPORTANT"]);
-    expect(parsed.remove_labels).toEqual(["INBOX"]);
+  it("accepts each of the three valid categories", () => {
+    for (const category of ["noise", "worth_reading", "needs_reply"] as const) {
+      const parsed = ProposedActionSchema.parse({ category, reasoning: "x" });
+      expect(parsed.category).toBe(category);
+    }
   });
 
-  it("defaults add/remove to empty arrays", () => {
-    const parsed = ProposedActionSchema.parse({ reasoning: "no-op leave in inbox" });
-    expect(parsed.add_labels).toEqual([]);
-    expect(parsed.remove_labels).toEqual([]);
+  it("rejects unknown categories", () => {
+    expect(() => ProposedActionSchema.parse({ category: "spam", reasoning: "x" })).toThrow();
   });
 
   it("rejects empty reasoning", () => {
     expect(() =>
-      ProposedActionSchema.parse({ add_labels: [], remove_labels: [], reasoning: "" }),
+      ProposedActionSchema.parse({ category: "noise", reasoning: "" }),
     ).toThrow();
+  });
+});
+
+describe("mapCategoryToAction", () => {
+  it("noise -> archive (remove INBOX, no adds)", () => {
+    const a = mapCategoryToAction({ category: "noise", reasoning: "newsletter" });
+    expect(a.remove_labels).toEqual(["INBOX"]);
+    expect(a.add_labels).toEqual([]);
+    expect(a.reasoning).toBe("newsletter");
+  });
+
+  it("worth_reading -> no-op (no label changes)", () => {
+    const a = mapCategoryToAction({ category: "worth_reading", reasoning: "fyi" });
+    expect(a.remove_labels).toEqual([]);
+    expect(a.add_labels).toEqual([]);
+  });
+
+  it("needs_reply -> star (add STARRED, leave inbox)", () => {
+    const a = mapCategoryToAction({ category: "needs_reply", reasoning: "needs reply" });
+    expect(a.add_labels).toEqual(["STARRED"]);
+    expect(a.remove_labels).toEqual([]);
   });
 });

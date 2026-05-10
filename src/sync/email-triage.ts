@@ -11,20 +11,39 @@ import { applyEmailAction, type EmailAction } from "./email-actions.js";
 export const TRIAGE_DOMAIN = "email";
 export const TRIAGE_CLASSIFIER = "email.triage";
 
-const SYSTEM_PROMPT = `You triage emails for a personal inbox. Given an email's metadata, propose Gmail labels to add and/or remove.
+const SYSTEM_PROMPT = `You triage emails for a personal inbox. Classify each email as exactly one of three categories:
 
-Rules:
-- For obvious newsletters, marketing emails, or automated notifications: archive by setting remove_labels to ["INBOX"].
-- For substantive emails (from a real person, requiring action, or important): leave INBOX alone (return empty add_labels and remove_labels) so the email stays in the inbox for the user to handle.
-- Use existing Gmail system labels when relevant: INBOX, UNREAD, STARRED, IMPORTANT.
-- Only suggest user-defined labels (anything else) if you're confident the user already has that label or would benefit from it.
-- Always provide concise reasoning under 200 characters explaining the decision.`;
+- "noise" — newsletters, marketing, automated notifications, receipts, social, anything the user does not need to read or act on. These get archived.
+- "worth_reading" — informational but useful: substantive updates, threads worth glancing at, FYI items. These stay in the inbox unchanged.
+- "needs_reply" — requires a human response, action item, scheduling, or a personal message from someone the user knows. These get starred so they stand out in the inbox.
+
+Always provide concise reasoning under 200 characters explaining why this email fits the chosen category.`;
+
+export const TriageCategory = z.enum(["noise", "worth_reading", "needs_reply"]);
+export type TriageCategoryT = z.infer<typeof TriageCategory>;
 
 export const ProposedActionSchema = z.object({
-  add_labels: z.array(z.string()).default([]),
-  remove_labels: z.array(z.string()).default([]),
+  category: TriageCategory,
   reasoning: z.string().min(1).max(500),
 });
+
+export type TriageProposal = z.infer<typeof ProposedActionSchema>;
+
+/**
+ * Map a triage category to the Gmail label change it represents. Deterministic
+ * — the same category always produces the same action. This is what gets
+ * applied for both rule matches and (eventually) approved AI proposals.
+ */
+export function mapCategoryToAction(proposal: TriageProposal): EmailAction {
+  switch (proposal.category) {
+    case "noise":
+      return { add_labels: [], remove_labels: ["INBOX"], reasoning: proposal.reasoning };
+    case "worth_reading":
+      return { add_labels: [], remove_labels: [], reasoning: proposal.reasoning };
+    case "needs_reply":
+      return { add_labels: ["STARRED"], remove_labels: [], reasoning: proposal.reasoning };
+  }
+}
 
 export type EmailSubject = {
   from: string | null;
@@ -49,7 +68,7 @@ export type TriageItem = {
   outcome: "matched_rule" | "queued_for_review" | "skipped" | "error" | "would_match" | "would_queue";
   rule_id?: number;
   review_id?: number;
-  proposed_action?: EmailAction;
+  proposed_action?: TriageProposal;
   ai_call_id?: number;
   error?: string;
 };
@@ -85,6 +104,33 @@ export function buildClassifierInput(metadata: GmailMetadata): string {
   return lines.join("\n");
 }
 
+async function recordOutcome(values: {
+  id: string;
+  threadId: string;
+  outcome: "matched_rule" | "needs_review" | "error";
+  outcomeId?: number;
+  error?: string;
+}): Promise<void> {
+  await db
+    .insert(processedEmails)
+    .values({
+      id: values.id,
+      threadId: values.threadId,
+      outcome: values.outcome,
+      outcomeId: values.outcomeId ?? null,
+      error: values.error ?? null,
+    })
+    .onConflictDoUpdate({
+      target: processedEmails.id,
+      set: {
+        outcome: values.outcome,
+        outcomeId: values.outcomeId ?? null,
+        error: values.error ?? null,
+        lastProcessedAt: new Date(),
+      },
+    });
+}
+
 export async function triageEmails(
   client: OAuth2Client,
   options: TriageOptions,
@@ -101,7 +147,9 @@ export async function triageEmails(
         .from(processedEmails)
         .where(eq(processedEmails.id, ref.id))
         .limit(1);
-      if (existing.length > 0) {
+      // Error rows are retried; only "successful" outcomes (matched_rule / needs_review)
+      // count as already-processed.
+      if (existing.length > 0 && existing[0].outcome !== "error") {
         items.push({
           gmail_id: ref.id,
           thread_id: ref.threadId,
@@ -116,7 +164,7 @@ export async function triageEmails(
       const match = await evaluate(TRIAGE_DOMAIN, subject);
 
       if (match) {
-        const action = match.action as EmailAction;
+        const proposal = ProposedActionSchema.parse(match.action);
         if (options.dryRun) {
           items.push({
             gmail_id: ref.id,
@@ -124,16 +172,17 @@ export async function triageEmails(
             subject,
             outcome: "would_match",
             rule_id: match.rule.id,
-            proposed_action: action,
+            proposed_action: proposal,
           });
           continue;
         }
+        const action = mapCategoryToAction(proposal);
         await applyEmailAction(client, ref.id, action, {
           sessionId: options.sessionId,
           caller,
           intent: `rule:${match.rule.id}`,
         });
-        await db.insert(processedEmails).values({
+        await recordOutcome({
           id: ref.id,
           threadId: ref.threadId,
           outcome: "matched_rule",
@@ -145,7 +194,7 @@ export async function triageEmails(
           subject,
           outcome: "matched_rule",
           rule_id: match.rule.id,
-          proposed_action: action,
+          proposed_action: proposal,
         });
         continue;
       }
@@ -161,7 +210,7 @@ export async function triageEmails(
         continue;
       }
 
-      let proposed: EmailAction | null = null;
+      let proposed: TriageProposal | null = null;
       let aiCallId: number | undefined;
       try {
         const result = await classify({
@@ -181,7 +230,7 @@ export async function triageEmails(
             : err instanceof Error
               ? err.message
               : String(err);
-        await db.insert(processedEmails).values({
+        await recordOutcome({
           id: ref.id,
           threadId: ref.threadId,
           outcome: "error",
@@ -210,7 +259,7 @@ export async function triageEmails(
         })
         .returning({ id: needsReview.id });
 
-      await db.insert(processedEmails).values({
+      await recordOutcome({
         id: ref.id,
         threadId: ref.threadId,
         outcome: "needs_review",
@@ -228,10 +277,9 @@ export async function triageEmails(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // Best-effort: record the failure so we don't reprocess in a tight loop. Ignore
-      // duplicate-key errors here — if the row already exists the orchestrator just moves on.
+      // Best-effort: record the failure so we have a record of what went wrong.
       try {
-        await db.insert(processedEmails).values({
+        await recordOutcome({
           id: ref.id,
           threadId: ref.threadId,
           outcome: "error",
