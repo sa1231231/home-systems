@@ -7,6 +7,10 @@ import { getConfig } from "./config.js";
 import { db, pool } from "./db/client.js";
 import { meta } from "./db/schema.js";
 import { makeContactsRouter } from "./api/contacts.js";
+import { makeChangesRouter } from "./api/changes.js";
+import { sessionIdMiddleware } from "./changelog/index.js";
+import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
+import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 
 const config = getConfig();
@@ -17,6 +21,7 @@ const migrationsFolder = path.resolve(__dirname, "../drizzle");
 const app = express();
 
 app.use(express.json());
+app.use(sessionIdMiddleware());
 
 app.get("/", (_req, res) => {
   res.json({ service: "home-systems", status: "ok" });
@@ -27,6 +32,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/contacts", makeContactsRouter());
+app.use("/changes", makeChangesRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {
@@ -44,6 +50,11 @@ async function start() {
   console.log(`applying migrations from ${migrationsFolder}`);
   await migrate(db, { migrationsFolder });
   console.log("migrations applied");
+
+  if (hasGoogleCreds()) {
+    registerContactReversers(getOAuthClient());
+    console.log("contact reversers registered");
+  }
 
   const server = app.listen(config.PORT, () => {
     console.log(`home-systems listening on :${config.PORT}`);

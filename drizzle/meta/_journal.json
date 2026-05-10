@@ -8,6 +8,13 @@
       "when": 1778423684265,
       "tag": "0000_flippant_sugar_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778442510912,
+      "tag": "0001_flippant_sentinels",
+      "breakpoints": true
     }
   ]
 }

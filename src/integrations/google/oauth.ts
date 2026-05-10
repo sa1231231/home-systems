@@ -16,6 +16,13 @@ export class MissingGoogleCredsError extends Error {
   }
 }
 
+export function hasGoogleCreds(): boolean {
+  const c = getConfig();
+  return Boolean(
+    c.GOOGLE_CLIENT_ID && c.GOOGLE_CLIENT_SECRET && c.GOOGLE_OAUTH_REFRESH_TOKEN && c.CRM_SHEET_ID,
+  );
+}
+
 export function requireGoogleCreds(): GoogleCreds {
   const c = getConfig();
   if (!c.GOOGLE_CLIENT_ID || !c.GOOGLE_CLIENT_SECRET || !c.GOOGLE_OAUTH_REFRESH_TOKEN || !c.CRM_SHEET_ID) {

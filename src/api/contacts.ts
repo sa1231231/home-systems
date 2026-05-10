@@ -126,7 +126,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, values } = CsvOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await addToCsvField(client, creds.sheetId, resource_name, "groups", values);
+      const result = await addToCsvField(client, creds.sheetId, resource_name, "groups", values, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.add-groups",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);
@@ -138,7 +141,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, values } = CsvOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "groups", values);
+      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "groups", values, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.remove-groups",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);
@@ -150,7 +156,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, values } = CsvOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await addToCsvField(client, creds.sheetId, resource_name, "tags", values);
+      const result = await addToCsvField(client, creds.sheetId, resource_name, "tags", values, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.add-tags",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);
@@ -162,7 +171,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, values } = CsvOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "tags", values);
+      const result = await removeFromCsvField(client, creds.sheetId, resource_name, "tags", values, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.remove-tags",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);
@@ -174,7 +186,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, value } = BoolOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await setBoolField(client, creds.sheetId, resource_name, "is_archived", value);
+      const result = await setBoolField(client, creds.sheetId, resource_name, "is_archived", value, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.set-archived",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);
@@ -186,7 +201,10 @@ export function makeContactsRouter(): Router {
       const { resource_name, value } = BoolOpBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await setBoolField(client, creds.sheetId, resource_name, "starred", value);
+      const result = await setBoolField(client, creds.sheetId, resource_name, "starred", value, {
+        sessionId: req.sessionId,
+        caller: "api:contacts.set-starred",
+      });
       res.json({ ok: true, ...result });
     } catch (err) {
       handleError(err, res);

@@ -1,4 +1,5 @@
 import type { OAuth2Client } from "google-auth-library";
+import { withChangelog } from "../changelog/index.js";
 import {
   batchUpdateCells,
   colLetter,
@@ -15,6 +16,12 @@ export type FoundRow = {
   record: Record<string, string>;
   tab: string;
   headers: string[];
+};
+
+export type WriteMeta = {
+  sessionId: string;
+  caller: string;
+  intent?: string;
 };
 
 export class ContactNotFoundError extends Error {
@@ -39,18 +46,11 @@ async function findRow(client: OAuth2Client, spreadsheetId: string, resourceName
   return { rowIndex: row.rowIndex, record: row.record, tab, headers: data.headers };
 }
 
-async function writeCell(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  found: FoundRow,
-  column: string,
-  value: string,
-): Promise<void> {
+function cellRangeFor(found: FoundRow, column: string): string {
   const colIdx = found.headers.indexOf(column);
   if (colIdx === -1) throw new UnknownColumnError(column);
   const sheetRow = found.rowIndex + 2; // +1 for 1-based, +1 for header
-  const update: CellUpdate = { range: `${found.tab}!${colLetter(colIdx)}${sheetRow}`, value };
-  await batchUpdateCells(client, spreadsheetId, [update]);
+  return `${found.tab}!${colLetter(colIdx)}${sheetRow}`;
 }
 
 export type CsvOpResult = {
@@ -61,17 +61,51 @@ export type CsvOpResult = {
   changed: boolean;
 };
 
+async function applyCsvChange(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  resourceName: string,
+  field: "groups" | "tags",
+  operation: "add_csv" | "remove_csv",
+  before: string,
+  after: string,
+  found: FoundRow,
+  meta: WriteMeta,
+): Promise<void> {
+  const range = cellRangeFor(found, field);
+  const update: CellUpdate = { range, value: after };
+  await withChangelog(
+    {
+      caller: meta.caller,
+      sessionId: meta.sessionId,
+      operation: `contacts.${operation}.${field}`,
+      targetKind: "contact",
+      targetId: resourceName,
+      intent: meta.intent,
+      before: { [field]: before },
+      after: { [field]: after },
+      externalTarget: `google.sheet:${spreadsheetId}!${range}`,
+    },
+    async () => {
+      await batchUpdateCells(client, spreadsheetId, [update]);
+    },
+  );
+}
+
 export async function addToCsvField(
   client: OAuth2Client,
   spreadsheetId: string,
   resourceName: string,
   field: "groups" | "tags",
   additions: string[],
+  meta: WriteMeta,
 ): Promise<CsvOpResult> {
   const found = await findRow(client, spreadsheetId, resourceName);
   const current = found.record[field] ?? "";
   const result = addToCsv(current, additions);
-  if (result.changed) await writeCell(client, spreadsheetId, found, field, result.value);
+  if (result.changed) {
+    await applyCsvChange(client, spreadsheetId, resourceName, field, "add_csv", current, result.value, found, meta);
+  }
   return { resource_name: resourceName, row_index: found.rowIndex, field, value: result.value, changed: result.changed };
 }
 
@@ -81,11 +115,24 @@ export async function removeFromCsvField(
   resourceName: string,
   field: "groups" | "tags",
   removals: string[],
+  meta: WriteMeta,
 ): Promise<CsvOpResult> {
   const found = await findRow(client, spreadsheetId, resourceName);
   const current = found.record[field] ?? "";
   const result = removeFromCsv(current, removals);
-  if (result.changed) await writeCell(client, spreadsheetId, found, field, result.value);
+  if (result.changed) {
+    await applyCsvChange(
+      client,
+      spreadsheetId,
+      resourceName,
+      field,
+      "remove_csv",
+      current,
+      result.value,
+      found,
+      meta,
+    );
+  }
   return { resource_name: resourceName, row_index: found.rowIndex, field, value: result.value, changed: result.changed };
 }
 
@@ -107,12 +154,29 @@ export async function setBoolField(
   resourceName: string,
   field: "is_archived" | "starred",
   value: boolean,
+  meta: WriteMeta,
 ): Promise<BoolOpResult> {
   const found = await findRow(client, spreadsheetId, resourceName);
   const current = parseBoolish(found.record[field] ?? "");
   const next = value;
   if (current !== next) {
-    await writeCell(client, spreadsheetId, found, field, next ? "TRUE" : "FALSE");
+    const range = cellRangeFor(found, field);
+    await withChangelog(
+      {
+        caller: meta.caller,
+        sessionId: meta.sessionId,
+        operation: `contacts.set_bool.${field}`,
+        targetKind: "contact",
+        targetId: resourceName,
+        intent: meta.intent,
+        before: { [field]: current },
+        after: { [field]: next },
+        externalTarget: `google.sheet:${spreadsheetId}!${range}`,
+      },
+      async () => {
+        await batchUpdateCells(client, spreadsheetId, [{ range, value: next ? "TRUE" : "FALSE" }]);
+      },
+    );
   }
   return {
     resource_name: resourceName,
