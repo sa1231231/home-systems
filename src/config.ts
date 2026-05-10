@@ -15,6 +15,12 @@ export const ConfigSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   CONTACTS_SYNC_CRON_SCHEDULE: z.string().default("0 7 * * *"),
   ANTHROPIC_API_KEY: z.string().optional(),
+  EMAIL_TRIAGE_CRON_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  EMAIL_TRIAGE_CRON_SCHEDULE: z.string().default("0 7 * * *"),
+  EMAIL_TRIAGE_CRON_LIMIT: z.coerce.number().int().positive().max(500).default(50),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

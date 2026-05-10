@@ -18,6 +18,7 @@ import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
+import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
 
 const config = getConfig();
 
@@ -78,9 +79,16 @@ async function start() {
     schedule: config.CONTACTS_SYNC_CRON_SCHEDULE,
   });
 
+  startEmailTriageCron({
+    enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
+    schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
+    limit: config.EMAIL_TRIAGE_CRON_LIMIT,
+  });
+
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, draining connections`);
     stopContactsSyncCron();
+    stopEmailTriageCron();
     server.close(() => {
       console.log("http server closed");
     });
