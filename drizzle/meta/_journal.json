@@ -15,6 +15,13 @@
       "when": 1778442510912,
       "tag": "0001_flippant_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778443589417,
+      "tag": "0002_stiff_patch",
+      "breakpoints": true
     }
   ]
 }

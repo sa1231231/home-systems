@@ -14,6 +14,7 @@ export const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   CONTACTS_SYNC_CRON_SCHEDULE: z.string().default("0 7 * * *"),
+  ANTHROPIC_API_KEY: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

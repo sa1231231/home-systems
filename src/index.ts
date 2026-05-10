@@ -8,6 +8,7 @@ import { db, pool } from "./db/client.js";
 import { meta } from "./db/schema.js";
 import { makeContactsRouter } from "./api/contacts.js";
 import { makeChangesRouter } from "./api/changes.js";
+import { makeAiCallsRouter } from "./api/ai-calls.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
@@ -33,6 +34,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/contacts", makeContactsRouter());
 app.use("/changes", makeChangesRouter());
+app.use("/ai-calls", makeAiCallsRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {

@@ -20,6 +20,7 @@
     "cleanup:columns": "tsx scripts/cleanup-columns.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
