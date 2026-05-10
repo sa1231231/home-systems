@@ -24,13 +24,10 @@ const CondSchema: z.ZodType<Cond> = z.lazy(() =>
         field: z.string().min(1).max(200),
         op: z.enum([
           "equals",
-          "not_equals",
           "contains",
-          "not_contains",
           "starts_with",
           "ends_with",
           "in",
-          "not_in",
           "present",
           "absent",
           "regex",

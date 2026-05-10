@@ -25,12 +25,9 @@ describe("evaluateCondition — string ops", () => {
     expect(evaluateCondition({ field: "from", op: "equals", value: "ALICE@github.com" }, subject)).toBe(true);
     expect(evaluateCondition({ field: "from", op: "equals", value: "bob@github.com" }, subject)).toBe(false);
   });
-  it("not_equals", () => {
-    expect(evaluateCondition({ field: "from", op: "not_equals", value: "bob@github.com" }, subject)).toBe(true);
-  });
-  it("contains / not_contains", () => {
+  it("contains", () => {
     expect(evaluateCondition({ field: "subject", op: "contains", value: "Issue" }, subject)).toBe(true);
-    expect(evaluateCondition({ field: "subject", op: "not_contains", value: "PR" }, subject)).toBe(true);
+    expect(evaluateCondition({ field: "subject", op: "contains", value: "PR" }, subject)).toBe(false);
   });
   it("starts_with / ends_with", () => {
     expect(evaluateCondition({ field: "from", op: "starts_with", value: "alice" }, subject)).toBe(true);
@@ -42,11 +39,10 @@ describe("evaluateCondition — string ops", () => {
   });
 });
 
-describe("evaluateCondition — array ops", () => {
+describe("evaluateCondition — in", () => {
   const subject = { label: "lead" };
-  it("in / not_in", () => {
+  it("in", () => {
     expect(evaluateCondition({ field: "label", op: "in", value: ["lead", "customer"] }, subject)).toBe(true);
-    expect(evaluateCondition({ field: "label", op: "not_in", value: ["lead", "customer"] }, subject)).toBe(false);
     expect(evaluateCondition({ field: "label", op: "in", value: ["other"] }, subject)).toBe(false);
   });
   it("rejects non-array values", () => {
@@ -70,14 +66,11 @@ describe("evaluateCondition — present / absent", () => {
 });
 
 describe("evaluateCondition — missing field semantics", () => {
-  it("affirmative ops return false on missing field", () => {
+  it("affirmative ops return false on missing field; absent returns true", () => {
     expect(evaluateCondition({ field: "missing", op: "equals", value: "x" }, {})).toBe(false);
     expect(evaluateCondition({ field: "missing", op: "contains", value: "x" }, {})).toBe(false);
-  });
-  it("negative ops return true on missing field", () => {
-    expect(evaluateCondition({ field: "missing", op: "not_equals", value: "x" }, {})).toBe(true);
-    expect(evaluateCondition({ field: "missing", op: "not_contains", value: "x" }, {})).toBe(true);
-    expect(evaluateCondition({ field: "missing", op: "not_in", value: ["x"] }, {})).toBe(true);
+    expect(evaluateCondition({ field: "missing", op: "in", value: ["x"] }, {})).toBe(false);
+    expect(evaluateCondition({ field: "missing", op: "absent" }, {})).toBe(true);
   });
 });
 

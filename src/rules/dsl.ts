@@ -1,12 +1,9 @@
 export type Op =
   | "equals"
-  | "not_equals"
   | "contains"
-  | "not_contains"
   | "starts_with"
   | "ends_with"
   | "in"
-  | "not_in"
   | "present"
   | "absent"
   | "regex";
@@ -23,18 +20,13 @@ export class InvalidConditionError extends Error {
   }
 }
 
-const STRING_OPS = new Set<Op>(["contains", "not_contains", "starts_with", "ends_with", "regex"]);
-const ARRAY_OPS = new Set<Op>(["in", "not_in"]);
-const NEGATIVE_OPS = new Set<Op>(["not_equals", "not_contains", "not_in", "absent"]);
+const STRING_OPS = new Set<Op>(["contains", "starts_with", "ends_with", "regex"]);
 const ALL_OPS = new Set<Op>([
   "equals",
-  "not_equals",
   "contains",
-  "not_contains",
   "starts_with",
   "ends_with",
   "in",
-  "not_in",
   "present",
   "absent",
   "regex",
@@ -73,14 +65,11 @@ export function validateCondition(cond: Cond): void {
       throw new InvalidConditionError(`invalid regex: ${cond.value}`);
     }
   }
-  if (ARRAY_OPS.has(cond.op) && !Array.isArray(cond.value)) {
+  if (cond.op === "in" && !Array.isArray(cond.value)) {
     throw new InvalidConditionError(`op '${cond.op}' requires array value`);
   }
   if (
-    (cond.op === "contains" ||
-      cond.op === "not_contains" ||
-      cond.op === "starts_with" ||
-      cond.op === "ends_with") &&
+    (cond.op === "contains" || cond.op === "starts_with" || cond.op === "ends_with") &&
     typeof cond.value !== "string"
   ) {
     throw new InvalidConditionError(`op '${cond.op}' requires string value`);
@@ -135,20 +124,16 @@ function evalLeaf(
   if (op === "present") return present;
   if (op === "absent") return !present;
 
-  if (!present) {
-    return NEGATIVE_OPS.has(op);
-  }
+  if (!present) return false;
 
-  if (ARRAY_OPS.has(op)) {
+  if (op === "in") {
     if (!Array.isArray(cond.value)) {
       throw new InvalidConditionError(`op '${op}' requires array value`);
     }
-    const found = cond.value.some((v) => looseEquals(v, got));
-    return op === "in" ? found : !found;
+    return cond.value.some((v) => looseEquals(v, got));
   }
 
   if (op === "equals") return looseEquals(cond.value, got);
-  if (op === "not_equals") return !looseEquals(cond.value, got);
 
   if (STRING_OPS.has(op)) {
     const haystack = typeof got === "string" ? got.toLowerCase() : String(got).toLowerCase();
@@ -167,7 +152,6 @@ function evalLeaf(
     }
     const needle = cond.value.toLowerCase();
     if (op === "contains") return haystack.includes(needle);
-    if (op === "not_contains") return !haystack.includes(needle);
     if (op === "starts_with") return haystack.startsWith(needle);
     if (op === "ends_with") return haystack.endsWith(needle);
   }

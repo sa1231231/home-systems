@@ -16,8 +16,7 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
-    "auth:google": "tsx scripts/auth-google.ts",
-    "cleanup:columns": "tsx scripts/cleanup-columns.ts"
+    "auth:google": "tsx scripts/auth-google.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
