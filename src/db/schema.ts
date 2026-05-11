@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -139,5 +140,18 @@ export const processedEmails = pgTable(
   (t) => ({
     outcomeIdx: index("processed_emails_outcome_idx").on(t.outcome, t.lastProcessedAt),
     threadIdx: index("processed_emails_thread_idx").on(t.threadId),
+  }),
+);
+
+export const dailyOpCounters = pgTable(
+  "daily_op_counters",
+  {
+    operation: text("operation").notNull(),
+    day: text("day").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.operation, t.day] }),
   }),
 );

@@ -3,6 +3,7 @@ import { withChangelog } from "../changelog/index.js";
 import { registry } from "../changelog/reversers.js";
 import type { ChangelogRow } from "../changelog/types.js";
 import { getMessageMetadata, modifyLabels } from "../integrations/google/gmail.js";
+import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 
 export const EMAIL_MODIFY_OP = "email.modify_labels";
 
@@ -57,6 +58,8 @@ export async function applyEmailAction(
   if (!plan.changed) {
     return { gmail_id: gmailId, before_labels: before, after_labels: before, changed: false };
   }
+
+  await enforceConfiguredDailyLimit(EMAIL_MODIFY_OP);
 
   await withChangelog(
     {

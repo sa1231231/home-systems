@@ -14,6 +14,7 @@ import {
   setBoolField,
   UnknownColumnError,
 } from "../sync/contact-writes.js";
+import { DailyLimitExceededError } from "../safety/limits.js";
 
 const PreviewQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -282,6 +283,17 @@ function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>
   }
   if (err instanceof UnknownColumnError) {
     res.status(409).json({ ok: false, error: err.message, column: err.column });
+    return;
+  }
+  if (err instanceof DailyLimitExceededError) {
+    res.status(429).json({
+      ok: false,
+      error: err.message,
+      operation: err.operation,
+      count: err.count,
+      limit: err.limit,
+      day: err.day,
+    });
     return;
   }
   if (err instanceof z.ZodError) {

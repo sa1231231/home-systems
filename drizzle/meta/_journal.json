@@ -36,6 +36,13 @@
       "when": 1778447288982,
       "tag": "0004_past_firelord",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778511274489,
+      "tag": "0005_heavy_millenium_guard",
+      "breakpoints": true
     }
   ]
 }

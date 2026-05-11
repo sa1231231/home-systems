@@ -7,6 +7,7 @@ import {
   readContactsTab,
   type CellUpdate,
 } from "../integrations/google/sheets.js";
+import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 import { addToCsv, removeFromCsv } from "./csv.js";
 
 const RESOURCE_NAME_COL = "google_resource_name";
@@ -72,13 +73,15 @@ async function applyCsvChange(
   found: FoundRow,
   meta: WriteMeta,
 ): Promise<void> {
+  const op = `contacts.${operation}.${field}`;
+  await enforceConfiguredDailyLimit(op);
   const range = cellRangeFor(found, field);
   const update: CellUpdate = { range, value: after };
   await withChangelog(
     {
       caller: meta.caller,
       sessionId: meta.sessionId,
-      operation: `contacts.${operation}.${field}`,
+      operation: op,
       targetKind: "contact",
       targetId: resourceName,
       intent: meta.intent,
@@ -160,12 +163,14 @@ export async function setBoolField(
   const current = parseBoolish(found.record[field] ?? "");
   const next = value;
   if (current !== next) {
+    const op = `contacts.set_bool.${field}`;
+    await enforceConfiguredDailyLimit(op);
     const range = cellRangeFor(found, field);
     await withChangelog(
       {
         caller: meta.caller,
         sessionId: meta.sessionId,
-        operation: `contacts.set_bool.${field}`,
+        operation: op,
         targetKind: "contact",
         targetId: resourceName,
         intent: meta.intent,

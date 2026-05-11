@@ -6,6 +6,7 @@ import { processedEmails } from "../db/schema.js";
 import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
 import { triageEmails } from "../sync/email-triage.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
+import { DailyLimitExceededError } from "../safety/limits.js";
 
 const TriageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(10),
@@ -78,6 +79,17 @@ function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>
   }
   if (err instanceof MissingAnthropicKeyError) {
     res.status(503).json({ ok: false, error: err.message });
+    return;
+  }
+  if (err instanceof DailyLimitExceededError) {
+    res.status(429).json({
+      ok: false,
+      error: err.message,
+      operation: err.operation,
+      count: err.count,
+      limit: err.limit,
+      day: err.day,
+    });
     return;
   }
   if (err instanceof z.ZodError) {
