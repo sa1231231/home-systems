@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "auth:google": "tsx scripts/auth-google.ts",
-    "backup:run": "tsx scripts/run-backup.ts"
+    "backup:run": "tsx scripts/run-backup.ts",
+    "trello:setup": "tsx scripts/trello-setup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",

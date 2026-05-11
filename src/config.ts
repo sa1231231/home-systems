@@ -36,6 +36,20 @@ export const ConfigSchema = z.object({
     .transform((v) => v !== "false" && v !== "0"),
   UI_PASSWORD: z.string().min(8).optional(),
   SESSION_SECRET: z.string().min(32).optional(),
+  TRELLO_API_KEY: z.string().min(8).optional(),
+  TRELLO_TOKEN: z.string().min(8).optional(),
+  TRELLO_BOARD_ID: z.string().min(1).optional(),
+  TRELLO_WAITING_LIST_ID: z.string().min(1).optional(),
+  TRELLO_TODAY_LIST_ID: z.string().min(1).optional(),
+  TRELLO_DAILY_LABEL: z.string().default("daily"),
+  TRELLO_WEEKDAYS_LABEL: z.string().default("weekdays"),
+  TRELLO_WEEKENDS_LABEL: z.string().default("weekends"),
+  TRELLO_TZ: z.string().default("America/New_York"),
+  TRELLO_REORDER_CRON_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  TRELLO_REORDER_CRON_SCHEDULE: z.string().default("0 11 * * *"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
