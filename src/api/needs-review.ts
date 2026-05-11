@@ -2,9 +2,15 @@ import { Router } from "express";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { needsReview, rules } from "../db/schema.js";
-import { InvalidConditionError, validateCondition, type Cond } from "../rules/dsl.js";
-import { reviewAppliers } from "../needs-review/appliers.js";
+import { needsReview } from "../db/schema.js";
+import { InvalidConditionError } from "../rules/dsl.js";
+import {
+  AlreadyDecidedError,
+  EntryNotFoundError,
+  approveEntry,
+  correctEntry,
+  rejectEntry,
+} from "../needs-review/service.js";
 
 const ListQuery = z.object({
   domain: z.string().min(1).max(100).optional(),
@@ -49,7 +55,7 @@ const CorrectBody = z.object({
   decided_by: z.string().min(1).max(100).optional(),
 });
 
-function rowToJson(row: typeof needsReview.$inferSelect): Record<string, unknown> {
+export function rowToJson(row: typeof needsReview.$inferSelect): Record<string, unknown> {
   return {
     id: row.id,
     created_at: row.createdAt,
@@ -67,27 +73,6 @@ function rowToJson(row: typeof needsReview.$inferSelect): Record<string, unknown
     promoted_to_rule_id: row.promotedToRuleId,
     notes: row.notes,
   };
-}
-
-class EntryNotFoundError extends Error {
-  constructor(public readonly id: number) {
-    super(`needs_review entry ${id} not found`);
-    this.name = "EntryNotFoundError";
-  }
-}
-
-class AlreadyDecidedError extends Error {
-  constructor(public readonly id: number, public readonly status: string) {
-    super(`needs_review entry ${id} already decided (status='${status}')`);
-    this.name = "AlreadyDecidedError";
-  }
-}
-
-async function loadPending(id: number): Promise<typeof needsReview.$inferSelect> {
-  const [row] = await db.select().from(needsReview).where(eq(needsReview.id, id));
-  if (!row) throw new EntryNotFoundError(id);
-  if (row.status !== "pending") throw new AlreadyDecidedError(id, row.status);
-  return row;
 }
 
 export function makeNeedsReviewRouter(): Router {
@@ -150,51 +135,23 @@ export function makeNeedsReviewRouter(): Router {
     try {
       const id = IdParam.parse(req.params.id);
       const body = ApproveBody.parse(req.body);
-      const pending = await loadPending(id);
-
-      let promotedRuleId: number | null = null;
-      if (body?.promote_to_rule) {
-        validateCondition(body.promote_to_rule.match as Cond);
-        const [rule] = await db
-          .insert(rules)
-          .values({
-            domain: pending.domain,
-            name: body.promote_to_rule.name,
-            match: body.promote_to_rule.match as never,
-            action: pending.proposedAction as never,
-            priority: body.promote_to_rule.priority ?? 100,
-            enabled: true,
-            createdFromReviewId: pending.id,
-            createdBy: "approval",
-          })
-          .returning({ id: rules.id });
-        promotedRuleId = rule.id;
-      }
-
-      const [row] = await db
-        .update(needsReview)
-        .set({
-          status: "approved",
-          decision: pending.proposedAction as never,
-          decidedAt: new Date(),
-          decidedBy: body?.decided_by ?? "api",
-          promotedToRuleId: promotedRuleId,
-          updatedAt: new Date(),
-        })
-        .where(eq(needsReview.id, id))
-        .returning();
-
-      const applyOutcome = await tryApply(pending.subjectKind, pending.subjectId, row.decision, {
+      const result = await approveEntry(id, {
+        promoteToRule: body?.promote_to_rule
+          ? {
+              name: body.promote_to_rule.name,
+              match: body.promote_to_rule.match,
+              priority: body.promote_to_rule.priority,
+            }
+          : undefined,
+        decidedBy: body?.decided_by,
         sessionId: req.sessionId,
         caller: "api:needs-review.approve",
-        intent: `review:${id}`,
       });
-
       res.json({
         ok: true,
-        entry: rowToJson(row),
-        promoted_rule_id: promotedRuleId,
-        ...applyOutcome,
+        entry: rowToJson(result.entry),
+        promoted_rule_id: result.promotedRuleId,
+        ...result.apply,
       });
     } catch (err) {
       handleError(err, res);
@@ -205,21 +162,11 @@ export function makeNeedsReviewRouter(): Router {
     try {
       const id = IdParam.parse(req.params.id);
       const body = RejectBody.parse(req.body);
-      await loadPending(id);
-
-      const [row] = await db
-        .update(needsReview)
-        .set({
-          status: "rejected",
-          decidedAt: new Date(),
-          decidedBy: body?.decided_by ?? "api",
-          notes: body?.reason ?? undefined,
-          updatedAt: new Date(),
-        })
-        .where(eq(needsReview.id, id))
-        .returning();
-
-      res.json({ ok: true, entry: rowToJson(row) });
+      const result = await rejectEntry(id, {
+        decidedBy: body?.decided_by,
+        reason: body?.reason,
+      });
+      res.json({ ok: true, entry: rowToJson(result.entry) });
     } catch (err) {
       handleError(err, res);
     }
@@ -229,27 +176,13 @@ export function makeNeedsReviewRouter(): Router {
     try {
       const id = IdParam.parse(req.params.id);
       const body = CorrectBody.parse(req.body);
-      const pending = await loadPending(id);
-
-      const [row] = await db
-        .update(needsReview)
-        .set({
-          status: "corrected",
-          decision: body.decision as never,
-          decidedAt: new Date(),
-          decidedBy: body.decided_by ?? "api",
-          updatedAt: new Date(),
-        })
-        .where(eq(needsReview.id, id))
-        .returning();
-
-      const applyOutcome = await tryApply(pending.subjectKind, pending.subjectId, row.decision, {
+      const result = await correctEntry(id, {
+        decision: body.decision,
+        decidedBy: body.decided_by,
         sessionId: req.sessionId,
         caller: "api:needs-review.correct",
-        intent: `review:${id}`,
       });
-
-      res.json({ ok: true, entry: rowToJson(row), ...applyOutcome });
+      res.json({ ok: true, entry: rowToJson(result.entry), ...result.apply });
     } catch (err) {
       handleError(err, res);
     }
@@ -258,37 +191,15 @@ export function makeNeedsReviewRouter(): Router {
   return router;
 }
 
-type ApplyOutcome = {
-  applied: boolean;
-  apply_result?: unknown;
-  apply_error?: string;
-};
-
-async function tryApply(
-  subjectKind: string,
-  subjectId: string,
-  decision: unknown,
-  meta: { sessionId: string; caller: string; intent?: string },
-): Promise<ApplyOutcome> {
-  if (!reviewAppliers.has(subjectKind)) {
-    return { applied: false, apply_error: `no applier registered for '${subjectKind}'` };
-  }
-  try {
-    const result = await reviewAppliers.apply(subjectKind, subjectId, decision, meta);
-    return { applied: true, apply_result: result };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { applied: false, apply_error: message };
-  }
-}
-
 function handleError(err: unknown, res: Parameters<Parameters<Router["get"]>[1]>[1]): void {
   if (err instanceof EntryNotFoundError) {
     res.status(404).json({ ok: false, error: err.message, id: err.id });
     return;
   }
   if (err instanceof AlreadyDecidedError) {
-    res.status(409).json({ ok: false, error: err.message, id: err.id, status: err.status });
+    res
+      .status(409)
+      .json({ ok: false, error: err.message, id: err.id, status: err.currentStatus });
     return;
   }
   if (err instanceof InvalidConditionError) {
