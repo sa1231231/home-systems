@@ -1,0 +1,56 @@
+<%- include("partials/_header", { title: "Gmail triage — home-systems", tab: "gmail", flash: locals.flash }) %>
+
+<h2 style="margin-top: 0;">Gmail triage</h2>
+
+<section style="margin-bottom: 32px;">
+  <h3 style="margin: 0 0 6px;">Rules <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= rules.length %>)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">Deterministic matches run first; emails matching a rule never call the AI.</p>
+  <% if (rules.length === 0) { %>
+    <p class="muted">No rules yet. Approve a review below with <em>promote</em> ticked to create the first one.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th style="width: 80px;">Priority</th>
+          <th>Match</th>
+          <th>Action</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 100px;">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rules.forEach((rule) => { %>
+          <%- include("partials/_rule-row", { rule }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<section>
+  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">AI classifications waiting for your decision. Approve applies the action to Gmail; <em>promote</em> also creates a deterministic rule so future matches skip the AI.</p>
+  <% if (pending.length === 0) { %>
+    <p class="muted">No emails currently waiting for review.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 130px;">When (UTC)</th>
+          <th>Email</th>
+          <th>Proposed action</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 320px;">Decide</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% pending.forEach((entry) => { %>
+          <%- include("partials/_review-row", { entry, applyOutcome: null }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<%- include("partials/_footer") %>

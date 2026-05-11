@@ -1,0 +1,76 @@
+<tr id="review-row-<%= entry.id %>">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z</td>
+  <td>
+    <% if (entry.subject && typeof entry.subject === "object") { %>
+      <div style="font-weight: 500;"><%= (entry.subject.subject || "(no subject)") %></div>
+      <div class="muted" style="font-size: 12px;"><%= entry.subject.from || "" %></div>
+      <% if (entry.subject.snippet) { %>
+        <div class="muted" style="font-size: 11px; margin-top: 2px;"><%= String(entry.subject.snippet).slice(0, 120) %></div>
+      <% } %>
+    <% } else { %>
+      <code style="font-size: 11px;"><%= entry.subjectKind %>:<%= entry.subjectId %></code>
+    <% } %>
+  </td>
+  <td>
+    <code style="font-size: 12px;"><%= JSON.stringify(entry.proposedAction) %></code>
+  </td>
+  <td>
+    <span class="pill <%= entry.status %>"><%= entry.status %></span>
+    <% if (entry.status === "approved" && entry.promotedToRuleId) { %>
+      <span class="muted" style="font-size: 11px;">→ rule #<%= entry.promotedToRuleId %></span>
+    <% } %>
+    <% if (typeof applyOutcome !== "undefined" && applyOutcome) { %>
+      <div style="font-size: 11px; margin-top: 4px;">
+        <% if (applyOutcome.applied) { %>
+          <span style="color: var(--ok);">applied ✓</span>
+        <% } else { %>
+          <span style="color: var(--danger);">apply failed: <%= applyOutcome.apply_error %></span>
+        <% } %>
+      </div>
+    <% } %>
+  </td>
+  <td>
+    <% if (entry.status === "pending") { %>
+      <form
+        hx-post="/ui/needs-review/<%= entry.id %>/approve"
+        hx-target="#review-row-<%= entry.id %>"
+        hx-swap="outerHTML"
+        style="display: inline; margin-right: 6px;"
+      >
+        <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+          <input type="checkbox" name="promote_to_rule" value="1" />
+          promote
+        </label>
+        <button type="submit" style="padding: 4px 10px; margin-left: 4px;">Approve</button>
+      </form>
+      <button
+        hx-post="/ui/needs-review/<%= entry.id %>/reject"
+        hx-target="#review-row-<%= entry.id %>"
+        hx-swap="outerHTML"
+        style="padding: 4px 10px; margin-right: 6px;"
+      >Reject</button>
+      <button
+        type="button"
+        onclick="document.getElementById('correct-form-<%= entry.id %>').style.display='block'; this.style.display='none'"
+        style="padding: 4px 10px;"
+      >Correct…</button>
+      <form
+        id="correct-form-<%= entry.id %>"
+        hx-post="/ui/needs-review/<%= entry.id %>/correct"
+        hx-target="#review-row-<%= entry.id %>"
+        hx-swap="outerHTML"
+        style="display: none; margin-top: 8px;"
+      >
+        <textarea
+          name="decision"
+          placeholder='{"add_labels":[],"remove_labels":["INBOX"]}'
+          required
+          style="width: 100%; min-height: 60px; font-family: monospace; font-size: 12px;"
+        ></textarea>
+        <button type="submit" style="padding: 4px 10px; margin-top: 4px;">Submit correction</button>
+      </form>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;"><%= entry.decidedBy || "—" %></span>
+    <% } %>
+  </td>
+</tr>

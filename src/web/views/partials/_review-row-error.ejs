@@ -1,0 +1,16 @@
+<tr id="review-row-<%= entry.id %>" style="background: #fcf0f0;">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z</td>
+  <td>
+    <% if (entry.subject && typeof entry.subject === "object") { %>
+      <div style="font-weight: 500;"><%= (entry.subject.subject || "(no subject)") %></div>
+      <div class="muted" style="font-size: 12px;"><%= entry.subject.from || "" %></div>
+    <% } else { %>
+      <code><%= entry.subjectKind %>:<%= entry.subjectId %></code>
+    <% } %>
+  </td>
+  <td><code style="font-size: 12px;"><%= JSON.stringify(entry.proposedAction) %></code></td>
+  <td>
+    <span class="pill <%= entry.status %>"><%= entry.status %></span>
+  </td>
+  <td style="color: var(--danger); font-size: 12px;"><%= error %></td>
+</tr>

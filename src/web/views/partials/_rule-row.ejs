@@ -1,0 +1,17 @@
+<tr>
+  <td><%= rule.name %></td>
+  <td class="muted" style="font-size: 12px;">prio <%= rule.priority %></td>
+  <td><code style="font-size: 11px;"><%= JSON.stringify(rule.match) %></code></td>
+  <td><code style="font-size: 11px;"><%= JSON.stringify(rule.action) %></code></td>
+  <td>
+    <% if (rule.enabled) { %>
+      <span class="pill success">enabled</span>
+    <% } else { %>
+      <span class="pill rejected">disabled</span>
+    <% } %>
+    <% if (rule.createdFromReviewId) { %>
+      <span class="muted" style="font-size: 11px;">from review #<%= rule.createdFromReviewId %></span>
+    <% } %>
+  </td>
+  <td class="muted" style="font-size: 12px;"><%= new Date(rule.createdAt).toISOString().slice(0, 10) %></td>
+</tr>
