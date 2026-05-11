@@ -3,6 +3,7 @@ import { z } from "zod";
 import { newSessionId } from "../changelog/index.js";
 import {
   MissingTrelloCredsError,
+  requireTrelloAuth,
   requireTrelloCreds,
 } from "../integrations/trello/auth.js";
 import { makeTrelloClient } from "../integrations/trello/client.js";
@@ -15,6 +16,39 @@ const TriggerQuery = z.object({
 
 export function makeTrelloRouter(): Router {
   const router = Router();
+
+  /**
+   * Discovery endpoint: lists every board the configured token can see,
+   * along with each board's open lists and labels. Only requires
+   * TRELLO_API_KEY + TRELLO_TOKEN (not the board/list IDs). Used to find
+   * IDs to populate the remaining env vars without running scripts locally.
+   */
+  router.get("/discover", async (_req, res) => {
+    try {
+      const auth = requireTrelloAuth();
+      const client = makeTrelloClient(auth);
+      const boards = await client.listMemberBoards();
+      const detailed = await Promise.all(
+        boards.map(async (b) => {
+          const [lists, labels] = await Promise.all([
+            client.getLists(b.id),
+            client.getLabels(b.id),
+          ]);
+          return {
+            id: b.id,
+            name: b.name,
+            lists: lists.map((l) => ({ id: l.id, name: l.name })),
+            labels: labels
+              .filter((l) => l.name)
+              .map((l) => ({ id: l.id, name: l.name, color: l.color })),
+          };
+        }),
+      );
+      res.json({ ok: true, count: detailed.length, boards: detailed });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
 
   router.get("/today", async (req, res) => {
     try {
