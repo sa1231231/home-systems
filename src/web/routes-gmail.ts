@@ -62,7 +62,7 @@ export function makeGmailUiRouter(): Router {
       res
         .status(500)
         .send(
-          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;")}</div>`,
+          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
         );
     }
   });

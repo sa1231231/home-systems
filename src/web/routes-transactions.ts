@@ -7,6 +7,7 @@ import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js"
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
 import { triageTransactions } from "../sync/transaction-triage.js";
 import { newSessionId } from "../changelog/index.js";
+import { cronInfoForDomain } from "./cron-info.js";
 
 const DOMAIN = "transaction";
 
@@ -59,6 +60,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       categories,
       flash: null,
       warning,
+      cron: cronInfoForDomain("transaction"),
     });
   });
 
@@ -97,7 +99,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       res
         .status(500)
         .send(
-          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;")}</div>`,
+          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
         );
     }
   });

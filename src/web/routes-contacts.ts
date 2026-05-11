@@ -67,7 +67,7 @@ export function makeContactsUiRouter(): Router {
       res
         .status(500)
         .send(
-          `<div class="flash err">Sync failed: ${message.replace(/</g, "&lt;")}</div>`,
+          `<div class="flash err">Sync failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
         );
     }
   });
