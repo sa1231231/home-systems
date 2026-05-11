@@ -13,6 +13,7 @@ export type TransactionTriageCronOptions = {
   schedule: string;
   limit: number;
   target?: TransactionTarget;
+  timezone?: string;
 };
 
 let scheduledTask: cron.ScheduledTask | undefined;
@@ -35,13 +36,14 @@ export function startTransactionTriageCron(opts: TransactionTriageCronOptions): 
     return;
   }
   const target = opts.target;
+  const tz = opts.timezone || "UTC";
   console.log(
-    `[cron] transaction triage scheduled: "${opts.schedule}" (UTC), limit=${opts.limit}`,
+    `[cron] transaction triage scheduled: "${opts.schedule}" (${tz}), limit=${opts.limit}`,
   );
   scheduledTask = cron.schedule(
     opts.schedule,
     () => runTransactionTriageOnce({ limit: opts.limit, target }),
-    { timezone: "UTC" },
+    { timezone: tz },
   );
 }
 

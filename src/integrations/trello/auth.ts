@@ -52,7 +52,7 @@ export function requireTrelloCreds(): TrelloCreds {
     dailyFieldId: c.TRELLO_DAILY_FIELD_ID,
     weekdaysFieldId: c.TRELLO_WEEKDAYS_FIELD_ID,
     weekendsFieldId: c.TRELLO_WEEKENDS_FIELD_ID,
-    tz: c.TRELLO_TZ,
+    tz: c.CRON_TZ,
   };
 }
 

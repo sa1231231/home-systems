@@ -53,7 +53,7 @@ export const ConfigSchema = z.object({
   TRELLO_DAILY_FIELD_ID: z.string().min(1).optional(),
   TRELLO_WEEKDAYS_FIELD_ID: z.string().min(1).optional(),
   TRELLO_WEEKENDS_FIELD_ID: z.string().min(1).optional(),
-  TRELLO_TZ: z.string().default("America/New_York"),
+  CRON_TZ: z.string().default("America/New_York"),
   TRELLO_REORDER_CRON_ENABLED: z
     .string()
     .optional()

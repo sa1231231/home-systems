@@ -69,14 +69,15 @@ function compute(schedule: string, enabled: boolean, scheduleTz: string): CronIn
 
 export function cronInfoForDomain(domain: "email" | "contact" | "transaction" | "trello"): CronInfo {
   const c = getConfig();
+  const tz = c.CRON_TZ;
   switch (domain) {
     case "email":
-      return compute(c.EMAIL_TRIAGE_CRON_SCHEDULE, c.EMAIL_TRIAGE_CRON_ENABLED, "UTC");
+      return compute(c.EMAIL_TRIAGE_CRON_SCHEDULE, c.EMAIL_TRIAGE_CRON_ENABLED, tz);
     case "contact":
-      return compute(c.CONTACTS_SYNC_CRON_SCHEDULE, c.CONTACTS_SYNC_CRON_ENABLED, "UTC");
+      return compute(c.CONTACTS_SYNC_CRON_SCHEDULE, c.CONTACTS_SYNC_CRON_ENABLED, tz);
     case "transaction":
-      return compute(c.TRANSACTION_TRIAGE_CRON_SCHEDULE, c.TRANSACTION_TRIAGE_CRON_ENABLED, "UTC");
+      return compute(c.TRANSACTION_TRIAGE_CRON_SCHEDULE, c.TRANSACTION_TRIAGE_CRON_ENABLED, tz);
     case "trello":
-      return compute(c.TRELLO_REORDER_CRON_SCHEDULE, c.TRELLO_REORDER_CRON_ENABLED, c.TRELLO_TZ);
+      return compute(c.TRELLO_REORDER_CRON_SCHEDULE, c.TRELLO_REORDER_CRON_ENABLED, tz);
   }
 }

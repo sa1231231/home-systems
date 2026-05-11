@@ -5,6 +5,7 @@ import { runSync } from "../sync/contacts.js";
 export type ContactsSyncCronOptions = {
   enabled: boolean;
   schedule: string;
+  timezone?: string;
 };
 
 let scheduledTask: cron.ScheduledTask | undefined;
@@ -18,8 +19,9 @@ export function startContactsSyncCron(opts: ContactsSyncCronOptions): void {
     console.error(`[cron] invalid CONTACTS_SYNC_CRON_SCHEDULE: ${opts.schedule}`);
     return;
   }
-  console.log(`[cron] contacts sync scheduled: "${opts.schedule}" (UTC)`);
-  scheduledTask = cron.schedule(opts.schedule, runContactsSyncOnce, { timezone: "UTC" });
+  const tz = opts.timezone || "UTC";
+  console.log(`[cron] contacts sync scheduled: "${opts.schedule}" (${tz})`);
+  scheduledTask = cron.schedule(opts.schedule, runContactsSyncOnce, { timezone: tz });
 }
 
 export function stopContactsSyncCron(): void {

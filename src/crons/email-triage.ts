@@ -7,6 +7,7 @@ export type EmailTriageCronOptions = {
   enabled: boolean;
   schedule: string;
   limit: number;
+  timezone?: string;
 };
 
 let scheduledTask: cron.ScheduledTask | undefined;
@@ -20,11 +21,12 @@ export function startEmailTriageCron(opts: EmailTriageCronOptions): void {
     console.error(`[cron] invalid EMAIL_TRIAGE_CRON_SCHEDULE: ${opts.schedule}`);
     return;
   }
+  const tz = opts.timezone || "UTC";
   console.log(
-    `[cron] email triage scheduled: "${opts.schedule}" (UTC), limit=${opts.limit}`,
+    `[cron] email triage scheduled: "${opts.schedule}" (${tz}), limit=${opts.limit}`,
   );
   scheduledTask = cron.schedule(opts.schedule, () => runEmailTriageOnce({ limit: opts.limit }), {
-    timezone: "UTC",
+    timezone: tz,
   });
 }
 

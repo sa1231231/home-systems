@@ -144,12 +144,14 @@ async function start() {
   startContactsSyncCron({
     enabled: config.CONTACTS_SYNC_CRON_ENABLED,
     schedule: config.CONTACTS_SYNC_CRON_SCHEDULE,
+    timezone: config.CRON_TZ,
   });
 
   startEmailTriageCron({
     enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
     schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
     limit: config.EMAIL_TRIAGE_CRON_LIMIT,
+    timezone: config.CRON_TZ,
   });
 
   startTransactionTriageCron({
@@ -163,12 +165,13 @@ async function start() {
           categoriesTab: config.CATEGORIES_TAB,
         }
       : undefined,
+    timezone: config.CRON_TZ,
   });
 
   startTrelloReorderCron({
     enabled: config.TRELLO_REORDER_CRON_ENABLED,
     schedule: config.TRELLO_REORDER_CRON_SCHEDULE,
-    timezone: config.TRELLO_TZ,
+    timezone: config.CRON_TZ,
   });
 
   if (config.BACKUP_CRON_ENABLED) {
