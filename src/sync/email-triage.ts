@@ -15,11 +15,11 @@ export const TRIAGE_CLASSIFIER = "email.triage";
 
 const SYSTEM_PROMPT = `You triage emails for a personal inbox. Classify each email as exactly one of three categories:
 
-- "noise" — newsletters, marketing, automated notifications, receipts, social, anything the user does not need to read or act on. These get archived.
-- "worth_reading" — informational but useful: substantive updates, threads worth glancing at, FYI items. These stay in the inbox unchanged.
-- "needs_reply" — requires a human response, action item, scheduling, or a personal message from someone the user knows. These get starred so they stand out in the inbox.
+- "noise" — newsletters, marketing, automated notifications, receipts, social, anything the user does not need to read or act on. These are labeled "triage/noise".
+- "worth_reading" — informational but useful: substantive updates, threads worth glancing at, FYI items. These are labeled "triage/worth-reading".
+- "needs_reply" — requires a human response, action item, scheduling, or a personal message from someone the user knows. These are labeled "triage/needs-reply".
 
-Always provide concise reasoning under 200 characters explaining why this email fits the chosen category.`;
+Nothing is archived, starred, or deleted — only labels are added. Always provide concise reasoning under 200 characters explaining why this email fits the chosen category.`;
 
 export const TriageCategory = z.enum(["noise", "worth_reading", "needs_reply"]);
 export type TriageCategoryT = z.infer<typeof TriageCategory>;
@@ -51,11 +51,19 @@ export function registerEmailApplier(client: OAuth2ClientType): void {
 export function mapCategoryToAction(proposal: TriageProposal): EmailAction {
   switch (proposal.category) {
     case "noise":
-      return { add_labels: [], remove_labels: ["INBOX"], reasoning: proposal.reasoning };
+      return { add_labels: ["triage/noise"], remove_labels: [], reasoning: proposal.reasoning };
     case "worth_reading":
-      return { add_labels: [], remove_labels: [], reasoning: proposal.reasoning };
+      return {
+        add_labels: ["triage/worth-reading"],
+        remove_labels: [],
+        reasoning: proposal.reasoning,
+      };
     case "needs_reply":
-      return { add_labels: ["STARRED"], remove_labels: [], reasoning: proposal.reasoning };
+      return {
+        add_labels: ["triage/needs-reply"],
+        remove_labels: [],
+        reasoning: proposal.reasoning,
+      };
   }
 }
 

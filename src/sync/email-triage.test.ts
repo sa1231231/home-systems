@@ -96,22 +96,30 @@ describe("ProposedActionSchema", () => {
 });
 
 describe("mapCategoryToAction", () => {
-  it("noise -> archive (remove INBOX, no adds)", () => {
+  it("noise -> label triage/noise (no archive)", () => {
     const a = mapCategoryToAction({ category: "noise", reasoning: "newsletter" });
-    expect(a.remove_labels).toEqual(["INBOX"]);
-    expect(a.add_labels).toEqual([]);
+    expect(a.add_labels).toEqual(["triage/noise"]);
+    expect(a.remove_labels).toEqual([]);
     expect(a.reasoning).toBe("newsletter");
   });
 
-  it("worth_reading -> no-op (no label changes)", () => {
+  it("worth_reading -> label triage/worth-reading", () => {
     const a = mapCategoryToAction({ category: "worth_reading", reasoning: "fyi" });
+    expect(a.add_labels).toEqual(["triage/worth-reading"]);
     expect(a.remove_labels).toEqual([]);
-    expect(a.add_labels).toEqual([]);
   });
 
-  it("needs_reply -> star (add STARRED, leave inbox)", () => {
+  it("needs_reply -> label triage/needs-reply (no star)", () => {
     const a = mapCategoryToAction({ category: "needs_reply", reasoning: "needs reply" });
-    expect(a.add_labels).toEqual(["STARRED"]);
+    expect(a.add_labels).toEqual(["triage/needs-reply"]);
     expect(a.remove_labels).toEqual([]);
+  });
+
+  it("never removes the INBOX label or sets STARRED", () => {
+    for (const category of ["noise", "worth_reading", "needs_reply"] as const) {
+      const a = mapCategoryToAction({ category, reasoning: "x" });
+      expect(a.remove_labels).not.toContain("INBOX");
+      expect(a.add_labels).not.toContain("STARRED");
+    }
   });
 });

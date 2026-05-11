@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import { RuleNotFoundError, toggleRuleEnabled } from "../rules/service.js";
+import { deleteRule, RuleNotFoundError } from "../rules/service.js";
 
 const IdParam = z.coerce.number().int().positive();
 
 export function makeRulesUiRouter(): Router {
   const router = Router();
 
-  router.post("/:id/toggle", async (req, res) => {
+  router.post("/:id/delete", async (req, res) => {
     let id: number;
     try {
       id = IdParam.parse(req.params.id);
@@ -16,12 +16,15 @@ export function makeRulesUiRouter(): Router {
       return;
     }
     try {
-      const rule = await toggleRuleEnabled(id);
-      res.render("partials/_rule-row", { rule });
+      await deleteRule(id);
+      // HTMX swap will replace the <tr> with this empty response → row disappears.
+      res.status(200).send("");
     } catch (err) {
       const status = err instanceof RuleNotFoundError ? 404 : 500;
       const message = err instanceof Error ? err.message : String(err);
-      res.status(status).send(`<tr><td colspan="6" style="color: var(--danger);">${message}</td></tr>`);
+      res
+        .status(status)
+        .send(`<tr><td colspan="7" style="color: var(--danger);">${message}</td></tr>`);
     }
   });
 

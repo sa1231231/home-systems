@@ -42,3 +42,12 @@ export async function toggleRuleEnabled(
   const current = await getRule(id, database);
   return setRuleEnabled(id, !current.enabled, database);
 }
+
+export async function deleteRule(
+  id: number,
+  database: typeof defaultDb = defaultDb,
+): Promise<RuleRow> {
+  const [row] = await database.delete(rules).where(eq(rules.id, id)).returning();
+  if (!row) throw new RuleNotFoundError(id);
+  return row;
+}

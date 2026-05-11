@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "../db/client.js";
 import { rules } from "../db/schema.js";
 import { InvalidConditionError, validateCondition, type Cond } from "../rules/dsl.js";
-import { RuleNotFoundError, setRuleEnabled } from "../rules/service.js";
+import { deleteRule, RuleNotFoundError, setRuleEnabled } from "../rules/service.js";
 
 const ListQuery = z.object({
   domain: z.string().min(1).max(100).optional(),
@@ -139,6 +139,16 @@ export function makeRulesRouter(): Router {
       const id = IdParam.parse(req.params.id);
       const row = await setRuleEnabled(id, true);
       res.json({ ok: true, entry: rowToJson(row) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.delete("/:id", async (req, res) => {
+    try {
+      const id = IdParam.parse(req.params.id);
+      const row = await deleteRule(id);
+      res.json({ ok: true, deleted: rowToJson(row) });
     } catch (err) {
       handleError(err, res);
     }

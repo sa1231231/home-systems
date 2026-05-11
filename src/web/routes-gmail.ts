@@ -13,7 +13,7 @@ export function makeGmailUiRouter(): Router {
       db
         .select()
         .from(rules)
-        .where(eq(rules.domain, DOMAIN))
+        .where(and(eq(rules.domain, DOMAIN), eq(rules.enabled, true)))
         .orderBy(asc(rules.priority), desc(rules.id))
         .limit(200),
       db
