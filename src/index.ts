@@ -83,6 +83,7 @@ app.use(
     secret: config.SESSION_SECRET ?? "",
     secure: config.NODE_ENV === "production",
     transactionsSheetId: config.TRANSACTIONS_SHEET_ID,
+    transactionsTab: config.TRANSACTIONS_TAB,
     categoriesTab: config.CATEGORIES_TAB,
   }),
 );

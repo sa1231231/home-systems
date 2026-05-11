@@ -1,14 +1,22 @@
 import { Router } from "express";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db/client.js";
 import { needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
+import { triageTransactions } from "../sync/transaction-triage.js";
+import { newSessionId } from "../changelog/index.js";
 
 const DOMAIN = "transaction";
 
+const TriageBody = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+});
+
 export type TransactionsRouterOptions = {
   sheetId?: string;
+  transactionsTab: string;
   categoriesTab: string;
 };
 
@@ -52,6 +60,46 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       flash: null,
       warning,
     });
+  });
+
+  // Manual trigger. Returns an HTMX banner with the run summary and signals
+  // a full-page refresh so newly queued pending rows show up.
+  router.post("/triage", async (req, res) => {
+    if (!opts.sheetId) {
+      res
+        .status(503)
+        .send(`<div class="flash err">TRANSACTIONS_SHEET_ID is not configured.</div>`);
+      return;
+    }
+    if (!hasGoogleCreds()) {
+      res.status(503).send(`<div class="flash err">Google credentials not configured.</div>`);
+      return;
+    }
+    try {
+      const { limit } = TriageBody.parse(req.body ?? {});
+      const sessionId = req.sessionId ?? newSessionId();
+      const summary = await triageTransactions(getOAuthClient(), {
+        limit,
+        sessionId,
+        caller: "ui:transactions.triage",
+        target: {
+          sheetId: opts.sheetId,
+          transactionsTab: opts.transactionsTab,
+          categoriesTab: opts.categoriesTab,
+        },
+      });
+      res.setHeader("HX-Refresh", "true");
+      res.send(
+        `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res
+        .status(500)
+        .send(
+          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;")}</div>`,
+        );
+    }
   });
 
   return router;

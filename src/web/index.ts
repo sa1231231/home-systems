@@ -15,6 +15,7 @@ export type WebRouterOptions = {
   secret: string;
   secure: boolean;
   transactionsSheetId?: string;
+  transactionsTab: string;
   categoriesTab: string;
 };
 
@@ -45,6 +46,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
     gate,
     makeTransactionsUiRouter({
       sheetId: opts.transactionsSheetId,
+      transactionsTab: opts.transactionsTab,
       categoriesTab: opts.categoriesTab,
     }),
   );
