@@ -93,9 +93,10 @@ export function makeTrelloClient(auth: TrelloAuth): TrelloClient {
       trelloFetch<TrelloList[]>(auth, "GET", `/boards/${boardId}/lists`, { filter: "open" }),
     getLabels: (boardId) => trelloFetch<TrelloLabel[]>(auth, "GET", `/boards/${boardId}/labels`),
     listCards: (listId) =>
-      trelloFetch<TrelloCard[]>(auth, "GET", `/lists/${listId}/cards`, {
-        fields: "name,desc,idList,idBoard,pos,due,dueComplete,closed,idLabels,shortUrl,dateLastActivity",
-      }),
+      // Default response includes the full `labels` array (with names). We
+      // don't pass `fields` because Trello strips `labels` when `fields` is
+      // narrowed; the response shape is small enough that this is fine.
+      trelloFetch<TrelloCard[]>(auth, "GET", `/lists/${listId}/cards`),
     getCard: (cardId) => trelloFetch<TrelloCard>(auth, "GET", `/cards/${cardId}`),
     moveCard: (cardId, opts) => {
       const params: Record<string, string> = {};

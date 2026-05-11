@@ -20,6 +20,14 @@ import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
 import { startBackupCron, stopBackupCron } from "./crons/backup.js";
+import {
+  startTrelloReorderCron,
+  stopTrelloReorderCron,
+} from "./crons/trello-reorder.js";
+import { hasTrelloCreds, requireTrelloAuth } from "./integrations/trello/auth.js";
+import { makeTrelloClient } from "./integrations/trello/client.js";
+import { registerTrelloReversers } from "./sync/trello-actions.js";
+import { makeTrelloRouter } from "./api/trello.js";
 import { requireAuth } from "./web/auth.js";
 import { makeWebRouter } from "./web/index.js";
 
@@ -78,6 +86,7 @@ app.use("/ai-calls", apiGate, makeAiCallsRouter());
 app.use("/rules", apiGate, makeRulesRouter());
 app.use("/needs-review", apiGate, makeNeedsReviewRouter());
 app.use("/emails", apiGate, makeEmailsRouter());
+app.use("/trello", apiGate, makeTrelloRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {
@@ -104,6 +113,13 @@ async function start() {
     console.log("contact + email reversers + email applier registered");
   }
 
+  if (hasTrelloCreds()) {
+    const trelloAuth = requireTrelloAuth();
+    const trelloClient = makeTrelloClient(trelloAuth);
+    registerTrelloReversers(trelloClient);
+    console.log("trello reversers registered");
+  }
+
   const server = app.listen(config.PORT, () => {
     console.log(`home-systems listening on :${config.PORT}`);
   });
@@ -117,6 +133,11 @@ async function start() {
     enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
     schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
     limit: config.EMAIL_TRIAGE_CRON_LIMIT,
+  });
+
+  startTrelloReorderCron({
+    enabled: config.TRELLO_REORDER_CRON_ENABLED,
+    schedule: config.TRELLO_REORDER_CRON_SCHEDULE,
   });
 
   if (config.BACKUP_CRON_ENABLED) {
@@ -149,6 +170,7 @@ async function start() {
     stopContactsSyncCron();
     stopEmailTriageCron();
     stopBackupCron();
+    stopTrelloReorderCron();
     server.close(() => {
       console.log("http server closed");
     });
