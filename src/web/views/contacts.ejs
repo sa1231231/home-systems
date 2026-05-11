@@ -71,6 +71,93 @@
   <% } %>
 </section>
 
+<% if (audit) { %>
+<section style="margin-bottom: 32px;">
+  <h3 style="margin: 0 0 6px;">
+    Sheet audit
+    <span class="muted" style="font-weight: normal; font-size: 13px;">
+      <%= audit.totalRows %> rows ·
+      <%= audit.orphans.length %> orphan dupe<%= audit.orphans.length === 1 ? '' : 's' %>,
+      <%= audit.emptyRows.length %> empty,
+      <%= audit.nameOnly.length %> name-only
+    </span>
+  </h3>
+  <p class="muted" style="margin: 0 0 8px;">
+    Orphans are rows with a name but no <code>google_resource_name</code> where another row with the same
+    name <em>does</em> have one — leftovers from earlier broken syncs that quietly poison the dedupe loop.
+    Deleting them is logged to the changelog.
+  </p>
+  <% if (audit.orphans.length === 0 && audit.emptyRows.length === 0 && audit.nameOnly.length === 0) { %>
+    <p class="muted">Sheet looks clean. Nothing to flag.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 60px;">Row</th>
+          <th>Full name</th>
+          <th style="width: 130px;">Issue</th>
+          <th>Canonical row</th>
+          <th style="width: 110px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% audit.orphans.forEach((o) => { %>
+          <tr id="audit-row-orphan-<%= o.rowIndex %>">
+            <td class="muted"><%= o.rowIndex %></td>
+            <td><%= o.fullName %></td>
+            <td><span class="pill rejected">orphan dupe</span></td>
+            <td class="muted">→ row <%= o.canonicalRowIndex %></td>
+            <td>
+              <button
+                hx-post="/ui/contacts/delete-orphan/<%= o.rowIndex %>"
+                hx-target="#audit-row-orphan-<%= o.rowIndex %>"
+                hx-swap="outerHTML"
+                hx-confirm="Delete row <%= o.rowIndex %> ('<%= o.fullName %>')? The canonical row <%= o.canonicalRowIndex %> stays."
+                style="padding: 4px 10px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 3px; cursor: pointer;"
+              >Delete</button>
+            </td>
+          </tr>
+        <% }); %>
+        <% audit.emptyRows.forEach((e) => { %>
+          <tr id="audit-row-empty-<%= e.rowIndex %>">
+            <td class="muted"><%= e.rowIndex %></td>
+            <td class="muted">(empty)</td>
+            <td><span class="pill rejected">empty row</span></td>
+            <td class="muted">—</td>
+            <td>
+              <button
+                hx-post="/ui/contacts/delete-orphan/<%= e.rowIndex %>"
+                hx-target="#audit-row-empty-<%= e.rowIndex %>"
+                hx-swap="outerHTML"
+                hx-confirm="Delete empty row <%= e.rowIndex %>?"
+                style="padding: 4px 10px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 3px; cursor: pointer;"
+              >Delete</button>
+            </td>
+          </tr>
+        <% }); %>
+        <% audit.nameOnly.forEach((n) => { %>
+          <tr id="audit-row-nameonly-<%= n.rowIndex %>">
+            <td class="muted"><%= n.rowIndex %></td>
+            <td><%= n.fullName %></td>
+            <td><span class="pill pending">name only</span></td>
+            <td class="muted">no match (might be intentional)</td>
+            <td>
+              <button
+                hx-post="/ui/contacts/delete-orphan/<%= n.rowIndex %>"
+                hx-target="#audit-row-nameonly-<%= n.rowIndex %>"
+                hx-swap="outerHTML"
+                hx-confirm="Delete row <%= n.rowIndex %> ('<%= n.fullName %>')? This row has no Google contact backing — it may be a manual entry you actually want."
+                style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; cursor: pointer;"
+              >Delete</button>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+<% } %>
+
 <section>
   <h3 style="margin: 0 0 6px;">Recent activity <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= activity.length %> in last 7 days)</span></h3>
   <p class="muted" style="margin: 0 0 8px;">Contacts-domain writes from the nightly sync cron and per-contact write endpoints.</p>

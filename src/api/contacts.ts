@@ -15,6 +15,9 @@ import {
   UnknownColumnError,
 } from "../sync/contact-writes.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
+import { findAuditIssues } from "../sync/contacts-audit.js";
+import { readContactsTab, getSheetIdByTitle, deleteDataRows } from "../integrations/google/sheets.js";
+import { withChangelog } from "../changelog/index.js";
 
 const PreviewQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -116,6 +119,77 @@ export function makeContactsRouter(): Router {
       const client = getOAuthClient();
       const result = await runDedupe(client, creds.sheetId, { dryRun: false });
       res.json({ ok: true, applied: true, summary: result.summary, ...renderDedupe(result.plan, verbose) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.get("/audit", async (_req, res) => {
+    try {
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      const records = tab.rows.map((r) => r.record);
+      const report = findAuditIssues(records);
+      res.json({ ok: true, total_rows: tab.rows.length, ...report });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  const DeleteRowBody = z.object({
+    row_index: z.coerce.number().int().min(0).max(100_000),
+    expected_full_name: z.string().max(500).optional(),
+  });
+
+  router.post("/audit/delete-row", writeLimiter, async (req, res) => {
+    try {
+      const { row_index, expected_full_name } = DeleteRowBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      if (row_index >= tab.rows.length) {
+        res.status(404).json({
+          ok: false,
+          error: `row ${row_index} not found (sheet has ${tab.rows.length} rows)`,
+        });
+        return;
+      }
+      const record = tab.rows[row_index].record;
+      if (
+        expected_full_name !== undefined &&
+        (record.full_name ?? "").trim() !== expected_full_name.trim()
+      ) {
+        res.status(409).json({
+          ok: false,
+          error: "row contents changed since you loaded the page",
+          actual_full_name: record.full_name ?? "",
+          expected_full_name,
+        });
+        return;
+      }
+      const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
+      await withChangelog(
+        {
+          caller: "api:contacts.audit.delete-row",
+          sessionId: req.sessionId,
+          operation: "contacts.audit.delete_row",
+          targetKind: "contact_row",
+          targetId: `${tab.tab}!row${row_index}`,
+          intent: `audit cleanup: drop orphan row ${row_index}`,
+          before: { row_index, tab: tab.tab, record },
+          after: { deleted: true },
+          externalTarget: `google.sheet:${creds.sheetId}!${tab.tab}!row${row_index}`,
+        },
+        async () => {
+          await deleteDataRows(client, creds.sheetId, sheetId, [row_index]);
+        },
+      );
+      res.json({
+        ok: true,
+        deleted_row_index: row_index,
+        full_name: record.full_name ?? "",
+      });
     } catch (err) {
       handleError(err, res);
     }

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
 import {
@@ -9,6 +10,9 @@ import {
 } from "../integrations/google/oauth.js";
 import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
+import { findAuditIssues, type AuditReport } from "../sync/contacts-audit.js";
+import { readContactsTab, getSheetIdByTitle, deleteDataRows } from "../integrations/google/sheets.js";
+import { withChangelog } from "../changelog/index.js";
 
 const DOMAIN = "contact";
 
@@ -41,13 +45,81 @@ export function makeContactsUiRouter(): Router {
         .orderBy(desc(changelog.id))
         .limit(200),
     ]);
+    let audit: (AuditReport & { totalRows: number }) | null = null;
+    if (hasGoogleCreds()) {
+      try {
+        const creds = requireGoogleCreds();
+        const tab = await readContactsTab(getOAuthClient(), creds.sheetId);
+        const report = findAuditIssues(tab.rows.map((r) => r.record));
+        audit = { ...report, totalRows: tab.rows.length };
+      } catch {
+        audit = null;
+      }
+    }
     res.render("contacts", {
       rules: rulesRows,
       pending: pendingRows,
       activity: activityRows,
       flash: null,
       cron: cronInfoForDomain("contact"),
+      audit,
     });
+  });
+
+  const DeleteOrphanParams = z.coerce.number().int().min(0).max(100_000);
+
+  router.post("/delete-orphan/:rowIndex", async (req, res) => {
+    if (!hasGoogleCreds()) {
+      res.status(503).send(`<tr><td colspan="5" class="muted">Google credentials not configured.</td></tr>`);
+      return;
+    }
+    let rowIndex: number;
+    try {
+      rowIndex = DeleteOrphanParams.parse(req.params.rowIndex);
+    } catch {
+      res.status(400).send("invalid row");
+      return;
+    }
+    try {
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      if (rowIndex >= tab.rows.length) {
+        res
+          .status(404)
+          .send(
+            `<tr><td colspan="5" class="muted">Row ${rowIndex} no longer exists (sheet shifted? reload the page).</td></tr>`,
+          );
+        return;
+      }
+      const record = tab.rows[rowIndex].record;
+      const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
+      await withChangelog(
+        {
+          caller: "ui:contacts.audit.delete-orphan",
+          sessionId: req.sessionId,
+          operation: "contacts.audit.delete_row",
+          targetKind: "contact_row",
+          targetId: `${tab.tab}!row${rowIndex}`,
+          intent: "ui audit cleanup",
+          before: { row_index: rowIndex, tab: tab.tab, record },
+          after: { deleted: true },
+          externalTarget: `google.sheet:${creds.sheetId}!${tab.tab}!row${rowIndex}`,
+        },
+        async () => {
+          await deleteDataRows(client, creds.sheetId, sheetId, [rowIndex]);
+        },
+      );
+      // Empty body → HTMX outerHTML swap removes the row.
+      res.status(200).send("");
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res
+        .status(500)
+        .send(`<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">${msg}</td></tr>`);
+    }
   });
 
   router.post("/sync", async (_req, res) => {
