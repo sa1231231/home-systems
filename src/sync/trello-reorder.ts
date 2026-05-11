@@ -11,7 +11,12 @@ export type CardForOrdering = {
   pos: number;
   /** ISO-8601 timestamp string or null. */
   due: string | null;
-  labels: { name: string }[];
+  /** Custom-field checkbox flags, derived from Trello customFieldItems. */
+  flags: {
+    daily: boolean;
+    weekdays: boolean;
+    weekends: boolean;
+  };
 };
 
 export type ReorderContext = {
@@ -19,9 +24,6 @@ export type ReorderContext = {
   today: string;
   /** IANA TZ identifier, e.g. "America/New_York". */
   tz: string;
-  dailyLabel: string;
-  weekdaysLabel: string;
-  weekendsLabel: string;
 };
 
 export type Bucket = 1 | 2 | 3 | 4 | 5;
@@ -47,27 +49,22 @@ export function toLocalDate(when: string | Date, tz: string): string {
   }).format(d);
 }
 
-export function hasLabel(card: CardForOrdering, name: string): boolean {
-  if (!name) return false;
-  return card.labels.some((l) => l.name === name);
-}
-
 /**
  * Bucket assignment:
  *   1 = has a due date (sorted by due ascending within bucket)
- *   2 = has the `daily` label (Trello Butler-generated recurrences)
- *   3 = has the `weekdays` label
- *   4 = has the `weekends` label
+ *   2 = Daily checkbox is checked
+ *   3 = Weekdays checkbox is checked
+ *   4 = Weekends checkbox is checked
  *   5 = anything else (preserve existing relative order)
  *
  * Earlier buckets win when a card matches multiple criteria, e.g. a card
- * with both a `due` and the `daily` label lands in bucket 1.
+ * with both a `due` and the Daily checkbox lands in bucket 1.
  */
-export function bucketize(card: CardForOrdering, ctx: ReorderContext): Bucket {
+export function bucketize(card: CardForOrdering, _ctx: ReorderContext): Bucket {
   if (card.due) return 1;
-  if (hasLabel(card, ctx.dailyLabel)) return 2;
-  if (hasLabel(card, ctx.weekdaysLabel)) return 3;
-  if (hasLabel(card, ctx.weekendsLabel)) return 4;
+  if (card.flags.daily) return 2;
+  if (card.flags.weekdays) return 3;
+  if (card.flags.weekends) return 4;
   return 5;
 }
 

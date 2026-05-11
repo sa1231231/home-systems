@@ -11,11 +11,16 @@ import {
   requireTrelloCreds,
 } from "../integrations/trello/auth.js";
 import { makeTrelloClient, type TrelloCard } from "../integrations/trello/client.js";
-import { runTrelloReorderOnce, type TrelloReorderResult } from "../sync/trello-runner.js";
+import {
+  isCustomFieldChecked,
+  runTrelloReorderOnce,
+  toCardForOrdering,
+  type FieldIds,
+  type TrelloReorderResult,
+} from "../sync/trello-runner.js";
 import {
   bucketize,
   toLocalDate,
-  type CardForOrdering,
   type ReorderContext,
 } from "../sync/trello-reorder.js";
 
@@ -33,6 +38,7 @@ export type CardView = {
   pos: number;
   dueLocal: string | null;
   labels: { name: string }[];
+  flags: { daily: boolean; weekdays: boolean; weekends: boolean };
   bucket: 1 | 2 | 3 | 4 | 5;
 };
 
@@ -93,14 +99,20 @@ async function render(
   const ctx: ReorderContext = {
     today: args.result.today,
     tz: creds.tz,
-    dailyLabel: creds.dailyLabel,
-    weekdaysLabel: creds.weekdaysLabel,
-    weekendsLabel: creds.weekendsLabel,
+  };
+  const fields: FieldIds = {
+    daily: creds.dailyFieldId,
+    weekdays: creds.weekdaysFieldId,
+    weekends: creds.weekendsFieldId,
   };
 
   const incomingIds = new Set(args.result.ops.filter((o) => o.kind === "move").map((o) => o.cardId));
-  const incomingView = waiting.filter((c) => incomingIds.has(c.id)).map((c) => toCardView(c, ctx));
-  const todayView = todayCards.map((c) => toCardView(c, ctx)).sort((a, b) => a.pos - b.pos);
+  const incomingView = waiting
+    .filter((c) => incomingIds.has(c.id))
+    .map((c) => toCardView(c, ctx, fields));
+  const todayView = todayCards
+    .map((c) => toCardView(c, ctx, fields))
+    .sort((a, b) => a.pos - b.pos);
 
   const since = windowStartFor24h();
   const activity = await db
@@ -145,20 +157,15 @@ function renderError(res: Response, err: unknown): void {
   });
 }
 
-function toCardView(raw: TrelloCard, ctx: ReorderContext): CardView {
-  const ord: CardForOrdering = {
-    id: raw.id,
-    idList: raw.idList,
-    pos: raw.pos,
-    due: raw.due,
-    labels: (raw.labels ?? []).map((l) => ({ name: l.name })),
-  };
+function toCardView(raw: TrelloCard, ctx: ReorderContext, fields: FieldIds): CardView {
+  const ord = toCardForOrdering(raw, fields);
   return {
     id: raw.id,
     name: raw.name,
     pos: raw.pos,
     dueLocal: raw.due ? toLocalDate(raw.due, ctx.tz) : null,
-    labels: ord.labels,
+    labels: (raw.labels ?? []).filter((l) => l.name).map((l) => ({ name: l.name })),
+    flags: ord.flags,
     bucket: bucketize(ord, ctx),
   };
 }

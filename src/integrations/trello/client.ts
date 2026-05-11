@@ -22,6 +22,19 @@ export type TrelloBoard = {
   closed: boolean;
 };
 
+export type TrelloCustomFieldItem = {
+  id: string;
+  idCustomField: string;
+  idModel?: string;
+  modelType?: string;
+  value?: {
+    checked?: "true" | "false";
+    text?: string;
+    number?: string;
+    date?: string;
+  } | null;
+};
+
 export type TrelloCard = {
   id: string;
   name: string;
@@ -34,6 +47,7 @@ export type TrelloCard = {
   closed: boolean;
   labels: TrelloLabel[];
   idLabels: string[];
+  customFieldItems?: TrelloCustomFieldItem[];
   shortUrl?: string;
   dateLastActivity?: string;
 };
@@ -93,10 +107,12 @@ export function makeTrelloClient(auth: TrelloAuth): TrelloClient {
       trelloFetch<TrelloList[]>(auth, "GET", `/boards/${boardId}/lists`, { filter: "open" }),
     getLabels: (boardId) => trelloFetch<TrelloLabel[]>(auth, "GET", `/boards/${boardId}/labels`),
     listCards: (listId) =>
-      // Default response includes the full `labels` array (with names). We
-      // don't pass `fields` because Trello strips `labels` when `fields` is
-      // narrowed; the response shape is small enough that this is fine.
-      trelloFetch<TrelloCard[]>(auth, "GET", `/lists/${listId}/cards`),
+      // Default fields response includes labels. customFieldItems=true inflates
+      // the custom-field values per card so we can read checkbox state without
+      // a second round-trip per card.
+      trelloFetch<TrelloCard[]>(auth, "GET", `/lists/${listId}/cards`, {
+        customFieldItems: "true",
+      }),
     getCard: (cardId) => trelloFetch<TrelloCard>(auth, "GET", `/cards/${cardId}`),
     moveCard: (cardId, opts) => {
       const params: Record<string, string> = {};

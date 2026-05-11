@@ -55,9 +55,12 @@ async function main() {
       "  TRELLO_BOARD_ID=...\n" +
       "  TRELLO_WAITING_LIST_ID=...\n" +
       "  TRELLO_TODAY_LIST_ID=...\n" +
-      "  TRELLO_DAILY_LABEL=daily       # (or whichever label name you use)\n" +
-      "  TRELLO_WEEKDAYS_LABEL=weekdays\n" +
-      "  TRELLO_WEEKENDS_LABEL=weekends",
+      "If your recurrence markers are Trello Custom Fields (checkbox type) called\n" +
+      "Daily / Weekdays / Weekends, hit `GET /trello/discover` (already deployed)\n" +
+      "to find their IDs and set:\n" +
+      "  TRELLO_DAILY_FIELD_ID=...\n" +
+      "  TRELLO_WEEKDAYS_FIELD_ID=...\n" +
+      "  TRELLO_WEEKENDS_FIELD_ID=...",
   );
 }
 

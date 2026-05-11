@@ -27,13 +27,31 @@ export type RunOptions = {
   now?: Date;
 };
 
-export function toCardForOrdering(c: TrelloCard): CardForOrdering {
+export type FieldIds = {
+  daily?: string;
+  weekdays?: string;
+  weekends?: string;
+};
+
+/** True iff the card has a customFieldItem for `fieldId` whose value.checked === "true". */
+export function isCustomFieldChecked(card: TrelloCard, fieldId: string | undefined): boolean {
+  if (!fieldId) return false;
+  const items = card.customFieldItems ?? [];
+  const hit = items.find((i) => i.idCustomField === fieldId);
+  return hit?.value?.checked === "true";
+}
+
+export function toCardForOrdering(c: TrelloCard, fields: FieldIds): CardForOrdering {
   return {
     id: c.id,
     idList: c.idList,
     pos: c.pos,
     due: c.due,
-    labels: (c.labels ?? []).map((l) => ({ name: l.name })),
+    flags: {
+      daily: isCustomFieldChecked(c, fields.daily),
+      weekdays: isCustomFieldChecked(c, fields.weekdays),
+      weekends: isCustomFieldChecked(c, fields.weekends),
+    },
   };
 }
 
@@ -46,9 +64,11 @@ export async function runTrelloReorderOnce(
   const ctx: ReorderContext = {
     today: toLocalDate(now, creds.tz),
     tz: creds.tz,
-    dailyLabel: creds.dailyLabel,
-    weekdaysLabel: creds.weekdaysLabel,
-    weekendsLabel: creds.weekendsLabel,
+  };
+  const fields: FieldIds = {
+    daily: creds.dailyFieldId,
+    weekdays: creds.weekdaysFieldId,
+    weekends: creds.weekendsFieldId,
   };
 
   const [waitingRaw, todayRaw] = await Promise.all([
@@ -56,8 +76,8 @@ export async function runTrelloReorderOnce(
     client.listCards(creds.todayListId),
   ]);
 
-  const waiting = waitingRaw.map(toCardForOrdering);
-  const todayCards = todayRaw.map(toCardForOrdering);
+  const waiting = waitingRaw.map((c) => toCardForOrdering(c, fields));
+  const todayCards = todayRaw.map((c) => toCardForOrdering(c, fields));
   const incoming = findDueToday(waiting, ctx);
   const ops = planReorder(todayCards, incoming, ctx, creds.todayListId);
   const unchanged = todayCards.length + incoming.length - ops.length;

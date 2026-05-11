@@ -40,7 +40,7 @@
             <th>Card</th>
             <th style="width: 110px;">Bucket</th>
             <th style="width: 110px;">Due</th>
-            <th>Labels</th>
+            <th style="width: 160px;">Recurrence</th>
           </tr>
         </thead>
         <tbody>
@@ -49,7 +49,14 @@
               <td><%= card.name %></td>
               <td><span class="pill pending"><%= bucketNames[card.bucket] %></span></td>
               <td class="muted"><%= card.dueLocal || "—" %></td>
-              <td class="muted" style="font-size: 12px;"><%= card.labels.map(l => l.name).filter(Boolean).join(", ") || "—" %></td>
+              <td class="muted" style="font-size: 12px;">
+                <%
+                  const flags = [];
+                  if (card.flags.daily) flags.push("daily");
+                  if (card.flags.weekdays) flags.push("weekdays");
+                  if (card.flags.weekends) flags.push("weekends");
+                %><%= flags.join(", ") || "—" %>
+              </td>
             </tr>
           <% }); %>
         </tbody>
@@ -70,7 +77,7 @@
             <th>Card</th>
             <th style="width: 110px;">Bucket</th>
             <th style="width: 110px;">Due</th>
-            <th>Labels</th>
+            <th style="width: 160px;">Recurrence</th>
           </tr>
         </thead>
         <tbody>
@@ -80,7 +87,14 @@
               <td><%= card.name %></td>
               <td><span class="pill <%= card.bucket === 1 ? 'rejected' : card.bucket === 2 ? 'pending' : 'success' %>"><%= bucketNames[card.bucket] %></span></td>
               <td class="muted"><%= card.dueLocal || "—" %></td>
-              <td class="muted" style="font-size: 12px;"><%= card.labels.map(l => l.name).filter(Boolean).join(", ") || "—" %></td>
+              <td class="muted" style="font-size: 12px;">
+                <%
+                  const tflags = [];
+                  if (card.flags.daily) tflags.push("daily");
+                  if (card.flags.weekdays) tflags.push("weekdays");
+                  if (card.flags.weekends) tflags.push("weekends");
+                %><%= tflags.join(", ") || "—" %>
+              </td>
             </tr>
           <% }); %>
         </tbody>

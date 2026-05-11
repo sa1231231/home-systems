@@ -2,6 +2,12 @@ import { Router } from "express";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
+import {
+  hasGoogleCreds,
+  getOAuthClient,
+  requireGoogleCreds,
+} from "../integrations/google/oauth.js";
+import { runSync } from "../sync/contacts.js";
 
 const DOMAIN = "contact";
 
@@ -40,6 +46,28 @@ export function makeContactsUiRouter(): Router {
       activity: activityRows,
       flash: null,
     });
+  });
+
+  router.post("/sync", async (_req, res) => {
+    if (!hasGoogleCreds()) {
+      res.status(503).send(`<div class="flash err">Google credentials not configured.</div>`);
+      return;
+    }
+    try {
+      const creds = requireGoogleCreds();
+      const { summary } = await runSync(getOAuthClient(), creds.sheetId, { dryRun: false });
+      res.setHeader("HX-Refresh", "true");
+      res.send(
+        `<div class="flash ok">Sync done: inserted=${summary.inserted} refreshed=${summary.refreshed} unchanged=${summary.unchanged} ambiguous=${summary.ambiguous}</div>`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res
+        .status(500)
+        .send(
+          `<div class="flash err">Sync failed: ${message.replace(/</g, "&lt;")}</div>`,
+        );
+    }
   });
 
   return router;

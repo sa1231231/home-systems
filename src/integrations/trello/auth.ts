@@ -6,9 +6,12 @@ export type TrelloCreds = {
   boardId: string;
   waitingListId: string;
   todayListId: string;
-  dailyLabel: string;
-  weekdaysLabel: string;
-  weekendsLabel: string;
+  /** Custom-field IDs for the three "recurring" checkbox fields. Optional —
+   *  bucketize falls through to bucket 5 (other) for cards without any of
+   *  these fields set. */
+  dailyFieldId?: string;
+  weekdaysFieldId?: string;
+  weekendsFieldId?: string;
   tz: string;
 };
 
@@ -46,9 +49,9 @@ export function requireTrelloCreds(): TrelloCreds {
     boardId: c.TRELLO_BOARD_ID!,
     waitingListId: c.TRELLO_WAITING_LIST_ID!,
     todayListId: c.TRELLO_TODAY_LIST_ID!,
-    dailyLabel: c.TRELLO_DAILY_LABEL,
-    weekdaysLabel: c.TRELLO_WEEKDAYS_LABEL,
-    weekendsLabel: c.TRELLO_WEEKENDS_LABEL,
+    dailyFieldId: c.TRELLO_DAILY_FIELD_ID,
+    weekdaysFieldId: c.TRELLO_WEEKDAYS_FIELD_ID,
+    weekendsFieldId: c.TRELLO_WEEKENDS_FIELD_ID,
     tz: c.TRELLO_TZ,
   };
 }

@@ -1,6 +1,24 @@
 <%- include("partials/_header", { title: "Gmail triage — home-systems", tab: "gmail", flash: locals.flash }) %>
 
-<h2 style="margin-top: 0;">Gmail triage</h2>
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+  <h2 style="margin: 0;">Gmail triage</h2>
+  <div class="spacer" style="flex: 1;"></div>
+  <form
+    hx-post="/ui/gmail/triage"
+    hx-target="#triage-result"
+    hx-swap="innerHTML"
+    hx-disabled-elt="find button"
+    hx-indicator="#triage-indicator"
+  >
+    <input type="hidden" name="limit" value="10" />
+    <button type="submit" style="padding: 6px 14px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
+      Run triage now (10)
+    </button>
+    <span id="triage-indicator" class="htmx-indicator muted" style="margin-left: 8px; font-size: 12px;">working…</span>
+  </form>
+</div>
+<style>.htmx-indicator{opacity:0;transition:opacity .2s}.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{opacity:1}</style>
+<div id="triage-result"></div>
 
 <section style="margin-bottom: 32px;">
   <h3 style="margin: 0 0 6px;">Rules <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= rules.length %>)</span></h3>
