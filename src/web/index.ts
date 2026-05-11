@@ -1,6 +1,7 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { requireAuth } from "./auth.js";
 import { makeAuthRouter } from "./routes-auth.js";
+import { makeChangesUiRouter } from "./routes-changes.js";
 
 export type WebRouterOptions = {
   authEnabled: boolean;
@@ -8,6 +9,8 @@ export type WebRouterOptions = {
   secret: string;
   secure: boolean;
 };
+
+const passthrough: express.RequestHandler = (_req, _res, next) => next();
 
 export function makeWebRouter(opts: WebRouterOptions): Router {
   const router = Router();
@@ -19,13 +22,15 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
   );
 
   // Everything else under /ui requires a valid session cookie.
-  const gate = opts.authEnabled
+  const gate: express.RequestHandler = opts.authEnabled
     ? requireAuth({ secret: opts.secret, defaultMode: "html" })
-    : (_req: unknown, _res: unknown, next: () => void) => next();
+    : passthrough;
 
-  router.get("/", gate as never, (_req, res) => {
+  router.get("/", gate, (_req, res) => {
     res.redirect(302, "/ui/changes");
   });
+
+  router.use("/changes", gate, makeChangesUiRouter());
 
   return router;
 }

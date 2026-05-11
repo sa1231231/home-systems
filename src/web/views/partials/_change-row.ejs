@@ -1,0 +1,28 @@
+<tr id="change-row-<%= row.id %>">
+  <td class="muted" style="white-space: nowrap;"><%= new Date(row.createdAt).toISOString().replace("T", " ").slice(0, 19) %>Z</td>
+  <td><code><%= row.operation %></code></td>
+  <td>
+    <span class="muted"><%= row.targetKind %>:</span>
+    <code><%= row.targetId %></code>
+  </td>
+  <td>
+    <span class="pill <%= row.status %>"><%= row.status %></span>
+    <% if (row.undoneBy) { %>
+      <span class="muted">↩ undone by #<%= row.undoneBy %></span>
+    <% } %>
+  </td>
+  <td class="muted" style="font-size: 12px;"><%= row.caller %></td>
+  <td>
+    <% if (row.status === "success" && row.undoneBy === null && row.operation.indexOf(".undo") === -1) { %>
+      <button
+        hx-post="/ui/changes/<%= row.id %>/undo"
+        hx-target="#change-row-<%= row.id %>"
+        hx-swap="outerHTML"
+        hx-confirm="Undo this change?"
+        style="padding: 4px 10px;"
+      >Undo</button>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;">—</span>
+    <% } %>
+  </td>
+</tr>

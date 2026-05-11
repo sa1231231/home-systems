@@ -1,0 +1,21 @@
+<tr id="change-row-<%= row.id %>" style="background: #fcf0f0;">
+  <td class="muted" style="white-space: nowrap;"><%= new Date(row.createdAt).toISOString().replace("T", " ").slice(0, 19) %>Z</td>
+  <td><code><%= row.operation %></code></td>
+  <td>
+    <span class="muted"><%= row.targetKind %>:</span>
+    <code><%= row.targetId %></code>
+  </td>
+  <td>
+    <span class="pill <%= row.status %>"><%= row.status %></span>
+  </td>
+  <td class="muted" style="font-size: 12px;"><%= row.caller %></td>
+  <td>
+    <div style="color: var(--danger); font-size: 12px;">Undo failed: <%= error %></div>
+    <button
+      hx-post="/ui/changes/<%= row.id %>/undo"
+      hx-target="#change-row-<%= row.id %>"
+      hx-swap="outerHTML"
+      style="padding: 4px 10px; margin-top: 4px;"
+    >Retry</button>
+  </td>
+</tr>

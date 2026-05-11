@@ -1,0 +1,28 @@
+<%- include("partials/_header", { title: "Recent changes — home-systems", tab: "changes", flash: locals.flash }) %>
+<div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px;">
+  <h2 style="margin: 0;">Recent changes</h2>
+  <span class="muted">since <%= since %> · <%= rows.length %> entr<%= rows.length === 1 ? "y" : "ies" %></span>
+</div>
+
+<% if (rows.length === 0) { %>
+  <p class="muted">No changes in the last 24 hours.</p>
+<% } else { %>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 160px;">When (UTC)</th>
+        <th>Operation</th>
+        <th>Target</th>
+        <th style="width: 120px;">Status</th>
+        <th>Caller</th>
+        <th style="width: 90px;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% rows.forEach((row) => { %>
+        <%- include("partials/_change-row", { row }) %>
+      <% }); %>
+    </tbody>
+  </table>
+<% } %>
+<%- include("partials/_footer") %>
