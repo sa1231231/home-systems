@@ -6,6 +6,7 @@ import { makeContactsUiRouter } from "./routes-contacts.js";
 import { makeGmailUiRouter } from "./routes-gmail.js";
 import { makeReviewUiRouter } from "./routes-review.js";
 import { makeRulesUiRouter } from "./routes-rules.js";
+import { makeTrelloUiRouter } from "./routes-trello.js";
 
 export type WebRouterOptions = {
   authEnabled: boolean;
@@ -37,6 +38,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
   router.use("/changes", gate, makeChangesUiRouter());
   router.use("/gmail", gate, makeGmailUiRouter());
   router.use("/contacts", gate, makeContactsUiRouter());
+  router.use("/trello", gate, makeTrelloUiRouter());
   router.use("/needs-review", gate, makeReviewUiRouter());
   router.use("/rules", gate, makeRulesUiRouter());
 
