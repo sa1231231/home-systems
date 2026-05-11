@@ -1,0 +1,68 @@
+<%- include("partials/_header", { title: "Transactions — home-systems", tab: "transactions", flash: locals.flash }) %>
+
+<h2 style="margin-top: 0;">Transaction categorization</h2>
+
+<% if (locals.warning) { %>
+  <div class="flash err" style="margin-bottom: 16px;"><%= warning %></div>
+<% } %>
+
+<section style="margin-bottom: 32px;">
+  <h3 style="margin: 0 0 6px;">Rules <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= rules.length %>)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">Deterministic matches run first; transactions matching a rule never call the AI.</p>
+  <% if (rules.length === 0) { %>
+    <p class="muted">No rules yet. Approve a review below to create the first one.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th style="width: 80px;">Priority</th>
+          <th>Match</th>
+          <th>Action</th>
+          <th style="width: 140px;">Source</th>
+          <th style="width: 100px;">Created</th>
+          <th style="width: 90px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rules.forEach((rule) => { %>
+          <%- include("partials/_rule-row", { rule }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<section>
+  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">
+    AI category proposals waiting for your decision. Approving writes the category back to the sheet
+    and promotes a rule so future identical transactions skip the AI.
+    <% if (categories.length > 0) { %>
+      <span style="margin-left: 8px;">Canonical categories: <%= categories.length %>.</span>
+    <% } %>
+  </p>
+  <% if (pending.length === 0) { %>
+    <p class="muted">No transactions currently waiting for review.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 100px;">Date</th>
+          <th>Transaction</th>
+          <th style="width: 110px;">Amount</th>
+          <th style="width: 220px;">AI proposal</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 320px;">Decide</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% pending.forEach((entry) => { %>
+          <%- include("partials/_transaction-review-row", { entry, applyOutcome: null, categories }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<%- include("partials/_footer") %>

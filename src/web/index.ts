@@ -6,6 +6,7 @@ import { makeContactsUiRouter } from "./routes-contacts.js";
 import { makeGmailUiRouter } from "./routes-gmail.js";
 import { makeReviewUiRouter } from "./routes-review.js";
 import { makeRulesUiRouter } from "./routes-rules.js";
+import { makeTransactionsUiRouter } from "./routes-transactions.js";
 import { makeTrelloUiRouter } from "./routes-trello.js";
 
 export type WebRouterOptions = {
@@ -13,6 +14,8 @@ export type WebRouterOptions = {
   password: string;
   secret: string;
   secure: boolean;
+  transactionsSheetId?: string;
+  categoriesTab: string;
 };
 
 const passthrough: express.RequestHandler = (_req, _res, next) => next();
@@ -37,6 +40,14 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
 
   router.use("/changes", gate, makeChangesUiRouter());
   router.use("/gmail", gate, makeGmailUiRouter());
+  router.use(
+    "/transactions",
+    gate,
+    makeTransactionsUiRouter({
+      sheetId: opts.transactionsSheetId,
+      categoriesTab: opts.categoriesTab,
+    }),
+  );
   router.use("/contacts", gate, makeContactsUiRouter());
   router.use("/trello", gate, makeTrelloUiRouter());
   router.use("/needs-review", gate, makeReviewUiRouter());

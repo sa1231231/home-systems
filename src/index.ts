@@ -14,11 +14,16 @@ import { makeNeedsReviewRouter } from "./api/needs-review.js";
 import { makeEmailsRouter } from "./api/emails.js";
 import { registerEmailReverser } from "./sync/email-actions.js";
 import { registerEmailApplier } from "./sync/email-triage.js";
+import { registerTransactionApplier } from "./sync/transaction-triage.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
+import {
+  startTransactionTriageCron,
+  stopTransactionTriageCron,
+} from "./crons/transaction-triage.js";
 import { startBackupCron, stopBackupCron } from "./crons/backup.js";
 import {
   startTrelloReorderCron,
@@ -77,6 +82,8 @@ app.use(
     password: config.UI_PASSWORD ?? "",
     secret: config.SESSION_SECRET ?? "",
     secure: config.NODE_ENV === "production",
+    transactionsSheetId: config.TRANSACTIONS_SHEET_ID,
+    categoriesTab: config.CATEGORIES_TAB,
   }),
 );
 
@@ -111,6 +118,15 @@ async function start() {
     registerEmailReverser(oauth);
     registerEmailApplier(oauth);
     console.log("contact + email reversers + email applier registered");
+
+    if (config.TRANSACTIONS_SHEET_ID) {
+      registerTransactionApplier(oauth, {
+        sheetId: config.TRANSACTIONS_SHEET_ID,
+        transactionsTab: config.TRANSACTIONS_TAB,
+        categoriesTab: config.CATEGORIES_TAB,
+      });
+      console.log("transaction applier registered");
+    }
   }
 
   if (hasTrelloCreds()) {
@@ -133,6 +149,19 @@ async function start() {
     enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
     schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
     limit: config.EMAIL_TRIAGE_CRON_LIMIT,
+  });
+
+  startTransactionTriageCron({
+    enabled: config.TRANSACTION_TRIAGE_CRON_ENABLED,
+    schedule: config.TRANSACTION_TRIAGE_CRON_SCHEDULE,
+    limit: config.TRANSACTION_TRIAGE_CRON_LIMIT,
+    target: config.TRANSACTIONS_SHEET_ID
+      ? {
+          sheetId: config.TRANSACTIONS_SHEET_ID,
+          transactionsTab: config.TRANSACTIONS_TAB,
+          categoriesTab: config.CATEGORIES_TAB,
+        }
+      : undefined,
   });
 
   startTrelloReorderCron({
@@ -169,6 +198,7 @@ async function start() {
     console.log(`${signal} received, draining connections`);
     stopContactsSyncCron();
     stopEmailTriageCron();
+    stopTransactionTriageCron();
     stopBackupCron();
     stopTrelloReorderCron();
     server.close(() => {

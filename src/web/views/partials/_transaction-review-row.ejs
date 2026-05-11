@@ -1,0 +1,94 @@
+<%
+  const subj = (entry.subject && typeof entry.subject === "object") ? entry.subject : {};
+  const proposed = (entry.proposedAction && typeof entry.proposedAction === "object") ? entry.proposedAction : {};
+  const decided = (entry.decision && typeof entry.decision === "object") ? entry.decision : null;
+  const aiCategory = proposed.category || "unknown";
+  const finalCategory = decided ? (decided.category || aiCategory) : aiCategory;
+  const aiReasoning = typeof proposed.reasoning === "string" ? proposed.reasoning : "";
+  const cats = (typeof categories !== "undefined" && Array.isArray(categories)) ? categories : [];
+  const isExpense = typeof subj.amount === "string" && subj.amount.trim().startsWith("-");
+%>
+<tr id="review-row-<%= entry.id %>">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;">
+    <%= subj.date || new Date(entry.createdAt).toISOString().slice(0, 10) %>
+  </td>
+  <td>
+    <div style="font-weight: 500;"><%= subj.description || subj.full_description || "(no description)" %></div>
+    <div class="muted" style="font-size: 12px;"><%= subj.account || "" %><% if (subj.institution) { %> · <%= subj.institution %><% } %></div>
+    <% if (subj.category_hint) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;">hint: <%= subj.category_hint %></div>
+    <% } %>
+  </td>
+  <td style="white-space: nowrap; font-family: ui-monospace, SFMono-Regular, monospace;">
+    <span style="color: <%= isExpense ? 'var(--danger)' : 'var(--ok)' %>;"><%= subj.amount || "" %></span>
+  </td>
+  <td>
+    <% if (entry.status === "pending") { %>
+      <span class="muted" style="font-size: 11px;">AI says:</span>
+      <span class="pill pending"><%= aiCategory %></span>
+      <% if (aiReasoning) { %>
+        <div class="muted" style="font-size: 11px; margin-top: 2px;"><%= aiReasoning %></div>
+      <% } %>
+    <% } else { %>
+      <span class="pill <%= entry.status === 'rejected' ? 'rejected' : 'approved' %>"><%= finalCategory %></span>
+      <% if (finalCategory !== aiCategory) { %>
+        <div class="muted" style="font-size: 11px; margin-top: 2px;">(AI said <%= aiCategory %>)</div>
+      <% } %>
+    <% } %>
+  </td>
+  <td>
+    <span class="pill <%= entry.status %>"><%= entry.status === "rejected" ? "skipped" : entry.status %></span>
+    <% if (entry.promotedToRuleId) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;">→ rule #<%= entry.promotedToRuleId %></div>
+    <% } %>
+    <% if (typeof applyOutcome !== "undefined" && applyOutcome) { %>
+      <div style="font-size: 11px; margin-top: 4px;">
+        <% if (applyOutcome.applied) { %>
+          <span style="color: var(--ok);">written ✓</span>
+        <% } else { %>
+          <span style="color: var(--danger);">write failed: <%= applyOutcome.apply_error %></span>
+        <% } %>
+      </div>
+    <% } %>
+  </td>
+  <td>
+    <% if (entry.status === "pending") { %>
+      <div style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
+        <button
+          hx-post="/ui/needs-review/<%= entry.id %>/approve"
+          hx-target="#review-row-<%= entry.id %>"
+          hx-swap="outerHTML"
+          style="padding: 4px 12px; background: #e3f5e9; border: 1px solid #128a3e; color: #128a3e; border-radius: 3px; cursor: pointer;"
+        >Approve</button>
+        <button
+          type="button"
+          onclick="(function(el){var f=document.getElementById('correct-form-<%= entry.id %>'); var open=f.style.display!=='none'&&f.style.display!==''; f.style.display=open?'none':'block'; el.textContent=open?'Correct ▾':'Cancel'})(this)"
+          style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Correct ▾</button>
+        <button
+          hx-post="/ui/needs-review/<%= entry.id %>/reject"
+          hx-target="#review-row-<%= entry.id %>"
+          hx-swap="outerHTML"
+          style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Skip</button>
+      </div>
+      <form
+        id="correct-form-<%= entry.id %>"
+        hx-post="/ui/needs-review/<%= entry.id %>/correct"
+        hx-target="#review-row-<%= entry.id %>"
+        hx-swap="outerHTML"
+        style="display: none; margin-top: 10px; padding: 10px; background: #fafafa; border: 1px solid var(--border); border-radius: 4px;"
+      >
+        <label style="display: block; font-size: 12px; margin-bottom: 6px;" class="muted">Pick the right category:</label>
+        <select name="category" required style="width: 100%; padding: 4px 6px; font: inherit;">
+          <% cats.forEach((cat) => { %>
+            <option value="<%= cat %>" <%= cat === aiCategory ? "selected" : "" %>><%= cat %></option>
+          <% }); %>
+        </select>
+        <button type="submit" style="padding: 4px 12px; margin-top: 8px;">Save correction</button>
+      </form>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;"><%= entry.decidedBy || "—" %></span>
+    <% } %>
+  </td>
+</tr>

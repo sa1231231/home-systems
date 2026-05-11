@@ -143,6 +143,21 @@ export const processedEmails = pgTable(
   }),
 );
 
+export const processedTransactions = pgTable(
+  "processed_transactions",
+  {
+    id: text("id").primaryKey(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastProcessedAt: timestamp("last_processed_at", { withTimezone: true }).notNull().defaultNow(),
+    outcome: text("outcome").notNull(),
+    outcomeId: bigint("outcome_id", { mode: "number" }),
+    error: text("error"),
+  },
+  (t) => ({
+    outcomeIdx: index("processed_transactions_outcome_idx").on(t.outcome, t.lastProcessedAt),
+  }),
+);
+
 export const dailyOpCounters = pgTable(
   "daily_op_counters",
   {

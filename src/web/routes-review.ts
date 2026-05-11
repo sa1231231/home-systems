@@ -12,37 +12,18 @@ import {
   correctEntry,
   rejectEntry,
 } from "../needs-review/service.js";
-import { TRIAGE_DOMAIN } from "../sync/email-triage.js";
-
-const TriageCategoryEnum = z.enum(["noise", "worth_reading", "needs_reply"]);
+import { getDomainConfig, UnknownDomainError } from "../needs-review/domains.js";
 
 const IdParam = z.coerce.number().int().positive();
+
+function partialFor(domain: string): string {
+  if (domain === "transaction") return "partials/_transaction-review-row";
+  return "partials/_review-row";
+}
 
 const RejectBody = z.object({
   reason: z.string().max(2000).optional(),
 });
-
-const CorrectBody = z.object({
-  category: TriageCategoryEnum,
-});
-
-function defaultRuleNameFor(entry: typeof needsReview.$inferSelect): string {
-  const subj = (entry.subject ?? {}) as Record<string, unknown>;
-  const from = typeof subj.from === "string" ? subj.from : "";
-  if (from) return `auto: from=${from.slice(0, 80)}`;
-  return `auto: review #${entry.id}`;
-}
-
-function defaultMatchFor(entry: typeof needsReview.$inferSelect): unknown {
-  const subj = (entry.subject ?? {}) as Record<string, unknown>;
-  if (typeof subj.from === "string" && subj.from) {
-    return { op: "equals", field: "from", value: subj.from };
-  }
-  if (typeof subj.subject === "string" && subj.subject) {
-    return { op: "equals", field: "subject", value: subj.subject };
-  }
-  return { op: "present", field: "from" };
-}
 
 async function loadEntry(id: number) {
   const [row] = await db.select().from(needsReview).where(eq(needsReview.id, id));
@@ -63,7 +44,9 @@ function renderError(
         ? 409
         : err instanceof InvalidConditionError
           ? 400
-          : 500;
+          : err instanceof UnknownDomainError
+            ? 400
+            : 500;
   const safeEntry = entry ?? {
     id: fallbackId,
     createdAt: new Date(),
@@ -79,8 +62,8 @@ function renderError(
 export function makeReviewUiRouter(): Router {
   const router = Router();
 
-  // Approve = "AI got it right." Always promote a rule keyed on the sender so
-  // future matches skip the AI entirely.
+  // Approve = "AI got it right." Always promote a rule via the domain's default
+  // match/name so future identical inputs skip the AI entirely.
   router.post("/:id/approve", async (req, res) => {
     let id: number;
     try {
@@ -95,15 +78,19 @@ export function makeReviewUiRouter(): Router {
       return;
     }
     try {
+      const cfg = getDomainConfig(pending.domain);
       const result = await approveEntry(id, {
         promoteToRule: {
-          name: defaultRuleNameFor(pending),
-          match: defaultMatchFor(pending),
+          name: cfg.defaultRuleName(pending),
+          match: cfg.defaultMatch(pending),
         },
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.approve",
       });
-      res.render("partials/_review-row", { entry: result.entry, applyOutcome: result.apply });
+      res.render(partialFor(result.entry.domain), {
+        entry: result.entry,
+        applyOutcome: result.apply,
+      });
     } catch (err) {
       renderError(res, pending, err, id);
     }
@@ -127,15 +114,17 @@ export function makeReviewUiRouter(): Router {
     try {
       const body = RejectBody.parse(req.body ?? {});
       const result = await rejectEntry(id, { reason: body.reason });
-      res.render("partials/_review-row", { entry: result.entry, applyOutcome: null });
+      res.render(partialFor(result.entry.domain), {
+        entry: result.entry,
+        applyOutcome: null,
+      });
     } catch (err) {
       renderError(res, pending, err, id);
     }
   });
 
-  // Correct = "AI picked the wrong category." User picks one of the three
-  // categories; we build the corrected action via mapCategoryToAction and
-  // promote a rule using that action so future matches skip the AI.
+  // Correct = "AI picked the wrong category." User picks the right one (validated
+  // against the domain's enum), and we promote a rule using the *corrected* action.
   router.post("/:id/correct", async (req, res) => {
     let id: number;
     try {
@@ -150,27 +139,24 @@ export function makeReviewUiRouter(): Router {
       return;
     }
     try {
-      const body = CorrectBody.parse(req.body ?? {});
+      const cfg = getDomainConfig(pending.domain);
+      const body = cfg.validateCorrection(req.body ?? {});
       const previousCategory =
         (pending.proposedAction as { category?: string } | null)?.category ?? "unknown";
-      const decision = {
-        category: body.category,
-        reasoning: `user-corrected (was ${previousCategory})`,
-      };
-      const promoteToRule =
-        pending.domain === TRIAGE_DOMAIN
-          ? {
-              name: defaultRuleNameFor(pending),
-              match: defaultMatchFor(pending),
-            }
-          : undefined;
+      const decision = cfg.buildCorrectedDecision(body.category, previousCategory);
       const result = await correctEntry(id, {
         decision,
-        promoteToRule,
+        promoteToRule: {
+          name: cfg.defaultRuleName(pending),
+          match: cfg.defaultMatch(pending),
+        },
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.correct",
       });
-      res.render("partials/_review-row", { entry: result.entry, applyOutcome: result.apply });
+      res.render(partialFor(result.entry.domain), {
+        entry: result.entry,
+        applyOutcome: result.apply,
+      });
     } catch (err) {
       renderError(res, pending, err, id);
     }

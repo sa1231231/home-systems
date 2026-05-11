@@ -43,6 +43,13 @@
       "when": 1778511274489,
       "tag": "0005_heavy_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778523004433,
+      "tag": "0006_oval_diamondback",
+      "breakpoints": true
     }
   ]
 }
