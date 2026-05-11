@@ -1,0 +1,17 @@
+<div style="margin: 0 0 16px; padding: 8px 12px; background: #fafafa; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
+  <% if (cron.enabled) { %>
+    <span><strong>Cron</strong> <span class="pill success">enabled</span></span>
+  <% } else { %>
+    <span><strong>Cron</strong> <span class="pill rejected">disabled</span></span>
+  <% } %>
+  <span class="muted">schedule</span> <code><%= cron.schedule %></code> <span class="muted">UTC</span>
+  <% if (cron.parseError) { %>
+    <span style="color: var(--danger);">invalid schedule: <%= cron.parseError %></span>
+  <% } else if (cron.enabled && cron.nextRunEtLabel) { %>
+    <span class="muted">next</span>
+    <span><%= cron.nextRunEtLabel %></span>
+    <span class="muted">(<%= cron.nextRunUtcLabel %>)</span>
+  <% } else if (!cron.enabled) { %>
+    <span class="muted">no upcoming runs while disabled</span>
+  <% } %>
+</div>

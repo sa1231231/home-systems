@@ -6,6 +6,7 @@ import { needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { triageEmails } from "../sync/email-triage.js";
 import { newSessionId } from "../changelog/index.js";
+import { cronInfoForDomain } from "./cron-info.js";
 
 const DOMAIN = "email";
 
@@ -35,6 +36,7 @@ export function makeGmailUiRouter(): Router {
       rules: rulesRows,
       pending: pendingRows,
       flash: null,
+      cron: cronInfoForDomain("email"),
     });
   });
 

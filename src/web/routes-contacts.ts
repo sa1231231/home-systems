@@ -8,6 +8,7 @@ import {
   requireGoogleCreds,
 } from "../integrations/google/oauth.js";
 import { runSync } from "../sync/contacts.js";
+import { cronInfoForDomain } from "./cron-info.js";
 
 const DOMAIN = "contact";
 
@@ -45,6 +46,7 @@ export function makeContactsUiRouter(): Router {
       pending: pendingRows,
       activity: activityRows,
       flash: null,
+      cron: cronInfoForDomain("contact"),
     });
   });
 

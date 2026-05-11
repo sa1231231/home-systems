@@ -23,6 +23,7 @@ import {
   toLocalDate,
   type ReorderContext,
 } from "../sync/trello-reorder.js";
+import { cronInfoForDomain } from "./cron-info.js";
 
 const BUCKET_NAMES: Record<number, string> = {
   1: "due",
@@ -131,6 +132,7 @@ async function render(
     activity,
     bucketNames: BUCKET_NAMES,
     tz: creds.tz,
+    cron: cronInfoForDomain("trello"),
   });
 }
 
@@ -144,6 +146,7 @@ function renderEmpty(res: Response, opts: { notConfigured: boolean; flash?: { ki
     activity: [],
     bucketNames: BUCKET_NAMES,
     tz: null,
+    cron: cronInfoForDomain("trello"),
   });
 }
 

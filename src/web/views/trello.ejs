@@ -7,6 +7,8 @@
   <% } %>
 </div>
 
+<%- include("partials/_cron-banner", { cron }) %>
+
 <% if (notConfigured) { %>
   <div class="flash err" style="margin-bottom: 12px;">
     Trello isn't configured. Set <code>TRELLO_API_KEY</code>, <code>TRELLO_TOKEN</code>,
