@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog } from "../db/schema.js";
@@ -9,6 +9,11 @@ import type { ChangelogRow } from "../changelog/types.js";
 const RecentQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50),
 });
+
+/** Start of the rolling 24-hour window ending at `now`. */
+export function windowStartFor24h(now: Date = new Date()): Date {
+  return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+}
 
 const UndoLastNBody = z.object({
   operation: z.string().min(1).max(200),
@@ -63,6 +68,27 @@ export function makeChangesRouter(): Router {
       const { limit } = RecentQuery.parse(req.query);
       const rows = await db.select().from(changelog).orderBy(desc(changelog.id)).limit(limit);
       res.json({ ok: true, count: rows.length, entries: rows.map(rowToJson) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.get("/recent24h", async (req, res) => {
+    try {
+      const { limit } = RecentQuery.parse(req.query);
+      const since = windowStartFor24h();
+      const rows = await db
+        .select()
+        .from(changelog)
+        .where(gte(changelog.createdAt, since))
+        .orderBy(desc(changelog.id))
+        .limit(limit);
+      res.json({
+        ok: true,
+        since: since.toISOString(),
+        count: rows.length,
+        entries: rows.map(rowToJson),
+      });
     } catch (err) {
       handleError(err, res);
     }
