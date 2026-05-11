@@ -62,7 +62,7 @@ export function buildClassifyRequest<T>(opts: ClassifyOptions<T>): ClassifyReque
     ],
     messages: [{ role: "user", content: opts.input }],
     output_config: {
-      format: zodOutputFormat(opts.schema),
+      format: zodOutputFormat(opts.schema as never),
       effort: opts.effort ?? DEFAULT_EFFORT,
     },
   };

@@ -9,6 +9,7 @@ RUN npm run build
 # local-only OAuth helper.
 
 FROM node:20-alpine
+RUN apk add --no-cache postgresql16-client
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev

@@ -21,6 +21,15 @@ export const ConfigSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   EMAIL_TRIAGE_CRON_SCHEDULE: z.string().default("0 7 * * *"),
   EMAIL_TRIAGE_CRON_LIMIT: z.coerce.number().int().positive().max(500).default(50),
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  BACKUP_CRON_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  BACKUP_CRON_SCHEDULE: z.string().default("15 3 * * *"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

@@ -16,10 +16,12 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
-    "auth:google": "tsx scripts/auth-google.ts"
+    "auth:google": "tsx scripts/auth-google.ts",
+    "backup:run": "tsx scripts/run-backup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
+    "@aws-sdk/client-s3": "^3.1045.0",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
