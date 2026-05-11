@@ -30,6 +30,12 @@ export const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   BACKUP_CRON_SCHEDULE: z.string().default("15 3 * * *"),
+  UI_AUTH_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== "false" && v !== "0"),
+  UI_PASSWORD: z.string().min(8).optional(),
+  SESSION_SECRET: z.string().min(32).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

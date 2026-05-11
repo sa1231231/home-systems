@@ -99,6 +99,38 @@ describe("ConfigSchema", () => {
     expect(parsed.R2_BUCKET).toBeUndefined();
   });
 
+  it("defaults UI_AUTH_ENABLED to true and leaves password/secret optional", () => {
+    const parsed = ConfigSchema.parse({ DATABASE_URL: "x" });
+    expect(parsed.UI_AUTH_ENABLED).toBe(true);
+    expect(parsed.UI_PASSWORD).toBeUndefined();
+    expect(parsed.SESSION_SECRET).toBeUndefined();
+  });
+
+  it("disables UI auth only when explicitly set to 'false' or '0'", () => {
+    expect(ConfigSchema.parse({ DATABASE_URL: "x", UI_AUTH_ENABLED: "false" }).UI_AUTH_ENABLED).toBe(
+      false,
+    );
+    expect(ConfigSchema.parse({ DATABASE_URL: "x", UI_AUTH_ENABLED: "0" }).UI_AUTH_ENABLED).toBe(
+      false,
+    );
+    expect(
+      ConfigSchema.parse({ DATABASE_URL: "x", UI_AUTH_ENABLED: "true" }).UI_AUTH_ENABLED,
+    ).toBe(true);
+    expect(ConfigSchema.parse({ DATABASE_URL: "x" }).UI_AUTH_ENABLED).toBe(true);
+  });
+
+  it("requires UI_PASSWORD to be at least 8 characters when set", () => {
+    expect(() =>
+      ConfigSchema.parse({ DATABASE_URL: "x", UI_PASSWORD: "short" }),
+    ).toThrow(/UI_PASSWORD/);
+  });
+
+  it("requires SESSION_SECRET to be at least 32 characters when set", () => {
+    expect(() =>
+      ConfigSchema.parse({ DATABASE_URL: "x", SESSION_SECRET: "short" }),
+    ).toThrow(/SESSION_SECRET/);
+  });
+
   it("preserves R2 credentials when present", () => {
     const parsed = ConfigSchema.parse({
       DATABASE_URL: "x",
