@@ -5,6 +5,7 @@ import { makeChangesUiRouter } from "./routes-changes.js";
 import { makeContactsUiRouter } from "./routes-contacts.js";
 import { makeGmailUiRouter } from "./routes-gmail.js";
 import { makeReviewUiRouter } from "./routes-review.js";
+import { makeRulesUiRouter } from "./routes-rules.js";
 
 export type WebRouterOptions = {
   authEnabled: boolean;
@@ -37,6 +38,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
   router.use("/gmail", gate, makeGmailUiRouter());
   router.use("/contacts", gate, makeContactsUiRouter());
   router.use("/needs-review", gate, makeReviewUiRouter());
+  router.use("/rules", gate, makeRulesUiRouter());
 
   return router;
 }

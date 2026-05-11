@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db/client.js";
 import { rules } from "../db/schema.js";
 import { InvalidConditionError, validateCondition, type Cond } from "../rules/dsl.js";
+import { RuleNotFoundError, setRuleEnabled } from "../rules/service.js";
 
 const ListQuery = z.object({
   domain: z.string().min(1).max(100).optional(),
@@ -64,12 +65,8 @@ function rowToJson(row: typeof rules.$inferSelect): Record<string, unknown> {
   };
 }
 
-class EntryNotFoundError extends Error {
-  constructor(public readonly id: number) {
-    super(`rule ${id} not found`);
-    this.name = "EntryNotFoundError";
-  }
-}
+// Alias kept for the local handleError; the canonical error lives in rules/service.ts.
+const EntryNotFoundError = RuleNotFoundError;
 
 export function makeRulesRouter(): Router {
   const router = Router();
@@ -130,12 +127,7 @@ export function makeRulesRouter(): Router {
   router.post("/:id/disable", async (req, res) => {
     try {
       const id = IdParam.parse(req.params.id);
-      const [row] = await db
-        .update(rules)
-        .set({ enabled: false, updatedAt: new Date() })
-        .where(eq(rules.id, id))
-        .returning();
-      if (!row) throw new EntryNotFoundError(id);
+      const row = await setRuleEnabled(id, false);
       res.json({ ok: true, entry: rowToJson(row) });
     } catch (err) {
       handleError(err, res);
@@ -145,12 +137,7 @@ export function makeRulesRouter(): Router {
   router.post("/:id/enable", async (req, res) => {
     try {
       const id = IdParam.parse(req.params.id);
-      const [row] = await db
-        .update(rules)
-        .set({ enabled: true, updatedAt: new Date() })
-        .where(eq(rules.id, id))
-        .returning();
-      if (!row) throw new EntryNotFoundError(id);
+      const row = await setRuleEnabled(id, true);
       res.json({ ok: true, entry: rowToJson(row) });
     } catch (err) {
       handleError(err, res);

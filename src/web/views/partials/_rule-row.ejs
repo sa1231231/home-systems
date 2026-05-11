@@ -1,4 +1,4 @@
-<tr>
+<tr id="rule-row-<%= rule.id %>">
   <td><%= rule.name %></td>
   <td class="muted" style="font-size: 12px;">prio <%= rule.priority %></td>
   <td><code style="font-size: 11px;"><%= JSON.stringify(rule.match) %></code></td>
@@ -14,4 +14,12 @@
     <% } %>
   </td>
   <td class="muted" style="font-size: 12px;"><%= new Date(rule.createdAt).toISOString().slice(0, 10) %></td>
+  <td>
+    <button
+      hx-post="/ui/rules/<%= rule.id %>/toggle"
+      hx-target="#rule-row-<%= rule.id %>"
+      hx-swap="outerHTML"
+      style="padding: 4px 10px; background: <%= rule.enabled ? '#fff' : '#e3f5e9' %>; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+    ><%= rule.enabled ? "Disable" : "Enable" %></button>
+  </td>
 </tr>
