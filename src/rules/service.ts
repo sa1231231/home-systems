@@ -51,3 +51,23 @@ export async function deleteRule(
   if (!row) throw new RuleNotFoundError(id);
   return row;
 }
+
+export type RuleUpdate = {
+  name?: string;
+  notes?: string | null;
+  priority?: number;
+};
+
+export async function updateRule(
+  id: number,
+  patch: RuleUpdate,
+  database: typeof defaultDb = defaultDb,
+): Promise<RuleRow> {
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.notes !== undefined) set.notes = patch.notes;
+  if (patch.priority !== undefined) set.priority = patch.priority;
+  const [row] = await database.update(rules).set(set).where(eq(rules.id, id)).returning();
+  if (!row) throw new RuleNotFoundError(id);
+  return row;
+}

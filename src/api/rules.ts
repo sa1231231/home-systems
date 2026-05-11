@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "../db/client.js";
 import { rules } from "../db/schema.js";
 import { InvalidConditionError, validateCondition, type Cond } from "../rules/dsl.js";
-import { deleteRule, RuleNotFoundError, setRuleEnabled } from "../rules/service.js";
+import { deleteRule, RuleNotFoundError, setRuleEnabled, updateRule } from "../rules/service.js";
 
 const ListQuery = z.object({
   domain: z.string().min(1).max(100).optional(),
@@ -47,6 +47,16 @@ const CreateBody = z.object({
   priority: z.number().int().min(0).max(10000).optional(),
   notes: z.string().max(2000).optional(),
 });
+
+const PatchBody = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    priority: z.number().int().min(0).max(10000).optional(),
+  })
+  .refine((b) => b.name !== undefined || b.notes !== undefined || b.priority !== undefined, {
+    message: "patch must include at least one of name/notes/priority",
+  });
 
 function rowToJson(row: typeof rules.$inferSelect): Record<string, unknown> {
   return {
@@ -149,6 +159,21 @@ export function makeRulesRouter(): Router {
       const id = IdParam.parse(req.params.id);
       const row = await deleteRule(id);
       res.json({ ok: true, deleted: rowToJson(row) });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
+  router.patch("/:id", async (req, res) => {
+    try {
+      const id = IdParam.parse(req.params.id);
+      const body = PatchBody.parse(req.body);
+      const row = await updateRule(id, {
+        name: body.name,
+        notes: body.notes === undefined ? undefined : body.notes,
+        priority: body.priority,
+      });
+      res.json({ ok: true, entry: rowToJson(row) });
     } catch (err) {
       handleError(err, res);
     }
