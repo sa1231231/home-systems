@@ -1,23 +1,41 @@
+<%
+  const subj = (entry.subject && typeof entry.subject === "object") ? entry.subject : {};
+  const proposed = (entry.proposedAction && typeof entry.proposedAction === "object") ? entry.proposedAction : {};
+  const decided = (entry.decision && typeof entry.decision === "object") ? entry.decision : null;
+  const aiCategory = proposed.category || "unknown";
+  const finalCategory = decided ? (decided.category || aiCategory) : aiCategory;
+  const actionLabels = {
+    noise: "archive",
+    worth_reading: "leave in inbox",
+    needs_reply: "star",
+  };
+  const categoryPill = (cat) => '<span class="pill ' + (cat === 'needs_reply' ? 'success' : cat === 'noise' ? 'rejected' : 'pending') + '">' + cat + '</span>';
+%>
 <tr id="review-row-<%= entry.id %>">
   <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z</td>
   <td>
-    <% if (entry.subject && typeof entry.subject === "object") { %>
-      <div style="font-weight: 500;"><%= (entry.subject.subject || "(no subject)") %></div>
-      <div class="muted" style="font-size: 12px;"><%= entry.subject.from || "" %></div>
-      <% if (entry.subject.snippet) { %>
-        <div class="muted" style="font-size: 11px; margin-top: 2px;"><%= String(entry.subject.snippet).slice(0, 120) %></div>
-      <% } %>
-    <% } else { %>
-      <code style="font-size: 11px;"><%= entry.subjectKind %>:<%= entry.subjectId %></code>
+    <div style="font-weight: 500;"><%= subj.subject || "(no subject)" %></div>
+    <div class="muted" style="font-size: 12px;"><%= subj.from || "(unknown sender)" %></div>
+    <% if (subj.snippet) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;"><%= String(subj.snippet).slice(0, 140) %></div>
     <% } %>
   </td>
   <td>
-    <code style="font-size: 12px;"><%= JSON.stringify(entry.proposedAction) %></code>
+    <% if (entry.status === "pending") { %>
+      <span class="muted" style="font-size: 11px;">AI says:</span>
+      <%- categoryPill(aiCategory) %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;">→ <%= actionLabels[aiCategory] || aiCategory %></div>
+    <% } else { %>
+      <%- categoryPill(finalCategory) %>
+      <% if (finalCategory !== aiCategory) { %>
+        <div class="muted" style="font-size: 11px; margin-top: 2px;">(AI said <%= aiCategory %>)</div>
+      <% } %>
+    <% } %>
   </td>
   <td>
-    <span class="pill <%= entry.status %>"><%= entry.status %></span>
-    <% if (entry.status === "approved" && entry.promotedToRuleId) { %>
-      <span class="muted" style="font-size: 11px;">→ rule #<%= entry.promotedToRuleId %></span>
+    <span class="pill <%= entry.status %>"><%= entry.status === "rejected" ? "skipped" : entry.status %></span>
+    <% if (entry.promotedToRuleId) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;">→ rule #<%= entry.promotedToRuleId %></div>
     <% } %>
     <% if (typeof applyOutcome !== "undefined" && applyOutcome) { %>
       <div style="font-size: 11px; margin-top: 4px;">
@@ -31,43 +49,41 @@
   </td>
   <td>
     <% if (entry.status === "pending") { %>
-      <form
-        hx-post="/ui/needs-review/<%= entry.id %>/approve"
-        hx-target="#review-row-<%= entry.id %>"
-        hx-swap="outerHTML"
-        style="display: inline; margin-right: 6px;"
-      >
-        <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
-          <input type="checkbox" name="promote_to_rule" value="1" />
-          promote
-        </label>
-        <button type="submit" style="padding: 4px 10px; margin-left: 4px;">Approve</button>
-      </form>
-      <button
-        hx-post="/ui/needs-review/<%= entry.id %>/reject"
-        hx-target="#review-row-<%= entry.id %>"
-        hx-swap="outerHTML"
-        style="padding: 4px 10px; margin-right: 6px;"
-      >Reject</button>
-      <button
-        type="button"
-        onclick="document.getElementById('correct-form-<%= entry.id %>').style.display='block'; this.style.display='none'"
-        style="padding: 4px 10px;"
-      >Correct…</button>
+      <div style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
+        <button
+          hx-post="/ui/needs-review/<%= entry.id %>/approve"
+          hx-target="#review-row-<%= entry.id %>"
+          hx-swap="outerHTML"
+          style="padding: 4px 12px; background: #e3f5e9; border: 1px solid #128a3e; color: #128a3e; border-radius: 3px; cursor: pointer;"
+        >Approve</button>
+        <button
+          type="button"
+          onclick="(function(el){var f=document.getElementById('correct-form-<%= entry.id %>'); var open=f.style.display!=='none'&&f.style.display!==''; f.style.display=open?'none':'block'; el.textContent=open?'Correct ▾':'Cancel'})(this)"
+          style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Correct ▾</button>
+        <button
+          hx-post="/ui/needs-review/<%= entry.id %>/reject"
+          hx-target="#review-row-<%= entry.id %>"
+          hx-swap="outerHTML"
+          style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Skip</button>
+      </div>
       <form
         id="correct-form-<%= entry.id %>"
         hx-post="/ui/needs-review/<%= entry.id %>/correct"
         hx-target="#review-row-<%= entry.id %>"
         hx-swap="outerHTML"
-        style="display: none; margin-top: 8px;"
+        style="display: none; margin-top: 10px; padding: 10px; background: #fafafa; border: 1px solid var(--border); border-radius: 4px;"
       >
-        <textarea
-          name="decision"
-          placeholder='{"add_labels":[],"remove_labels":["INBOX"]}'
-          required
-          style="width: 100%; min-height: 60px; font-family: monospace; font-size: 12px;"
-        ></textarea>
-        <button type="submit" style="padding: 4px 10px; margin-top: 4px;">Submit correction</button>
+        <div class="muted" style="font-size: 11px; margin-bottom: 6px;">Pick the right category:</div>
+        <% ["noise", "worth_reading", "needs_reply"].forEach((cat) => { %>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; cursor: pointer;">
+            <input type="radio" name="category" value="<%= cat %>" <%= cat === aiCategory ? "" : "" %> required />
+            <%- categoryPill(cat) %>
+            <span class="muted" style="font-size: 11px;">→ <%= actionLabels[cat] %></span>
+          </label>
+        <% }); %>
+        <button type="submit" style="padding: 4px 12px; margin-top: 8px;">Save correction</button>
       </form>
     <% } else { %>
       <span class="muted" style="font-size: 12px;"><%= entry.decidedBy || "—" %></span>

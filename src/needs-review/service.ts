@@ -53,6 +53,7 @@ export type RejectInput = {
 export type CorrectInput = {
   decision: unknown;
   decidedBy?: string;
+  promoteToRule?: PromoteToRuleInput;
 } & ApplyMeta;
 
 export type ApproveResult = {
@@ -67,6 +68,7 @@ export type RejectResult = {
 
 export type CorrectResult = {
   entry: NeedsReviewRow;
+  promotedRuleId: number | null;
   apply: ApplyOutcome;
 };
 
@@ -185,6 +187,27 @@ export async function correctEntry(
   const database = options.database ?? defaultDb;
   const registry = options.registry ?? defaultAppliers;
   const pending = await loadPending(id, database);
+
+  let promotedRuleId: number | null = null;
+  if (input.promoteToRule) {
+    validateCondition(input.promoteToRule.match as Cond);
+    const [rule] = await database
+      .insert(rules)
+      .values({
+        domain: pending.domain,
+        name: input.promoteToRule.name,
+        match: input.promoteToRule.match as never,
+        // The rule's action is the *corrected* decision, not the AI's original proposal.
+        action: input.decision as never,
+        priority: input.promoteToRule.priority ?? 100,
+        enabled: true,
+        createdFromReviewId: pending.id,
+        createdBy: "correction",
+      })
+      .returning({ id: rules.id });
+    promotedRuleId = rule.id;
+  }
+
   const [entry] = await database
     .update(needsReview)
     .set({
@@ -192,6 +215,7 @@ export async function correctEntry(
       decision: input.decision as never,
       decidedAt: new Date(),
       decidedBy: input.decidedBy ?? "api",
+      promotedToRuleId: promotedRuleId,
       updatedAt: new Date(),
     })
     .where(eq(needsReview.id, id))
@@ -205,5 +229,5 @@ export async function correctEntry(
     registry,
   );
 
-  return { entry, apply };
+  return { entry, promotedRuleId, apply };
 }

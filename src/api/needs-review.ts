@@ -53,6 +53,13 @@ const RejectBody = z
 const CorrectBody = z.object({
   decision: z.unknown(),
   decided_by: z.string().min(1).max(100).optional(),
+  promote_to_rule: z
+    .object({
+      name: z.string().min(1).max(200),
+      match: z.unknown(),
+      priority: z.number().int().min(0).max(10000).optional(),
+    })
+    .optional(),
 });
 
 export function rowToJson(row: typeof needsReview.$inferSelect): Record<string, unknown> {
@@ -179,10 +186,22 @@ export function makeNeedsReviewRouter(): Router {
       const result = await correctEntry(id, {
         decision: body.decision,
         decidedBy: body.decided_by,
+        promoteToRule: body.promote_to_rule
+          ? {
+              name: body.promote_to_rule.name,
+              match: body.promote_to_rule.match,
+              priority: body.promote_to_rule.priority,
+            }
+          : undefined,
         sessionId: req.sessionId,
         caller: "api:needs-review.correct",
       });
-      res.json({ ok: true, entry: rowToJson(result.entry), ...result.apply });
+      res.json({
+        ok: true,
+        entry: rowToJson(result.entry),
+        promoted_rule_id: result.promotedRuleId,
+        ...result.apply,
+      });
     } catch (err) {
       handleError(err, res);
     }

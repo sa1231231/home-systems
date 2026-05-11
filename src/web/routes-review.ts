@@ -12,21 +12,18 @@ import {
   correctEntry,
   rejectEntry,
 } from "../needs-review/service.js";
+import { TRIAGE_DOMAIN } from "../sync/email-triage.js";
+
+const TriageCategoryEnum = z.enum(["noise", "worth_reading", "needs_reply"]);
 
 const IdParam = z.coerce.number().int().positive();
-
-const ApproveBody = z.object({
-  promote_to_rule: z.union([z.literal("1"), z.literal("on"), z.literal("true")]).optional(),
-  rule_name: z.string().min(1).max(200).optional(),
-  rule_priority: z.coerce.number().int().min(0).max(10000).optional(),
-});
 
 const RejectBody = z.object({
   reason: z.string().max(2000).optional(),
 });
 
 const CorrectBody = z.object({
-  decision: z.string().min(1),
+  category: TriageCategoryEnum,
 });
 
 function defaultRuleNameFor(entry: typeof needsReview.$inferSelect): string {
@@ -82,6 +79,8 @@ function renderError(
 export function makeReviewUiRouter(): Router {
   const router = Router();
 
+  // Approve = "AI got it right." Always promote a rule keyed on the sender so
+  // future matches skip the AI entirely.
   router.post("/:id/approve", async (req, res) => {
     let id: number;
     try {
@@ -96,16 +95,11 @@ export function makeReviewUiRouter(): Router {
       return;
     }
     try {
-      const body = ApproveBody.parse(req.body ?? {});
-      const promoteToRule = body.promote_to_rule
-        ? {
-            name: body.rule_name ?? defaultRuleNameFor(pending),
-            match: defaultMatchFor(pending),
-            priority: body.rule_priority,
-          }
-        : undefined;
       const result = await approveEntry(id, {
-        promoteToRule,
+        promoteToRule: {
+          name: defaultRuleNameFor(pending),
+          match: defaultMatchFor(pending),
+        },
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.approve",
       });
@@ -115,6 +109,8 @@ export function makeReviewUiRouter(): Router {
     }
   });
 
+  // Skip = "don't decide right now." Marks the row reviewed (DB status
+  // 'rejected') but creates no rule and applies no action. UI label is "Skip".
   router.post("/:id/reject", async (req, res) => {
     let id: number;
     try {
@@ -137,6 +133,9 @@ export function makeReviewUiRouter(): Router {
     }
   });
 
+  // Correct = "AI picked the wrong category." User picks one of the three
+  // categories; we build the corrected action via mapCategoryToAction and
+  // promote a rule using that action so future matches skip the AI.
   router.post("/:id/correct", async (req, res) => {
     let id: number;
     try {
@@ -152,14 +151,22 @@ export function makeReviewUiRouter(): Router {
     }
     try {
       const body = CorrectBody.parse(req.body ?? {});
-      let decision: unknown;
-      try {
-        decision = JSON.parse(body.decision);
-      } catch {
-        throw new Error("decision must be valid JSON");
-      }
+      const previousCategory =
+        (pending.proposedAction as { category?: string } | null)?.category ?? "unknown";
+      const decision = {
+        category: body.category,
+        reasoning: `user-corrected (was ${previousCategory})`,
+      };
+      const promoteToRule =
+        pending.domain === TRIAGE_DOMAIN
+          ? {
+              name: defaultRuleNameFor(pending),
+              match: defaultMatchFor(pending),
+            }
+          : undefined;
       const result = await correctEntry(id, {
         decision,
+        promoteToRule,
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.correct",
       });
