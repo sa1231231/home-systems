@@ -1,0 +1,81 @@
+<%- include("partials/_header", { title: "Contacts sync — home-systems", tab: "contacts", flash: locals.flash }) %>
+
+<h2 style="margin-top: 0;">Contacts sync</h2>
+
+<section style="margin-bottom: 32px;">
+  <h3 style="margin: 0 0 6px;">Rules <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= rules.length %>)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">Contacts sync is currently fully deterministic — there are no AI classifications and no rules to maintain yet. This panel is here for when contact tagging/grouping rules graduate from approvals later.</p>
+  <% if (rules.length === 0) { %>
+    <p class="muted">No contact rules yet.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th style="width: 80px;">Priority</th>
+          <th>Match</th>
+          <th>Action</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 100px;">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rules.forEach((rule) => { %>
+          <%- include("partials/_rule-row", { rule }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<section style="margin-bottom: 32px;">
+  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
+  <% if (pending.length === 0) { %>
+    <p class="muted">No contacts currently waiting for review.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 130px;">When (UTC)</th>
+          <th>Contact</th>
+          <th>Proposed action</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 320px;">Decide</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% pending.forEach((entry) => { %>
+          <%- include("partials/_review-row", { entry, applyOutcome: null }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<section>
+  <h3 style="margin: 0 0 6px;">Recent activity <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= activity.length %> in last 7 days)</span></h3>
+  <p class="muted" style="margin: 0 0 8px;">Contacts-domain writes from the nightly sync cron and per-contact write endpoints.</p>
+  <% if (activity.length === 0) { %>
+    <p class="muted">No recent contacts activity.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 160px;">When (UTC)</th>
+          <th>Operation</th>
+          <th>Contact</th>
+          <th style="width: 120px;">Status</th>
+          <th>Caller</th>
+          <th style="width: 90px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% activity.forEach((row) => { %>
+          <%- include("partials/_change-row", { row }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<%- include("partials/_footer") %>

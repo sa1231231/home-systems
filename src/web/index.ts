@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import { requireAuth } from "./auth.js";
 import { makeAuthRouter } from "./routes-auth.js";
 import { makeChangesUiRouter } from "./routes-changes.js";
+import { makeContactsUiRouter } from "./routes-contacts.js";
 import { makeGmailUiRouter } from "./routes-gmail.js";
 import { makeReviewUiRouter } from "./routes-review.js";
 
@@ -34,6 +35,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
 
   router.use("/changes", gate, makeChangesUiRouter());
   router.use("/gmail", gate, makeGmailUiRouter());
+  router.use("/contacts", gate, makeContactsUiRouter());
   router.use("/needs-review", gate, makeReviewUiRouter());
 
   return router;
