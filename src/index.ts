@@ -168,6 +168,7 @@ async function start() {
   startTrelloReorderCron({
     enabled: config.TRELLO_REORDER_CRON_ENABLED,
     schedule: config.TRELLO_REORDER_CRON_SCHEDULE,
+    timezone: config.TRELLO_TZ,
   });
 
   if (config.BACKUP_CRON_ENABLED) {

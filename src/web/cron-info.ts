@@ -4,6 +4,8 @@ import { getConfig } from "../config.js";
 export type CronInfo = {
   enabled: boolean;
   schedule: string;
+  /** IANA TZ in which the schedule is interpreted (e.g. "UTC" or "America/New_York"). */
+  scheduleTz: string;
   nextRunUtc: Date | null;
   nextRunUtcLabel: string | null;
   nextRunEtLabel: string | null;
@@ -28,11 +30,12 @@ function fmtEt(d: Date): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ET`;
 }
 
-function compute(schedule: string, enabled: boolean): CronInfo {
+function compute(schedule: string, enabled: boolean, scheduleTz: string): CronInfo {
   if (!enabled) {
     return {
       enabled: false,
       schedule,
+      scheduleTz,
       nextRunUtc: null,
       nextRunUtcLabel: null,
       nextRunEtLabel: null,
@@ -40,11 +43,12 @@ function compute(schedule: string, enabled: boolean): CronInfo {
     };
   }
   try {
-    const it = CronExpressionParser.parse(schedule, { tz: "UTC" });
+    const it = CronExpressionParser.parse(schedule, { tz: scheduleTz });
     const next = it.next().toDate();
     return {
       enabled: true,
       schedule,
+      scheduleTz,
       nextRunUtc: next,
       nextRunUtcLabel: fmtUtc(next),
       nextRunEtLabel: fmtEt(next),
@@ -54,6 +58,7 @@ function compute(schedule: string, enabled: boolean): CronInfo {
     return {
       enabled: true,
       schedule,
+      scheduleTz,
       nextRunUtc: null,
       nextRunUtcLabel: null,
       nextRunEtLabel: null,
@@ -66,12 +71,12 @@ export function cronInfoForDomain(domain: "email" | "contact" | "transaction" | 
   const c = getConfig();
   switch (domain) {
     case "email":
-      return compute(c.EMAIL_TRIAGE_CRON_SCHEDULE, c.EMAIL_TRIAGE_CRON_ENABLED);
+      return compute(c.EMAIL_TRIAGE_CRON_SCHEDULE, c.EMAIL_TRIAGE_CRON_ENABLED, "UTC");
     case "contact":
-      return compute(c.CONTACTS_SYNC_CRON_SCHEDULE, c.CONTACTS_SYNC_CRON_ENABLED);
+      return compute(c.CONTACTS_SYNC_CRON_SCHEDULE, c.CONTACTS_SYNC_CRON_ENABLED, "UTC");
     case "transaction":
-      return compute(c.TRANSACTION_TRIAGE_CRON_SCHEDULE, c.TRANSACTION_TRIAGE_CRON_ENABLED);
+      return compute(c.TRANSACTION_TRIAGE_CRON_SCHEDULE, c.TRANSACTION_TRIAGE_CRON_ENABLED, "UTC");
     case "trello":
-      return compute(c.TRELLO_REORDER_CRON_SCHEDULE, c.TRELLO_REORDER_CRON_ENABLED);
+      return compute(c.TRELLO_REORDER_CRON_SCHEDULE, c.TRELLO_REORDER_CRON_ENABLED, c.TRELLO_TZ);
   }
 }

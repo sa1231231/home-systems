@@ -52,18 +52,14 @@ function cell(row: (string | number | boolean | null | undefined)[], i: number):
   return v == null ? "" : String(v);
 }
 
-export async function readTransactionsSheet(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  tab: string,
-): Promise<TransactionsTab> {
-  const sheets = google.sheets({ version: "v4", auth: client });
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${tab}!A:ZZ`,
-    valueRenderOption: "FORMATTED_VALUE",
-  });
-  const values = (res.data.values ?? []) as (string | number | boolean | null)[][];
+export type RawSheetValues = (string | number | boolean | null)[][];
+
+/**
+ * Pure parser for transactions sheet values. Validates required columns,
+ * discovers optional columns, and produces typed rows keyed on Transaction ID.
+ * Exported for unit tests; production callers should use readTransactionsSheet.
+ */
+export function parseTransactionsValues(values: RawSheetValues, tab: string): TransactionsTab {
   if (values.length === 0) {
     return {
       tab,
@@ -118,25 +114,20 @@ export async function readTransactionsSheet(
   return { tab, headers, columnIndex, rows };
 }
 
-export async function readCategoriesEnum(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  tab: string,
-): Promise<string[]> {
-  const sheets = google.sheets({ version: "v4", auth: client });
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${tab}!A:Z`,
-    valueRenderOption: "FORMATTED_VALUE",
-  });
-  const values = (res.data.values ?? []) as (string | number | boolean | null)[][];
+/**
+ * Pure parser for the Categories enum sheet. Dedupes, trims, preserves order.
+ * Throws on missing column or empty enum. Exported for tests.
+ */
+export function parseCategoriesValues(values: RawSheetValues, tab: string): string[] {
   if (values.length === 0) {
     throw new Error(`categories sheet "${tab}" is empty`);
   }
   const headers = (values[0] ?? []).map((h) => String(h ?? "").trim());
   const catCol = headers.findIndex((h) => h === "Category");
   if (catCol < 0) {
-    throw new Error(`categories sheet "${tab}" has no "Category" column. Found: ${headers.join(", ")}`);
+    throw new Error(
+      `categories sheet "${tab}" has no "Category" column. Found: ${headers.join(", ")}`,
+    );
   }
   const seen = new Set<string>();
   const ordered: string[] = [];
@@ -151,6 +142,34 @@ export async function readCategoriesEnum(
     throw new Error(`categories sheet "${tab}" has no non-empty Category values`);
   }
   return ordered;
+}
+
+export async function readTransactionsSheet(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+): Promise<TransactionsTab> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${tab}!A:ZZ`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return parseTransactionsValues((res.data.values ?? []) as RawSheetValues, tab);
+}
+
+export async function readCategoriesEnum(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+): Promise<string[]> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${tab}!A:Z`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return parseCategoriesValues((res.data.values ?? []) as RawSheetValues, tab);
 }
 
 export type TransactionWriteFields = {

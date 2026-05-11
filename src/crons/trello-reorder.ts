@@ -7,6 +7,8 @@ import { runTrelloReorderOnce } from "../sync/trello-runner.js";
 export type TrelloReorderCronOptions = {
   enabled: boolean;
   schedule: string;
+  /** IANA TZ for cron schedule interpretation. Falls back to UTC if invalid. */
+  timezone?: string;
 };
 
 let scheduledTask: cron.ScheduledTask | undefined;
@@ -20,8 +22,9 @@ export function startTrelloReorderCron(opts: TrelloReorderCronOptions): void {
     console.error(`[cron] invalid TRELLO_REORDER_CRON_SCHEDULE: ${opts.schedule}`);
     return;
   }
-  console.log(`[cron] trello reorder scheduled: "${opts.schedule}" (UTC)`);
-  scheduledTask = cron.schedule(opts.schedule, runTrelloReorderOnceFromCron, { timezone: "UTC" });
+  const tz = opts.timezone || "UTC";
+  console.log(`[cron] trello reorder scheduled: "${opts.schedule}" (${tz})`);
+  scheduledTask = cron.schedule(opts.schedule, runTrelloReorderOnceFromCron, { timezone: tz });
 }
 
 export function stopTrelloReorderCron(): void {
