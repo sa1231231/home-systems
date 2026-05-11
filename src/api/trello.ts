@@ -6,7 +6,7 @@ import {
   requireTrelloAuth,
   requireTrelloCreds,
 } from "../integrations/trello/auth.js";
-import { makeTrelloClient } from "../integrations/trello/client.js";
+import { makeTrelloClient, trelloGetRaw } from "../integrations/trello/client.js";
 import { runTrelloReorderOnce } from "../sync/trello-runner.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
 
@@ -28,23 +28,45 @@ export function makeTrelloRouter(): Router {
       const auth = requireTrelloAuth();
       const client = makeTrelloClient(auth);
       const boards = await client.listMemberBoards();
+      const orgs = (await trelloGetRaw(auth, "/members/me/organizations", {
+        fields: "displayName,name",
+      })) as Array<{ id: string; displayName: string; name: string }>;
       const detailed = await Promise.all(
         boards.map(async (b) => {
-          const [lists, labels] = await Promise.all([
+          const [lists, labels, customFields] = await Promise.all([
             client.getLists(b.id),
             client.getLabels(b.id),
+            trelloGetRaw(auth, `/boards/${b.id}/customFields`).catch(() => []),
           ]);
+          const cfields = (customFields as Array<{
+            id: string;
+            name: string;
+            type: string;
+            options?: Array<{ id: string; value?: { text?: string } }>;
+          }>).map((cf) => ({
+            id: cf.id,
+            name: cf.name,
+            type: cf.type,
+            options: (cf.options ?? []).map((o) => ({
+              id: o.id,
+              value: o.value?.text ?? null,
+            })),
+          }));
           return {
             id: b.id,
             name: b.name,
+            closed: (b as { closed?: boolean }).closed ?? false,
             lists: lists.map((l) => ({ id: l.id, name: l.name })),
-            labels: labels
-              .filter((l) => l.name)
-              .map((l) => ({ id: l.id, name: l.name, color: l.color })),
+            labels: labels.map((l) => ({
+              id: l.id,
+              name: l.name || null,
+              color: l.color,
+            })),
+            custom_fields: cfields,
           };
         }),
       );
-      res.json({ ok: true, count: detailed.length, boards: detailed });
+      res.json({ ok: true, organizations: orgs, count: detailed.length, boards: detailed });
     } catch (err) {
       handleError(err, res);
     }

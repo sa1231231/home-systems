@@ -106,8 +106,27 @@ export function makeTrelloClient(auth: TrelloAuth): TrelloClient {
     },
     listMemberBoards: () =>
       trelloFetch<TrelloBoard[]>(auth, "GET", `/members/me/boards`, {
-        filter: "open",
+        filter: "all",
         fields: "name,closed",
       }),
   };
+}
+
+/** Raw helpers for the discover endpoint that don't fit the typed client. */
+export async function trelloGetRaw(
+  auth: TrelloAuth,
+  path: string,
+  params: Record<string, string | undefined> = {},
+): Promise<unknown> {
+  const url = new URL(`${TRELLO_API_BASE}${path}`);
+  url.searchParams.set("key", auth.apiKey);
+  url.searchParams.set("token", auth.token);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString());
+  const text = await res.text();
+  if (!res.ok) throw new TrelloApiError(res.status, path, text);
+  if (text === "") return null;
+  return JSON.parse(text);
 }
