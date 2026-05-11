@@ -277,46 +277,9 @@ When calling the Anthropic API from cron-side classification functions:
 
 ---
 
-## Migration Strategy
+## Roadmap
 
-### Phase 0: Substrate Setup (this weekend)
-- Create new GitHub repo
-- Provision Railway project with Postgres
-- Set up R2 bucket for backups
-- Deploy a hello-world endpoint to verify the pipeline
-- Write this README and ARCHITECTURE notes
-- Archive the Open Claw repo on GitHub with a "this is archived" notice
-
-### Phase 1: First Workflow — Dex/Contacts (week 1-2)
-Lower stakes than email. Validates the architecture end-to-end before tackling harder workflows.
-- Postgres schema for contacts
-- Sync job: Dex export → Postgres
-- HTTP API: read endpoints, narrow write endpoints (tag, note, followup)
-- Changelog table + basic undo endpoints
-- MCP server exposing read + bounded write tools
-- Recent changes view
-- Connect Claude in the app to the MCP server, validate end-to-end
-
-**Cutover criteria for Dex**: 30 days running in parallel with the Dex SaaS, no data integrity incidents, user feels confident running off our copy. Only then cancel the Dex subscription.
-
-### Phase 2: Gmail Triage (week 3-5)
-Highest-value workflow. Rules-first, AI for the residual.
-- Schema for emails + labels + rules
-- Deterministic rules engine (matches sender, subject, label patterns)
-- Tier 3 AI classification for unmatched emails
-- `needs_review` table
-- Daily digest of needs-review items with approve/correct/reject actions
-- Rule promotion flow ("approve this AND make it a rule")
-- Cutover criteria similar to Phase 1
-
-### Phase 3+: Trello, Calendar, etc.
-One workflow at a time. Each starts with: what's deterministic, where's the genuine AI need, what's the rule promotion path.
-
-### Cutover Discipline
-- Define explicit cutover criteria per workflow before starting
-- Run new and old in parallel; never cut over until criteria are met
-- Keep SaaS export pipelines running for a while after cutover as comparison checks
-- One cutover at a time, with a rest period between (don't migrate Gmail and Trello in the same week — bugs need time to surface)
+Roadmap and outstanding work live on **GitHub Issues**, not in this file. Use the `roadmap` label for the current punch list; one tracker issue per active workflow. This document is the design substrate (philosophy, architecture, patterns, safety rules) — read it for *how* the system should be built, not *what's next*.
 
 ---
 
