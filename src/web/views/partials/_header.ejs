@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= title || "home-systems" %></title>
+    <script src="/static/htmx.min.js" defer></script>
+    <style>
+      :root {
+        --fg: #111;
+        --muted: #666;
+        --bg: #fff;
+        --border: #ddd;
+        --accent: #0b5fff;
+        --danger: #b00020;
+        --ok: #128a3e;
+        --warn: #b35a00;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      header.topbar {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--border);
+        background: #fafafa;
+      }
+      header.topbar h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      nav.tabs {
+        display: flex;
+        gap: 14px;
+        margin-left: 12px;
+      }
+      nav.tabs a {
+        text-decoration: none;
+        color: var(--muted);
+        padding: 4px 0;
+        border-bottom: 2px solid transparent;
+      }
+      nav.tabs a.active {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+      .spacer { flex: 1; }
+      form.inline { display: inline; }
+      button.linklike {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 4px 0;
+        font: inherit;
+      }
+      main {
+        padding: 20px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .flash {
+        margin: 10px 0;
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: #f8f8f8;
+      }
+      .flash.ok { border-color: var(--ok); color: var(--ok); }
+      .flash.err { border-color: var(--danger); color: var(--danger); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+      th { background: #fafafa; font-weight: 600; }
+      code { background: #f3f3f3; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+      .muted { color: var(--muted); }
+      .pill {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: #eee;
+        color: var(--fg);
+      }
+      .pill.pending { background: #fff3cd; color: var(--warn); }
+      .pill.approved { background: #e3f5e9; color: var(--ok); }
+      .pill.rejected { background: #fce8e6; color: var(--danger); }
+      .pill.success { background: #e3f5e9; color: var(--ok); }
+      .pill.failed { background: #fce8e6; color: var(--danger); }
+    </style>
+  </head>
+  <body>
+    <% if (typeof showNav === "undefined" || showNav) { %>
+      <header class="topbar">
+        <h1>home-systems</h1>
+        <nav class="tabs">
+          <a href="/ui/changes" class="<%= tab === 'changes' ? 'active' : '' %>">Recent Changes</a>
+          <a href="/ui/gmail" class="<%= tab === 'gmail' ? 'active' : '' %>">Gmail Triage</a>
+          <a href="/ui/contacts" class="<%= tab === 'contacts' ? 'active' : '' %>">Contacts Sync</a>
+        </nav>
+        <div class="spacer"></div>
+        <form class="inline" method="post" action="/ui/logout">
+          <button class="linklike" type="submit">Sign out</button>
+        </form>
+      </header>
+    <% } %>
+    <main>
+      <div id="flash">
+        <% if (typeof flash !== "undefined" && flash) { %>
+          <div class="flash <%= flash.kind || '' %>"><%= flash.message %></div>
+        <% } %>
+      </div>

@@ -1,0 +1,23 @@
+<%- include("partials/_header", { title: "Sign in — home-systems", showNav: false, tab: null, flash: locals.flash }) %>
+<div style="max-width: 360px; margin: 80px auto;">
+  <h2 style="margin-top: 0;">Sign in</h2>
+  <% if (locals.error) { %>
+    <div class="flash err"><%= locals.error %></div>
+  <% } %>
+  <form method="post" action="/ui/login" style="display: grid; gap: 10px;">
+    <input type="hidden" name="next" value="<%= locals.next || '/ui' %>" />
+    <label>
+      Password
+      <input
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        autofocus
+        required
+        style="width: 100%; padding: 8px; font-size: 14px;"
+      />
+    </label>
+    <button type="submit" style="padding: 8px 12px; font-size: 14px;">Sign in</button>
+  </form>
+</div>
+<%- include("partials/_footer") %>

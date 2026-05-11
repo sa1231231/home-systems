@@ -20,16 +20,34 @@ import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
 import { startBackupCron, stopBackupCron } from "./crons/backup.js";
+import { requireAuth } from "./web/auth.js";
+import { makeWebRouter } from "./web/index.js";
 
 const config = getConfig();
 
+if (config.UI_AUTH_ENABLED && (!config.UI_PASSWORD || !config.SESSION_SECRET)) {
+  console.error(
+    "UI_AUTH_ENABLED is on but UI_PASSWORD and/or SESSION_SECRET are not set " +
+      "(min lengths 8 and 32). Set them, or explicitly set UI_AUTH_ENABLED=false " +
+      "to leave the API/UI open.",
+  );
+  process.exit(1);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(__dirname, "../drizzle");
+const viewsPath = path.resolve(__dirname, "web/views");
+const publicPath = path.resolve(__dirname, "../public");
 
 const app = express();
 
+app.set("view engine", "ejs");
+app.set("views", viewsPath);
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(sessionIdMiddleware());
+app.use("/static", express.static(publicPath, { maxAge: "1d", immutable: false }));
 
 app.get("/", (_req, res) => {
   res.json({ service: "home-systems", status: "ok" });
@@ -39,12 +57,27 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, uptime_s: Math.round(process.uptime()) });
 });
 
-app.use("/contacts", makeContactsRouter());
-app.use("/changes", makeChangesRouter());
-app.use("/ai-calls", makeAiCallsRouter());
-app.use("/rules", makeRulesRouter());
-app.use("/needs-review", makeNeedsReviewRouter());
-app.use("/emails", makeEmailsRouter());
+const apiGate =
+  config.UI_AUTH_ENABLED && config.SESSION_SECRET
+    ? requireAuth({ secret: config.SESSION_SECRET, defaultMode: "json" })
+    : (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+
+app.use(
+  "/ui",
+  makeWebRouter({
+    authEnabled: config.UI_AUTH_ENABLED,
+    password: config.UI_PASSWORD ?? "",
+    secret: config.SESSION_SECRET ?? "",
+    secure: config.NODE_ENV === "production",
+  }),
+);
+
+app.use("/contacts", apiGate, makeContactsRouter());
+app.use("/changes", apiGate, makeChangesRouter());
+app.use("/ai-calls", apiGate, makeAiCallsRouter());
+app.use("/rules", apiGate, makeRulesRouter());
+app.use("/needs-review", apiGate, makeNeedsReviewRouter());
+app.use("/emails", apiGate, makeEmailsRouter());
 
 app.get("/db-ping", async (_req, res) => {
   try {
