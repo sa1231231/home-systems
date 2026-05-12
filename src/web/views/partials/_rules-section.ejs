@@ -1,0 +1,65 @@
+<%
+  // Reusable rules section: collapsible (closed when many rules) + search filter.
+  // Expected locals:
+  //   rules         — RuleRow[]
+  //   description   — small muted paragraph under the heading
+  //   emptyText     — message shown when rules.length === 0
+  //   sectionId     — unique DOM id prefix for this section (so multiple don't collide)
+  //
+  // The "open" attribute defaults to expanded when there are 1-9 rules, collapsed
+  // for 10+ (skim-friendly). Search box filters rows client-side by textContent.
+  const id = sectionId;
+  const isOpen = rules.length > 0 && rules.length < 10;
+%>
+<section style="margin-bottom: 32px;">
+  <details id="<%= id %>" <% if (isOpen) { %>open<% } %>>
+    <summary style="cursor: pointer; user-select: none; list-style: revert;">
+      <h3 style="display: inline-block; margin: 0 0 6px;">
+        Rules <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= rules.length %>)</span>
+      </h3>
+    </summary>
+    <p class="muted" style="margin: 4px 0 8px;"><%= description %></p>
+    <% if (rules.length === 0) { %>
+      <p class="muted"><%= emptyText %></p>
+    <% } else { %>
+      <input
+        type="search"
+        placeholder="Filter rules…"
+        oninput="(function(el){
+          var q = el.value.toLowerCase();
+          var tbody = el.closest('details').querySelector('tbody');
+          if (!tbody) return;
+          var rows = tbody.querySelectorAll('tr');
+          var shown = 0;
+          for (var i = 0; i &lt; rows.length; i++) {
+            var match = rows[i].textContent.toLowerCase().indexOf(q) !== -1;
+            rows[i].style.display = match ? '' : 'none';
+            if (match) shown++;
+          }
+          var counter = el.parentElement.querySelector('.rules-filter-count');
+          if (counter) counter.textContent = q ? (shown + ' of ' + rows.length + ' shown') : '';
+        })(this)"
+        style="display:inline-block; margin: 0 8px 8px 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 3px; width: 280px; font: inherit;"
+      />
+      <span class="rules-filter-count muted" style="font-size: 12px;"></span>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th style="width: 80px;">Priority</th>
+            <th>Match</th>
+            <th>Action</th>
+            <th style="width: 140px;">Source</th>
+            <th style="width: 100px;">Created</th>
+            <th style="width: 90px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% rules.forEach((rule) => { %>
+            <%- include("_rule-row", { rule }) %>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </details>
+</section>
