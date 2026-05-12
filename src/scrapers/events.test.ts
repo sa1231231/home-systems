@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEventbriteUrl, parseEventbriteHtml } from "./events.js";
+import { buildAllEventsUrl, parseEventsHtml } from "./events.js";
 
 const sampleHtml = `
 <html><head>
@@ -7,7 +7,7 @@ const sampleHtml = `
     {
       "@type": "Event",
       "name": "Karaoke Night at The Camel",
-      "url": "https://www.eventbrite.com/e/karaoke-1",
+      "url": "https://allevents.in/richmond/karaoke-1",
       "startDate": "2026-05-20T20:00:00-04:00",
       "location": {
         "@type": "Place",
@@ -22,7 +22,7 @@ const sampleHtml = `
       {
         "@type": "Event",
         "name": "Festival of the Lakes",
-        "url": "https://www.eventbrite.com/e/fest-2",
+        "url": "https://allevents.in/richmond/fest-2",
         "startDate": "2026-06-01T12:00:00-04:00"
       },
       {
@@ -34,14 +34,14 @@ const sampleHtml = `
   <script type="application/ld+json">{ this is not valid json }</script>
 </head></html>`;
 
-describe("parseEventbriteHtml", () => {
+describe("parseEventsHtml", () => {
   it("extracts Event entries from JSON-LD blocks", () => {
-    const items = parseEventbriteHtml(sampleHtml, "karaoke");
+    const items = parseEventsHtml(sampleHtml, "karaoke");
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({
       category: "karaoke",
-      source: "Eventbrite",
-      url: "https://www.eventbrite.com/e/karaoke-1",
+      source: "AllEvents.in",
+      url: "https://allevents.in/richmond/karaoke-1",
       title: "Karaoke Night at The Camel",
       location: "The Camel — 1621 W Broad St, Richmond, VA",
       snippet: "Open mic followed by karaoke until late",
@@ -50,44 +50,44 @@ describe("parseEventbriteHtml", () => {
   });
 
   it("ignores non-Event JSON-LD types and malformed blocks", () => {
-    const items = parseEventbriteHtml(sampleHtml, "karaoke");
+    const items = parseEventsHtml(sampleHtml, "karaoke");
     expect(items.find((i) => i.title.includes("Breadcrumb"))).toBeUndefined();
     expect(items).toHaveLength(2);
   });
 
   it("dedupes events that appear in multiple blocks", () => {
     const dup = sampleHtml + sampleHtml;
-    const items = parseEventbriteHtml(dup, "karaoke");
+    const items = parseEventsHtml(dup, "karaoke");
     expect(items).toHaveLength(2);
   });
 
   it("returns [] for HTML with no events", () => {
-    expect(parseEventbriteHtml("<html></html>", "x")).toEqual([]);
+    expect(parseEventsHtml("<html></html>", "x")).toEqual([]);
   });
 });
 
-describe("buildEventbriteUrl", () => {
-  it("slugifies a city + state location", () => {
-    const url = buildEventbriteUrl(
+describe("buildAllEventsUrl", () => {
+  it("uses city-only slug from a city + state location", () => {
+    const url = buildAllEventsUrl(
       { slug: "karaoke", label: "Karaoke", query: "karaoke" },
       "Richmond, VA",
     );
-    expect(url).toBe("https://www.eventbrite.com/d/richmond-va/karaoke/");
+    expect(url).toBe("https://allevents.in/richmond/karaoke");
   });
 
-  it("URL-encodes multi-word query terms", () => {
-    const url = buildEventbriteUrl(
+  it("hyphenates multi-word queries", () => {
+    const url = buildAllEventsUrl(
       { slug: "poc", label: "POC", query: "people of color" },
       "Richmond, VA",
     );
-    expect(url).toBe("https://www.eventbrite.com/d/richmond-va/people%20of%20color/");
+    expect(url).toBe("https://allevents.in/richmond/people-of-color");
   });
 
-  it("falls back to no-location path when location is empty", () => {
-    const url = buildEventbriteUrl(
+  it("defaults to richmond when location is empty", () => {
+    const url = buildAllEventsUrl(
       { slug: "festivals", label: "Festivals", query: "festival" },
       "",
     );
-    expect(url).toBe("https://www.eventbrite.com/d/festival/");
+    expect(url).toBe("https://allevents.in/richmond/festival");
   });
 });

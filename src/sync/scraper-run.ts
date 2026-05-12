@@ -12,7 +12,7 @@ import { scraperItems } from "../db/schema.js";
 import { withChangelog } from "../changelog/log.js";
 import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 import { fetchFeed, type FeedItem } from "../scrapers/rss.js";
-import { fetchEventbrite, type EventItem } from "../scrapers/events.js";
+import { fetchEvents as fetchEventsForCategory, type EventItem } from "../scrapers/events.js";
 import { AI_NEWS_SOURCES, EVENT_CATEGORIES } from "../scrapers/sources.js";
 
 export type ScraperKind = "ai_news" | "events";
@@ -96,11 +96,11 @@ async function fetchEvents(
   const all: EventItem[] = [];
   for (const cat of EVENT_CATEGORIES) {
     try {
-      const events = await fetchEventbrite(cat, location);
+      const events = await fetchEventsForCategory(cat, location);
       all.push(...events);
     } catch (err) {
       errors.push({
-        source: `Eventbrite:${cat.slug}`,
+        source: `AllEvents.in:${cat.slug}`,
         error: err instanceof Error ? err.message : String(err),
       });
     }

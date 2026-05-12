@@ -5,108 +5,160 @@
   <span class="muted" style="font-size: 12px;">Manual scrape + AI digest. Cron delivery later.</span>
 </div>
 <p class="muted" style="margin: 0 0 20px; font-size: 13px;">
-  Two sources today: AI news (RSS feeds from Anthropic, OpenAI, TechCrunch AI, The Verge AI, VentureBeat AI, Hacker News) and Eventbrite listings scoped to <code><%= eventsLocation %></code>.
-  Each fetched item is logged through the changelog so the Recent activity panel groups them by run.
+  AI news: a brief written briefing from Anthropic, OpenAI, TechCrunch AI, The Verge AI, VentureBeat AI, and Hacker News.
+  Events: AllEvents.in listings for <code><%= eventsLocation %></code> across five categories.
+  Each scrape is logged through the changelog so the Recent activity panel groups items by run.
 </p>
 
 <style>.htmx-indicator{opacity:0;transition:opacity .2s}.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{opacity:1}</style>
 
 <div id="flash-area"></div>
 
-<% function renderSection(kind, label, description, items, digests) { %>
-  <section style="margin-bottom: 36px;">
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
-      <h3 style="margin: 0;"><%= label %></h3>
-      <span class="muted" style="font-size: 12px;"><%= items.length %> recent items, <%= digests.length %> digests</span>
-      <div class="spacer" style="flex: 1;"></div>
-      <form
-        hx-post="/ui/scraper/<%= kind %>/run"
-        hx-target="#flash-area"
-        hx-swap="innerHTML"
-        hx-disabled-elt="find button"
-        hx-indicator="#<%= kind %>-scrape-indicator"
-      >
-        <button type="submit" style="padding: 6px 12px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
-          Scrape now
-        </button>
-        <span id="<%= kind %>-scrape-indicator" class="htmx-indicator muted" style="margin-left: 6px; font-size: 12px;">fetching…</span>
-      </form>
-      <form
-        hx-post="/ui/scraper/<%= kind %>/digest"
-        hx-target="#flash-area"
-        hx-swap="innerHTML"
-        hx-disabled-elt="find button"
-        hx-indicator="#<%= kind %>-digest-indicator"
-      >
-        <button type="submit" style="padding: 6px 12px; background: #fff; color: var(--fg); border: 1px solid var(--border); border-radius: 3px; cursor: pointer;">
-          Generate digest
-        </button>
-        <span id="<%= kind %>-digest-indicator" class="htmx-indicator muted" style="margin-left: 6px; font-size: 12px;">summarizing…</span>
-      </form>
-    </div>
-    <p class="muted" style="margin: 0 0 10px; font-size: 12px;"><%= description %></p>
+<%
+  function renderHeader(kind, label, description, items, digests) {
+%>
+  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+    <h3 style="margin: 0;"><%= label %></h3>
+    <span class="muted" style="font-size: 12px;"><%= items.length %> items · <%= digests.length %> digests</span>
+    <div class="spacer" style="flex: 1;"></div>
+    <form
+      hx-post="/ui/scraper/<%= kind %>/run"
+      hx-target="#flash-area"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#<%= kind %>-scrape-indicator"
+    >
+      <button type="submit" style="padding: 6px 12px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
+        Scrape now
+      </button>
+      <span id="<%= kind %>-scrape-indicator" class="htmx-indicator muted" style="margin-left: 6px; font-size: 12px;">fetching…</span>
+    </form>
+    <form
+      hx-post="/ui/scraper/<%= kind %>/digest"
+      hx-target="#flash-area"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#<%= kind %>-digest-indicator"
+    >
+      <button type="submit" style="padding: 6px 12px; background: #fff; color: var(--fg); border: 1px solid var(--border); border-radius: 3px; cursor: pointer;">
+        Generate digest
+      </button>
+      <span id="<%= kind %>-digest-indicator" class="htmx-indicator muted" style="margin-left: 6px; font-size: 12px;">summarizing…</span>
+    </form>
+  </div>
+  <p class="muted" style="margin: 0 0 10px; font-size: 12px;"><%= description %></p>
+<%
+  }
 
-    <% if (items.length === 0) { %>
-      <p class="muted">No <%= label.toLowerCase() %> items yet. Click <strong>Scrape now</strong> to fetch.</p>
-    <% } else { %>
-      <table>
-        <thead>
+  function renderItemsTable(items) {
+%>
+  <% if (items.length === 0) { %>
+    <p class="muted">No items yet. Click <strong>Scrape now</strong> to fetch.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 110px;">Fetched</th>
+          <th style="width: 140px;">Source</th>
+          <th>Title</th>
+          <th style="width: 120px;">Published</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.slice(0, 20).forEach((item) => { %>
           <tr>
-            <th style="width: 110px;">Fetched</th>
-            <th style="width: 140px;">Source</th>
-            <th>Title</th>
-            <th style="width: 120px;">Published</th>
+            <td class="muted"><%= new Date(item.createdAt).toISOString().slice(0, 16).replace('T', ' ') %></td>
+            <td><%= item.source %></td>
+            <td>
+              <a href="<%= item.itemUrl %>" target="_blank" rel="noopener noreferrer"><%= item.title %></a>
+              <% if (item.rawSnippet) { %>
+                <div class="muted" style="font-size: 12px; margin-top: 2px;"><%= item.rawSnippet.slice(0, 180) %><%= item.rawSnippet.length > 180 ? '…' : '' %></div>
+              <% } %>
+            </td>
+            <td class="muted"><%= item.publishedAt ? new Date(item.publishedAt).toISOString().slice(0, 10) : '—' %></td>
           </tr>
-        </thead>
-        <tbody>
-          <% items.slice(0, 20).forEach((item) => { %>
-            <tr>
-              <td class="muted"><%= new Date(item.createdAt).toISOString().slice(0, 16).replace('T', ' ') %></td>
-              <td><%= item.source %></td>
-              <td>
-                <a href="<%= item.itemUrl %>" target="_blank" rel="noopener noreferrer"><%= item.title %></a>
-                <% if (item.rawSnippet) { %>
-                  <div class="muted" style="font-size: 12px; margin-top: 2px;"><%= item.rawSnippet.slice(0, 180) %><%= item.rawSnippet.length > 180 ? '…' : '' %></div>
-                <% } %>
-              </td>
-              <td class="muted"><%= item.publishedAt ? new Date(item.publishedAt).toISOString().slice(0, 10) : '—' %></td>
-            </tr>
-          <% }); %>
-        </tbody>
-      </table>
-    <% } %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+<%
+  }
 
-    <% if (digests.length > 0) { %>
-      <details style="margin-top: 14px;">
-        <summary style="cursor: pointer; font-weight: 600;">Past digests (<%= digests.length %>)</summary>
-        <% digests.forEach((d) => { %>
-          <div style="margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; background: #fafafa;">
-            <div class="muted" style="font-size: 12px; margin-bottom: 6px;">
-              <%= new Date(d.createdAt).toISOString().slice(0, 16).replace('T', ' ') %> · <%= (d.itemIds || []).length %> items
-            </div>
-            <div style="white-space: pre-wrap; font-size: 13px;"><%= d.summary %></div>
-          </div>
+  function renderDigest(d) {
+%>
+  <div style="margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 4px; background: #fafafa;">
+    <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+      <%= new Date(d.createdAt).toISOString().slice(0, 16).replace('T', ' ') %> · <%= (d.itemIds || []).length %> items summarized
+    </div>
+    <div style="white-space: pre-wrap; font-size: 14px; line-height: 1.5;"><%= d.summary %></div>
+  </div>
+<%
+  }
+%>
+
+<!-- AI NEWS: digest-led. Lead with a brief summary; source items behind a fold. -->
+<section style="margin-bottom: 40px;">
+  <%- renderHeader(
+    "ai_news",
+    "AI News",
+    "Brief written digest scoped to voice agents + competitor activity. Click Generate digest after each scrape for a fresh briefing.",
+    aiItems,
+    aiDigests
+  ) %>
+
+  <% if (aiDigests.length === 0) { %>
+    <div style="padding: 12px 16px; border: 1px dashed var(--border); border-radius: 4px; background: #fafafa;">
+      <p class="muted" style="margin: 0;">
+        No digest yet.
+        <% if (aiItems.length === 0) { %>
+          Click <strong>Scrape now</strong>, then <strong>Generate digest</strong>.
+        <% } else { %>
+          You have <%= aiItems.length %> items ready — click <strong>Generate digest</strong> to summarize.
+        <% } %>
+      </p>
+    </div>
+  <% } else { %>
+    <h4 style="margin: 8px 0 4px; font-size: 13px;">Latest briefing</h4>
+    <%- renderDigest(aiDigests[0]) %>
+    <% if (aiDigests.length > 1) { %>
+      <details style="margin-top: 8px;">
+        <summary style="cursor: pointer; font-size: 13px;">Past digests (<%= aiDigests.length - 1 %>)</summary>
+        <% aiDigests.slice(1).forEach((d) => { %>
+          <%- renderDigest(d) %>
         <% }); %>
       </details>
     <% } %>
-  </section>
-<% } %>
+  <% } %>
 
-<%- renderSection(
-  "ai_news",
-  "AI News",
-  "Six feeds for AI/voice-agent coverage. Digest is scoped to model launches, agentic capabilities, and competitor moves — skipping hype.",
-  aiItems,
-  aiDigests
-) %>
+  <details style="margin-top: 14px;">
+    <summary style="cursor: pointer; font-size: 13px; color: var(--muted);">Source items (<%= aiItems.length %>)</summary>
+    <div style="margin-top: 8px;">
+      <%- renderItemsTable(aiItems) %>
+    </div>
+  </details>
+</section>
 
-<%- renderSection(
-  "events",
-  "Events",
-  "Eventbrite search across five categories (karaoke, singles, people of color, interracial, festivals) for the configured location.",
-  eventItems,
-  eventDigests
-) %>
+<!-- EVENTS: list-led. The user explicitly wants the article list here. -->
+<section style="margin-bottom: 36px;">
+  <%- renderHeader(
+    "events",
+    "Events",
+    "AllEvents.in search across five categories (karaoke, singles, people of color, interracial, festivals) for the configured location.",
+    eventItems,
+    eventDigests
+  ) %>
+
+  <%- renderItemsTable(eventItems) %>
+
+  <% if (eventDigests.length > 0) { %>
+    <details style="margin-top: 14px;">
+      <summary style="cursor: pointer; font-weight: 600;">Past digests (<%= eventDigests.length %>)</summary>
+      <% eventDigests.forEach((d) => { %>
+        <%- renderDigest(d) %>
+      <% }); %>
+    </details>
+  <% } %>
+</section>
 
 <%- include("partials/_activity-section", { sessionGroups, label: "Scraper" }) %>
 

@@ -1,19 +1,21 @@
 /**
- * Eventbrite scraper. Uses the public search HTML page — Eventbrite
- * embeds JSON-LD `<script type="application/ld+json">` blocks describing
- * every event card on the result page. No API key required. (If
- * EVENTBRITE_API_KEY is ever set, a future revision can route through
- * the v3 API instead.)
+ * AllEvents.in scraper. Eventbrite is fronted by AWS WAF that gates the
+ * search pages behind a CAPTCHA challenge, so a plain HTTP fetch always
+ * fails. AllEvents.in serves the same shape of JSON-LD embedded in the
+ * search HTML and is currently scraper-friendly.
  *
- * The parser is intentionally tolerant: Eventbrite's markup shifts, and
- * any malformed JSON block is skipped rather than failing the whole run.
+ * Each search page is `https://allevents.in/<city-slug>/<query-slug>` and
+ * embeds `<script type="application/ld+json">` blocks — `@type: "Event"`
+ * blocks contain everything we need (name, url, startDate, location,
+ * description). Malformed JSON blocks are skipped silently rather than
+ * failing the run.
  */
 
 import type { EventCategory } from "./sources.js";
 
 export type EventItem = {
   category: string;
-  source: "Eventbrite";
+  source: "AllEvents.in";
   url: string;
   title: string;
   startsAt: Date | null;
@@ -21,14 +23,29 @@ export type EventItem = {
   snippet: string;
 };
 
-export function buildEventbriteUrl(category: EventCategory, location: string): string {
-  const loc = location
+function slugifyLocation(location: string): string {
+  return location
     .toLowerCase()
     .replace(/,/g, "")
     .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 1) // AllEvents groups by city only ("richmond"), region tagged separately
+    .join("-");
+}
+
+function slugifyQuery(query: string): string {
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
     .replace(/\s+/g, "-");
-  const slug = loc ? `${loc}/` : "";
-  return `https://www.eventbrite.com/d/${slug}${encodeURIComponent(category.query)}/`;
+}
+
+export function buildAllEventsUrl(category: EventCategory, location: string): string {
+  const city = slugifyLocation(location) || "richmond";
+  const q = slugifyQuery(category.query);
+  return `https://allevents.in/${city}/${q}`;
 }
 
 function parseDate(s: unknown): Date | null {
@@ -60,10 +77,15 @@ function locationOf(raw: unknown): string | null {
 }
 
 /**
- * Extract Eventbrite events from a search page's HTML by reading every
- * embedded JSON-LD block and keeping the ones with `@type: "Event"`.
+ * Extract events from a search page's HTML by reading every embedded
+ * JSON-LD block and keeping `@type: "Event"` entries. Works for both
+ * AllEvents.in and any similarly structured source.
  */
-export function parseEventbriteHtml(html: string, categorySlug: string): EventItem[] {
+export function parseEventsHtml(
+  html: string,
+  categorySlug: string,
+  sourceLabel: "AllEvents.in" = "AllEvents.in",
+): EventItem[] {
   const out: EventItem[] = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m: RegExpExecArray | null;
@@ -86,7 +108,7 @@ export function parseEventbriteHtml(html: string, categorySlug: string): EventIt
       if (!url || !title) continue;
       out.push({
         category: categorySlug,
-        source: "Eventbrite",
+        source: sourceLabel,
         url,
         title,
         startsAt: parseDate(ev.startDate),
@@ -109,21 +131,25 @@ function dedupeByUrl(items: EventItem[]): EventItem[] {
   return out;
 }
 
-export async function fetchEventbrite(
+export async function fetchEvents(
   category: EventCategory,
   location: string,
 ): Promise<EventItem[]> {
-  const url = buildEventbriteUrl(category, location);
+  const url = buildAllEventsUrl(category, location);
   const res = await fetch(url, {
     headers: {
+      // AllEvents.in returns the same HTML regardless of UA, but using a
+      // mainstream browser string keeps us off the bot-filtering fast path.
       "User-Agent":
-        "Mozilla/5.0 (compatible; home-systems-scraper/1.0; +https://github.com)",
-      Accept: "text/html",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "en-US,en;q=0.9",
     },
   });
   if (!res.ok) {
     throw new Error(`fetch ${url} → ${res.status}`);
   }
   const html = await res.text();
-  return parseEventbriteHtml(html, category.slug);
+  return parseEventsHtml(html, category.slug);
 }
