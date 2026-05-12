@@ -18,7 +18,7 @@ function fourteenDaysAgo(): Date {
 const DOMAIN = "email";
 
 const TriageBody = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(10),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export function makeGmailUiRouter(): Router {

@@ -10,9 +10,17 @@
     hx-disabled-elt="find button"
     hx-indicator="#triage-indicator"
   >
-    <input type="hidden" name="limit" value="10" />
+    <label style="font-size: 12px; color: var(--muted);">
+      batch
+      <select name="limit" style="margin-left: 4px; padding: 4px 6px;">
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
     <button type="submit" style="padding: 6px 14px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
-      Run triage now (10)
+      Run triage now
     </button>
     <span id="triage-indicator" class="htmx-indicator muted" style="margin-left: 8px; font-size: 12px;">working…</span>
   </form>

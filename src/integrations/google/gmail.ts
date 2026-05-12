@@ -1,8 +1,15 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 
+/**
+ * Inbox emails that haven't yet been tagged with one of the three triage
+ * labels. Intentionally no time window: each run picks up where the last
+ * left off, so the user can chew through a backlog by clicking multiple
+ * times (or letting the daily cron drain it). No category exclusions —
+ * the AI is responsible for distinguishing noise from worth-reading.
+ */
 const TRIAGE_QUERY =
-  "in:inbox newer_than:1d -category:promotions -category:social -category:updates";
+  "in:inbox -label:triage/noise -label:triage/worth-reading -label:triage/needs-reply";
 
 export type GmailMessageRef = { id: string; threadId: string };
 
