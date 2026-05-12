@@ -183,4 +183,79 @@ describe("buildMergePlan", () => {
     const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
     expect(cols.first_name).toBe("Samuel");
   });
+
+  it("prefers a clean last_name over one with a company-descriptor suffix (Aguilera vs Aguilera Law Center)", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Alejandra", last_name: "Aguilera" }),
+        row(20, { first_name: "Alejandra", last_name: "Aguilera Law Center" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    // No update emitted because keeper (row 10) already has the better value
+    expect(cols.last_name).toBeUndefined();
+  });
+
+  it("prefers a clean last_name even when the stuffed row is the keeper", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Alejandra", last_name: "Aguilera Law Center" }),
+        row(20, { first_name: "Alejandra", last_name: "Aguilera" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.last_name).toBe("Aguilera");
+  });
+
+  it("recognizes a range of common company suffixes (Inc, LLC, Management, Group, …)", () => {
+    const samples: Array<[string, string]> = [
+      ["Smith Industries", "Smith"],
+      ["Jones Inc", "Jones"],
+      ["Garcia LLC", "Garcia"],
+      ["Lee Holdings", "Lee"],
+      ["Doe Consulting", "Doe"],
+      ["Ross Law", "Ross"],
+      ["Patel Studios", "Patel"],
+      ["Kim Foundation", "Kim"],
+    ];
+    for (const [stuffed, clean] of samples) {
+      const plan = buildMergePlan(
+        [
+          row(10, { first_name: "X", last_name: stuffed }),
+          row(20, { first_name: "X", last_name: clean }),
+        ],
+        headers,
+      );
+      const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+      expect(cols.last_name, `for "${stuffed}" / "${clean}"`).toBe(clean);
+    }
+  });
+
+  it("does NOT strip legit hyphenated or compound surnames", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Lori", last_name: "Wymore" }),
+        row(20, { first_name: "Lori", last_name: "Wymore-Kirkland" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    // "Wymore-Kirkland" doesn't contain a company-suffix token → longer wins
+    expect(cols.last_name).toBe("Wymore-Kirkland");
+  });
+
+  it("applies the same company-suffix rule to first_name (Jeremy Span Stoneburgh Management → Jeremy)", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Jeremy Span Stoneburgh Management", last_name: "" }),
+        row(20, { first_name: "Jeremy", last_name: "Span" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBe("Jeremy");
+    expect(cols.last_name).toBe("Span");
+  });
 });

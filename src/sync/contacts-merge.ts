@@ -70,6 +70,109 @@ function longest(values: string[]): string {
   return best;
 }
 
+/**
+ * Tokens that, when they appear after an otherwise-shorter version of a
+ * name, signal the longer string is name + company-descriptor stuffed
+ * together. Conservative list — only tokens that essentially never appear
+ * as part of a person's actual surname.
+ */
+const COMPANY_SUFFIX_TOKENS = new Set([
+  "inc",
+  "incorporated",
+  "llc",
+  "ltd",
+  "limited",
+  "corp",
+  "corporation",
+  "company",
+  "co",
+  "group",
+  "partners",
+  "holdings",
+  "associates",
+  "management",
+  "mgmt",
+  "solutions",
+  "services",
+  "consulting",
+  "ventures",
+  "capital",
+  "investments",
+  "center",
+  "centre",
+  "clinic",
+  "hospital",
+  "agency",
+  "bureau",
+  "studio",
+  "studios",
+  "productions",
+  "media",
+  "law",
+  "legal",
+  "tax",
+  "accounting",
+  "realty",
+  "real estate",
+  "technologies",
+  "tech",
+  "systems",
+  "labs",
+  "industries",
+  "enterprises",
+  "international",
+  "global",
+  "trust",
+  "foundation",
+  "fund",
+  "school",
+  "academy",
+  "church",
+  "ministries",
+]);
+
+/**
+ * True iff `longer` looks like "<shorter> + a company-descriptor tail".
+ * E.g. isCompanySuffix("Aguilera Law Center", "Aguilera") → true.
+ * Used to keep the clean surname when one row has it bare and another has
+ * the stuffed form.
+ */
+export function isCompanySuffix(longer: string, shorter: string): boolean {
+  const a = longer.trim().toLowerCase();
+  const b = shorter.trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a.length <= b.length) return false;
+  if (!a.startsWith(b + " ") && !a.startsWith(b + "-")) return false;
+  const tail = a.slice(b.length).replace(/^[\s-]+/, "");
+  if (!tail) return false;
+  const tokens = tail.split(/\s+/);
+  return tokens.some((t) => COMPANY_SUFFIX_TOKENS.has(t));
+}
+
+/**
+ * Like `longest()` but recognizes "<clean name> + <company suffix>"
+ * pairings and keeps the clean form. Fixes:
+ *   - "Aguilera" vs "Aguilera Law Center" → keep "Aguilera"
+ *   - "Spann" vs "Spann Stoneburgh Management" → keep "Spann"
+ * Without breaking legit longer names:
+ *   - "Wymore" vs "Wymore-Kirkland" → keep "Wymore-Kirkland"
+ *   - "Sam" vs "Samuel" → keep "Samuel"
+ */
+export function pickBetterName(values: string[]): string {
+  const trimmed = values.map((v) => v.trim()).filter((v) => v.length > 0);
+  if (trimmed.length === 0) return "";
+  let best = trimmed[0];
+  for (const c of trimmed.slice(1)) {
+    if (isCompanySuffix(c, best)) continue; // c is best + junk → keep best
+    if (isCompanySuffix(best, c)) {
+      best = c; // best is c + junk → switch to c
+      continue;
+    }
+    if (c.length > best.length) best = c;
+  }
+  return best;
+}
+
 function concatUnique(values: string[], sep = "\n---\n"): string {
   const pieces: string[] = [];
   const seen = new Set<string>();
@@ -118,9 +221,9 @@ export function mergeNameField(
     return f !== "" && l !== "";
   });
   if (splitRows.length > 0) {
-    return longest(splitRows.map((r) => r.record[field] ?? ""));
+    return pickBetterName(splitRows.map((r) => r.record[field] ?? ""));
   }
-  return longest(rows.map((r) => r.record[field] ?? ""));
+  return pickBetterName(rows.map((r) => r.record[field] ?? ""));
 }
 
 export type MergeUpdate = { col: string; from: string; to: string };

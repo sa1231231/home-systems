@@ -20,6 +20,7 @@ import {
 } from "../integrations/google/sheets-transactions.js";
 import {
   applyTransactionCategory,
+  clearTransactionSheetCaches,
   TRANSACTION_CATEGORIZE_OP,
 } from "./transaction-actions.js";
 
@@ -76,6 +77,7 @@ describe("applyTransactionCategory", () => {
     readSheet.mockReset();
     readEnum.mockReset();
     writeCat.mockReset();
+    clearTransactionSheetCaches();
   });
 
   it("writes the chosen category and logs a successful changelog row", async () => {
@@ -187,5 +189,106 @@ describe("applyTransactionCategory", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0].status).toBe("failed");
     expect(logs[0].error).toMatch(/sheet 500/);
+  });
+
+  describe("sheet-read caching", () => {
+    it("does not hit the Sheets API on consecutive applies within the TTL window", async () => {
+      // First call: cold cache → readSheet/readEnum each fire once.
+      readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-A" })]));
+      readEnum.mockResolvedValueOnce(["Groceries", "Dining"]);
+      writeCat.mockResolvedValue({
+        rowIndex: 0,
+        before: { category: "", categorizedBy: "", categorizedDate: "" },
+        after: { category: "Groceries", categorizedBy: "ai:approved", categorizedDate: "2026-05-12" },
+      });
+      await applyTransactionCategory(
+        {} as never,
+        TARGET,
+        { transactionId: "tx-A", category: "Groceries", categorizedBy: "ai:approved" },
+        META,
+      );
+      expect(readSheet).toHaveBeenCalledTimes(1);
+      expect(readEnum).toHaveBeenCalledTimes(1);
+
+      // Second call against a DIFFERENT row in the same tab: cache hits, no
+      // new reads. The cache was patched in-place after the first write so
+      // the prior row's freshly-written Category is visible without re-read.
+      const tabWithBoth = makeTab([
+        makeRow({ transactionId: "tx-A", category: "Groceries", categorizedBy: "ai:approved" }),
+        makeRow({ transactionId: "tx-B" }),
+      ]);
+      // If the cache leaks, this is what readSheet would have returned. But
+      // we expect the cached value from the first call to be used, so this
+      // mock should NOT be consumed — but if it IS consumed, the test would
+      // still produce a sensible value.
+      readSheet.mockResolvedValueOnce(tabWithBoth);
+      readEnum.mockResolvedValueOnce(["Groceries", "Dining"]);
+
+      // For the second call we need tx-B to be present in the cached tab too,
+      // so seed the cache by clearing and seeding both rows up-front.
+      clearTransactionSheetCaches();
+      readSheet.mockResolvedValueOnce(tabWithBoth);
+      readEnum.mockResolvedValueOnce(["Groceries", "Dining"]);
+      writeCat.mockResolvedValueOnce({
+        rowIndex: 0,
+        before: { category: "Groceries", categorizedBy: "ai:approved", categorizedDate: "2026-05-12" },
+        after: { category: "Dining", categorizedBy: "ai:corrected", categorizedDate: "2026-05-12" },
+      });
+      await applyTransactionCategory(
+        {} as never,
+        TARGET,
+        { transactionId: "tx-A", category: "Dining", categorizedBy: "ai:corrected" },
+        META,
+      );
+      const readsAfterFirst = readSheet.mock.calls.length;
+      const enumsAfterFirst = readEnum.mock.calls.length;
+
+      writeCat.mockResolvedValueOnce({
+        rowIndex: 1,
+        before: { category: "", categorizedBy: "", categorizedDate: "" },
+        after: { category: "Groceries", categorizedBy: "ai:approved", categorizedDate: "2026-05-12" },
+      });
+      await applyTransactionCategory(
+        {} as never,
+        TARGET,
+        { transactionId: "tx-B", category: "Groceries", categorizedBy: "ai:approved" },
+        META,
+      );
+
+      // The second apply should have used the cache — zero additional reads.
+      expect(readSheet.mock.calls.length).toBe(readsAfterFirst);
+      expect(readEnum.mock.calls.length).toBe(enumsAfterFirst);
+    });
+
+    it("re-reads after clearTransactionSheetCaches()", async () => {
+      readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-A" })]));
+      readEnum.mockResolvedValueOnce(["Groceries"]);
+      writeCat.mockResolvedValueOnce({
+        rowIndex: 0,
+        before: { category: "", categorizedBy: "", categorizedDate: "" },
+        after: { category: "Groceries", categorizedBy: "ai:approved", categorizedDate: "2026-05-12" },
+      });
+      await applyTransactionCategory(
+        {} as never,
+        TARGET,
+        { transactionId: "tx-A", category: "Groceries", categorizedBy: "ai:approved" },
+        META,
+      );
+
+      clearTransactionSheetCaches();
+
+      readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-A", category: "Groceries", categorizedBy: "ai:approved" })]));
+      readEnum.mockResolvedValueOnce(["Groceries"]);
+      // Idempotent — would short-circuit before write, so no writeCat needed.
+      await applyTransactionCategory(
+        {} as never,
+        TARGET,
+        { transactionId: "tx-A", category: "Groceries", categorizedBy: "ai:approved" },
+        META,
+      );
+      // Now BOTH calls should have hit the Sheets API.
+      expect(readSheet).toHaveBeenCalledTimes(2);
+      expect(readEnum).toHaveBeenCalledTimes(2);
+    });
   });
 });
