@@ -18,6 +18,7 @@
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "auth:google": "tsx scripts/auth-google.ts",
+    "auth:google:exchange": "tsx scripts/auth-google-exchange.ts",
     "backup:run": "tsx scripts/run-backup.ts",
     "trello:setup": "tsx scripts/trello-setup.ts"
   },
