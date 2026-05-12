@@ -1,0 +1,29 @@
+<section style="margin-top: 32px;">
+  <h3 style="margin: 0 0 6px;">
+    Recent activity
+    <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= sessionGroups.length %> job<%= sessionGroups.length === 1 ? '' : 's' %> in last 14 days)</span>
+  </h3>
+  <p class="muted" style="margin: 0 0 8px; font-size: 12px;">
+    Each job is one cron run or one UI action. <strong>Undo job</strong> reverses every successful operation in that job in one batch — granular per-row undo isn't surfaced because <%= label %> jobs usually share intent and rolling back partial state would be more confusing than helpful.
+  </p>
+  <% if (sessionGroups.length === 0) { %>
+    <p class="muted">No <%= label %> activity in the last 14 days.</p>
+  <% } else { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 160px;">Started (UTC)</th>
+          <th style="width: 220px;">Caller / targets</th>
+          <th>Operations</th>
+          <th style="width: 140px;">Status</th>
+          <th style="width: 110px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% sessionGroups.forEach((group) => { %>
+          <%- include("./_session-group", { group }) %>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } %>
+</section>

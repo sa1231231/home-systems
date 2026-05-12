@@ -8,6 +8,7 @@ import { makeReviewUiRouter } from "./routes-review.js";
 import { makeRulesUiRouter } from "./routes-rules.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
 import { makeTrelloUiRouter } from "./routes-trello.js";
+import { makeSessionsUiRouter } from "./routes-sessions.js";
 
 export type WebRouterOptions = {
   authEnabled: boolean;
@@ -36,10 +37,11 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
     : passthrough;
 
   router.get("/", gate, (_req, res) => {
-    res.redirect(302, "/ui/changes");
+    res.redirect(302, "/ui/gmail");
   });
 
   router.use("/changes", gate, makeChangesUiRouter());
+  router.use("/sessions", gate, makeSessionsUiRouter());
   router.use("/gmail", gate, makeGmailUiRouter());
   router.use(
     "/transactions",

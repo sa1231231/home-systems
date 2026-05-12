@@ -13,6 +13,7 @@ import { makeTrelloClient } from "../integrations/trello/client.js";
 import { runTrelloReorderOnce } from "../sync/trello-runner.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
+import { groupBySession } from "./session-groups.js";
 
 export function makeTrelloUiRouter(): Router {
   const router = Router();
@@ -23,25 +24,28 @@ export function makeTrelloUiRouter(): Router {
         notConfigured: true,
         flash: null,
         activity: [],
+        sessionGroups: [],
         cron: cronInfoForDomain("trello"),
         run: null,
       });
       return;
     }
-    const since = windowStartFor24h();
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const [activity, run] = await Promise.all([
       db
         .select()
         .from(changelog)
         .where(and(like(changelog.operation, "trello.%"), gte(changelog.createdAt, since)))
         .orderBy(desc(changelog.id))
-        .limit(50),
+        .limit(500),
       latestRunFor("trello"),
     ]);
+    const sessionGroups = groupBySession(activity).slice(0, 30);
     res.render("trello", {
       notConfigured: false,
       flash: null,
       activity,
+      sessionGroups,
       cron: cronInfoForDomain("trello"),
       run,
     });

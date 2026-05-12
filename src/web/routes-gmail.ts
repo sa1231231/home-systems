@@ -1,14 +1,19 @@
 import { Router } from "express";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, like, gte } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { needsReview, rules } from "../db/schema.js";
+import { changelog, needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { triageEmails } from "../sync/email-triage.js";
 import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
+import { groupBySession } from "./session-groups.js";
+
+function fourteenDaysAgo(): Date {
+  return new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+}
 
 const DOMAIN = "email";
 
@@ -20,7 +25,7 @@ export function makeGmailUiRouter(): Router {
   const router = Router();
 
   router.get("/", async (_req, res) => {
-    const [rulesRows, pendingRows, run] = await Promise.all([
+    const [rulesRows, pendingRows, run, activityRows] = await Promise.all([
       db
         .select()
         .from(rules)
@@ -34,13 +39,21 @@ export function makeGmailUiRouter(): Router {
         .orderBy(desc(needsReview.id))
         .limit(200),
       latestRunFor("email"),
+      db
+        .select()
+        .from(changelog)
+        .where(and(like(changelog.operation, "email.%"), gte(changelog.createdAt, fourteenDaysAgo())))
+        .orderBy(desc(changelog.id))
+        .limit(500),
     ]);
+    const sessionGroups = groupBySession(activityRows).slice(0, 30);
     res.render("gmail", {
       rules: rulesRows,
       pending: pendingRows,
       flash: null,
       cron: cronInfoForDomain("email"),
       run,
+      sessionGroups,
     });
   });
 

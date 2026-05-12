@@ -1,0 +1,57 @@
+<%
+  const opSummary = Object.entries(group.byOperation)
+    .map(([op, n]) => n > 1 ? `${op} × ${n}` : op)
+    .join(", ");
+  const duration = (group.endedAt.getTime() - group.startedAt.getTime()) / 1000;
+  const startedAtStr = new Date(group.startedAt).toISOString().slice(0, 16).replace("T", " ") + "Z";
+%>
+<tr id="session-group-<%= group.sessionId %>">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= startedAtStr %></td>
+  <td>
+    <div style="font-size: 12px;"><code><%= group.caller %></code></div>
+    <% if (group.sampleTargets.length > 0) { %>
+      <div class="muted" style="font-size: 11px;">
+        <%= group.sampleTargets[0].targetKind %>:
+        <% group.sampleTargets.forEach((t, i) => { %>
+          <code><%= t.targetId.length > 40 ? t.targetId.slice(0, 37) + "..." : t.targetId %></code><%= i < group.sampleTargets.length - 1 ? ", " : "" %>
+        <% }); %>
+        <% if (group.totalRows > group.sampleTargets.length) { %>
+          <span class="muted">+ <%= group.totalRows - group.sampleTargets.length %> more</span>
+        <% } %>
+      </div>
+    <% } %>
+  </td>
+  <td>
+    <div style="font-size: 12px;"><%= opSummary %></div>
+    <% if (duration > 0) { %>
+      <div class="muted" style="font-size: 11px;"><%= duration < 1 ? `${Math.round(duration * 1000)}ms` : `${duration.toFixed(1)}s` %> · <%= group.totalRows %> rows</div>
+    <% } %>
+  </td>
+  <td>
+    <% if (group.reversibleCount > 0) { %>
+      <span class="pill success">success</span>
+      <span class="muted" style="font-size: 11px;"><%= group.reversibleCount %> reversible</span>
+    <% } else if (group.undoneCount === group.totalRows) { %>
+      <span class="pill rejected">undone</span>
+    <% } else if (group.failedCount > 0) { %>
+      <span class="pill rejected">failed</span>
+      <span class="muted" style="font-size: 11px;"><%= group.failedCount %> errored</span>
+    <% } else { %>
+      <span class="pill">mixed</span>
+      <% if (group.undoneCount) { %><span class="muted" style="font-size: 11px;"><%= group.undoneCount %> undone</span><% } %>
+    <% } %>
+  </td>
+  <td>
+    <% if (group.reversibleCount > 0) { %>
+      <button
+        hx-post="/ui/sessions/<%= group.sessionId %>/rollback"
+        hx-target="#session-group-<%= group.sessionId %>"
+        hx-swap="outerHTML"
+        hx-confirm="Undo this entire job? <%= group.reversibleCount %> reversible operation<%= group.reversibleCount === 1 ? '' : 's' %> will be rolled back."
+        style="padding: 4px 10px; background: #fff; border: 1px solid var(--danger); color: var(--danger); border-radius: 3px; cursor: pointer;"
+      >Undo job</button>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;">—</span>
+    <% } %>
+  </td>
+</tr>

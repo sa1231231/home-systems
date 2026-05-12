@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
@@ -17,6 +17,7 @@ import {
   type AuditReport,
   type DuplicateGroup,
 } from "../sync/contacts-audit.js";
+import { groupBySession } from "./session-groups.js";
 import {
   readContactsTab,
   getSheetIdByTitle,
@@ -85,10 +86,22 @@ export function makeContactsUiRouter(): Router {
       db
         .select()
         .from(changelog)
-        .where(and(eq(changelog.targetKind, "contact"), gte(changelog.createdAt, since)))
+        .where(
+          and(
+            or(
+              eq(changelog.targetKind, "contact"),
+              eq(changelog.targetKind, "contact_row"),
+              eq(changelog.targetKind, "contact_rows"),
+              eq(changelog.targetKind, "contact_sheet"),
+              like(changelog.operation, "contacts.%"),
+            ),
+            gte(changelog.createdAt, since),
+          ),
+        )
         .orderBy(desc(changelog.id))
-        .limit(200),
+        .limit(500),
     ]);
+    const sessionGroups = groupBySession(activityRows).slice(0, 30);
     type DupGroupView = DuplicateGroup & {
       rows: Array<{
         rowIndex: number;
@@ -192,6 +205,7 @@ export function makeContactsUiRouter(): Router {
       rules: rulesRows,
       pending: pendingRows,
       activity: activityRows,
+      sessionGroups,
       flash: null,
       cron: cronInfoForDomain("contact"),
       audit,

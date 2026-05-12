@@ -30,31 +30,7 @@
   <%- include("partials/_triage-status", { run: locals.run, statusUrl: "/ui/trello/triage-status" }) %>
   <div id="reorder-result"></div>
 
-  <section>
-    <h3 style="margin: 16px 0 6px;">Recent activity <span class="muted" style="font-weight: normal; font-size: 13px;">(last 24h)</span></h3>
-    <p class="muted" style="margin: 0 0 8px;">Every card move + reorder the cron or manual button has done. Click <em>Undo</em> to roll one back; the reverser puts the card back where it was.</p>
-    <% if (activity.length === 0) { %>
-      <p class="muted">No Trello changes in the last 24 hours.</p>
-    <% } else { %>
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 160px;">When (UTC)</th>
-            <th>Operation</th>
-            <th>Card</th>
-            <th style="width: 120px;">Status</th>
-            <th>Caller</th>
-            <th style="width: 90px;">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% activity.forEach((row) => { %>
-            <%- include("partials/_change-row", { row }) %>
-          <% }); %>
-        </tbody>
-      </table>
-    <% } %>
-  </section>
+  <%- include("partials/_activity-section", { sessionGroups, label: "Trello" }) %>
 <% } %>
 
 <%- include("partials/_footer") %>

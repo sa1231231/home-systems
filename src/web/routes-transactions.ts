@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { needsReview, rules } from "../db/schema.js";
+import { changelog, needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
 import { triageTransactions } from "../sync/transaction-triage.js";
@@ -10,6 +10,7 @@ import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
+import { groupBySession } from "./session-groups.js";
 
 const DOMAIN = "transaction";
 
@@ -27,7 +28,8 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
   const router = Router();
 
   router.get("/", async (_req, res) => {
-    const [rulesRows, pendingRows] = await Promise.all([
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const [rulesRows, pendingRows, activityRows] = await Promise.all([
       db
         .select()
         .from(rules)
@@ -40,7 +42,23 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
         .where(and(eq(needsReview.domain, DOMAIN), eq(needsReview.status, "pending")))
         .orderBy(desc(needsReview.id))
         .limit(200),
+      db
+        .select()
+        .from(changelog)
+        .where(
+          and(
+            or(
+              eq(changelog.targetKind, "transaction"),
+              like(changelog.operation, "transaction.%"),
+              like(changelog.operation, "transactions.%"),
+            ),
+            gte(changelog.createdAt, since),
+          ),
+        )
+        .orderBy(desc(changelog.id))
+        .limit(500),
     ]);
+    const sessionGroups = groupBySession(activityRows).slice(0, 30);
 
     let categories: string[] = [];
     let warning: string | null = null;
@@ -69,6 +87,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       cron: cronInfoForDomain("transaction"),
       sheetUrl,
       run,
+      sessionGroups,
     });
   });
 
