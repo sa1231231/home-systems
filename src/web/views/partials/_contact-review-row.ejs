@@ -84,9 +84,6 @@
         </tbody>
       </table>
     <% } %>
-    <% if (typeof subj.row_index === "number" && kind === "refresh" && !(typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0)) { %>
-      <div class="muted" style="font-size: 11px;">row <%= subj.row_index %></div>
-    <% } %>
   </td>
   <td>
     <span class="pill <%= entry.status %>"><%= entry.status === "rejected" ? "skipped" : entry.status %></span>
