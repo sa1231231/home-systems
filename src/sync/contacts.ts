@@ -180,13 +180,11 @@ export function planSync(
   nowIso: string,
 ): SyncPlan {
   const headers = [...contactsTab.headers];
-  let needsHeaderUpdate = false;
-  let resourceNameColIndex = headers.indexOf(RESOURCE_NAME_COL);
-  if (resourceNameColIndex === -1) {
-    resourceNameColIndex = headers.length;
-    headers.push(RESOURCE_NAME_COL);
-    needsHeaderUpdate = true;
-  }
+  // If the sheet doesn't have google_resource_name, we don't auto-re-add it —
+  // dropping the column was an explicit user choice. Matching falls back to
+  // email/phone via findMatch().
+  const resourceNameColIndex = headers.indexOf(RESOURCE_NAME_COL);
+  const needsHeaderUpdate = false;
 
   const idx = buildSheetIndex(contactsTab.rows);
   const headerSet = new Set(headers);

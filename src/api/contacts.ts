@@ -16,7 +16,12 @@ import {
 } from "../sync/contact-writes.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
 import { findAuditIssues } from "../sync/contacts-audit.js";
-import { readContactsTab, getSheetIdByTitle, deleteDataRows } from "../integrations/google/sheets.js";
+import {
+  readContactsTab,
+  getSheetIdByTitle,
+  deleteDataRows,
+  deleteColumns,
+} from "../integrations/google/sheets.js";
 import { withChangelog } from "../changelog/index.js";
 
 const PreviewQuery = z.object({
@@ -140,6 +145,60 @@ export function makeContactsRouter(): Router {
   const DeleteRowBody = z.object({
     row_index: z.coerce.number().int().min(0).max(100_000),
     expected_full_name: z.string().max(500).optional(),
+  });
+
+  const CleanupColumnsBody = z.object({
+    columns: z.array(z.string().min(1).max(200)).min(1).max(50),
+    dry_run: z.boolean().default(false),
+  });
+
+  router.post("/sheet/cleanup-columns", writeLimiter, async (req, res) => {
+    try {
+      const { columns, dry_run } = CleanupColumnsBody.parse(req.body);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      const matched: { name: string; index: number }[] = [];
+      const missing: string[] = [];
+      for (const name of columns) {
+        const idx = tab.headers.indexOf(name);
+        if (idx === -1) missing.push(name);
+        else matched.push({ name, index: idx });
+      }
+      if (dry_run) {
+        res.json({ ok: true, dry_run: true, would_delete: matched, missing });
+        return;
+      }
+      if (matched.length === 0) {
+        res.json({ ok: true, dry_run: false, deleted: [], missing });
+        return;
+      }
+      const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
+      await withChangelog(
+        {
+          caller: "api:contacts.sheet.cleanup-columns",
+          sessionId: req.sessionId,
+          operation: "contacts.sheet.cleanup_columns",
+          targetKind: "contact_sheet",
+          targetId: `${tab.tab}!cols`,
+          intent: `drop columns: ${matched.map((m) => m.name).join(", ")}`,
+          before: { headers: tab.headers },
+          after: { dropped: matched.map((m) => m.name) },
+          externalTarget: `google.sheet:${creds.sheetId}!${tab.tab}!cols`,
+        },
+        async () => {
+          await deleteColumns(
+            client,
+            creds.sheetId,
+            sheetId,
+            matched.map((m) => m.index),
+          );
+        },
+      );
+      res.json({ ok: true, dry_run: false, deleted: matched, missing });
+    } catch (err) {
+      handleError(err, res);
+    }
   });
 
   router.post("/audit/delete-row", writeLimiter, async (req, res) => {

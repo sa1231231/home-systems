@@ -177,3 +177,30 @@ export async function deleteDataRows(
     },
   });
 }
+
+export async function deleteColumns(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  sheetId: number,
+  colIndices: number[],
+): Promise<void> {
+  if (colIndices.length === 0) return;
+  const sheets = google.sheets({ version: "v4", auth: client });
+  // descending so earlier deletes don't shift later targets
+  const sorted = [...colIndices].sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: sorted.map((idx) => ({
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "COLUMNS",
+            startIndex: idx,
+            endIndex: idx + 1,
+          },
+        },
+      })),
+    },
+  });
+}

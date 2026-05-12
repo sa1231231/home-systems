@@ -1,111 +1,37 @@
 <%- include("partials/_header", { title: "Trello — home-systems", tab: "trello", flash: locals.flash }) %>
 
-<div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px;">
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
   <h2 style="margin: 0;">Trello — Today ordering</h2>
-  <% if (result) { %>
-    <span class="muted">date <%= result.today %> · TZ <%= tz %></span>
+  <div class="spacer" style="flex: 1;"></div>
+  <% if (!notConfigured) { %>
+    <form
+      hx-post="/ui/trello/reorder"
+      hx-target="#reorder-result"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-indicator="#reorder-indicator"
+    >
+      <button type="submit" style="padding: 6px 14px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
+        Reorder now
+      </button>
+      <span id="reorder-indicator" class="htmx-indicator muted" style="margin-left: 8px; font-size: 12px;">working…</span>
+    </form>
   <% } %>
 </div>
-
-<%- include("partials/_cron-banner", { cron }) %>
+<style>.htmx-indicator{opacity:0;transition:opacity .2s}.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{opacity:1}</style>
 
 <% if (notConfigured) { %>
   <div class="flash err" style="margin-bottom: 12px;">
     Trello isn't configured. Set <code>TRELLO_API_KEY</code>, <code>TRELLO_TOKEN</code>,
-    <code>TRELLO_BOARD_ID</code>, <code>TRELLO_WAITING_LIST_ID</code>, <code>TRELLO_TODAY_LIST_ID</code>
-    (run <code>npm run trello:setup</code> locally to find your IDs).
+    <code>TRELLO_BOARD_ID</code>, <code>TRELLO_WAITING_LIST_ID</code>, <code>TRELLO_TODAY_LIST_ID</code>.
   </div>
 <% } else { %>
-
-  <section style="margin-bottom: 24px;">
-    <% if (result) { %>
-      <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-        <form hx-post="/ui/trello/reorder" hx-target="body" hx-swap="outerHTML" style="display: inline;">
-          <button type="submit" style="padding: 6px 14px; background: var(--accent); color: white; border: 0; border-radius: 3px; cursor: pointer;">Reorder now</button>
-        </form>
-        <span class="muted" style="font-size: 12px;">
-          planned: <%= result.planned %>
-          (<%= result.ops.filter(o => o.kind === "move").length %> moves
-          + <%= result.ops.filter(o => o.kind === "reorder").length %> reorders)
-        </span>
-      </div>
-    <% } %>
-  </section>
-
-  <% if (incomingView.length > 0) { %>
-    <section style="margin-bottom: 24px;">
-      <h3 style="margin: 0 0 6px;">Coming in from Waiting <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= incomingView.length %>)</span></h3>
-      <p class="muted" style="margin: 0 0 8px;">Cards whose due date is today (or earlier) — these will be pulled into Today on the next run.</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Card</th>
-            <th style="width: 110px;">Bucket</th>
-            <th style="width: 110px;">Due</th>
-            <th style="width: 160px;">Recurrence</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% incomingView.forEach((card) => { %>
-            <tr>
-              <td><%= card.name %></td>
-              <td><span class="pill pending"><%= bucketNames[card.bucket] %></span></td>
-              <td class="muted"><%= card.dueLocal || "—" %></td>
-              <td class="muted" style="font-size: 12px;">
-                <%
-                  const flags = [];
-                  if (card.flags.daily) flags.push("daily");
-                  if (card.flags.weekdays) flags.push("weekdays");
-                  if (card.flags.weekends) flags.push("weekends");
-                %><%= flags.join(", ") || "—" %>
-              </td>
-            </tr>
-          <% }); %>
-        </tbody>
-      </table>
-    </section>
-  <% } %>
-
-  <section style="margin-bottom: 24px;">
-    <h3 style="margin: 0 0 6px;">Today list <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= todayView.length %>)</span></h3>
-    <p class="muted" style="margin: 0 0 8px;">Current order in Trello. The Reorder button shuffles these into bucket order: due → daily → weekdays → weekends → other.</p>
-    <% if (todayView.length === 0) { %>
-      <p class="muted">Today list is empty.</p>
-    <% } else { %>
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 50px;">#</th>
-            <th>Card</th>
-            <th style="width: 110px;">Bucket</th>
-            <th style="width: 110px;">Due</th>
-            <th style="width: 160px;">Recurrence</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% todayView.forEach((card, idx) => { %>
-            <tr>
-              <td class="muted"><%= idx + 1 %></td>
-              <td><%= card.name %></td>
-              <td><span class="pill <%= card.bucket === 1 ? 'rejected' : card.bucket === 2 ? 'pending' : 'success' %>"><%= bucketNames[card.bucket] %></span></td>
-              <td class="muted"><%= card.dueLocal || "—" %></td>
-              <td class="muted" style="font-size: 12px;">
-                <%
-                  const tflags = [];
-                  if (card.flags.daily) tflags.push("daily");
-                  if (card.flags.weekdays) tflags.push("weekdays");
-                  if (card.flags.weekends) tflags.push("weekends");
-                %><%= tflags.join(", ") || "—" %>
-              </td>
-            </tr>
-          <% }); %>
-        </tbody>
-      </table>
-    <% } %>
-  </section>
+  <%- include("partials/_cron-banner", { cron }) %>
+  <div id="reorder-result"></div>
 
   <section>
-    <h3 style="margin: 0 0 6px;">Recent Trello activity <span class="muted" style="font-weight: normal; font-size: 13px;">(last 24h)</span></h3>
+    <h3 style="margin: 16px 0 6px;">Recent activity <span class="muted" style="font-weight: normal; font-size: 13px;">(last 24h)</span></h3>
+    <p class="muted" style="margin: 0 0 8px;">Every card move + reorder the cron or manual button has done. Click <em>Undo</em> to roll one back; the reverser puts the card back where it was.</p>
     <% if (activity.length === 0) { %>
       <p class="muted">No Trello changes in the last 24 hours.</p>
     <% } else { %>
