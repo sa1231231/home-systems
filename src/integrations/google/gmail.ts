@@ -11,7 +11,7 @@ import type { OAuth2Client } from "google-auth-library";
  */
 const TRIAGE_QUERY =
   "in:inbox -category:promotions -category:social " +
-  "-label:triage/noise -label:triage/worth-reading -label:triage/needs-reply";
+  '-label:"Noise" -label:"Worth Reading" -label:"Needs Reply"';
 
 export type GmailMessageRef = { id: string; threadId: string };
 
@@ -116,7 +116,7 @@ async function getLabelMap(client: OAuth2Client): Promise<Map<string, string>> {
 }
 
 /**
- * Resolve a Gmail label name (e.g. "triage/noise") to its label-id.
+ * Resolve a Gmail label name (e.g. "noise") to its label-id.
  * Misses refresh the cache once; if still missing, create the label.
  * System labels (INBOX, STARRED, etc.) have id===name and resolve trivially.
  */

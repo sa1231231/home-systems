@@ -96,22 +96,22 @@ describe("ProposedActionSchema", () => {
 });
 
 describe("mapCategoryToAction", () => {
-  it("noise -> label triage/noise (no archive)", () => {
+  it("noise -> label Noise (no archive)", () => {
     const a = mapCategoryToAction({ category: "noise", reasoning: "newsletter" });
-    expect(a.add_labels).toEqual(["triage/noise"]);
+    expect(a.add_labels).toEqual(["Noise"]);
     expect(a.remove_labels).toEqual([]);
     expect(a.reasoning).toBe("newsletter");
   });
 
-  it("worth_reading -> label triage/worth-reading", () => {
+  it("worth_reading -> label Worth Reading", () => {
     const a = mapCategoryToAction({ category: "worth_reading", reasoning: "fyi" });
-    expect(a.add_labels).toEqual(["triage/worth-reading"]);
+    expect(a.add_labels).toEqual(["Worth Reading"]);
     expect(a.remove_labels).toEqual([]);
   });
 
-  it("needs_reply -> label triage/needs-reply (no star)", () => {
+  it("needs_reply -> label Needs Reply (no star)", () => {
     const a = mapCategoryToAction({ category: "needs_reply", reasoning: "needs reply" });
-    expect(a.add_labels).toEqual(["triage/needs-reply"]);
+    expect(a.add_labels).toEqual(["Needs Reply"]);
     expect(a.remove_labels).toEqual([]);
   });
 
