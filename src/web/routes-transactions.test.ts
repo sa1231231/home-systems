@@ -11,6 +11,12 @@ vi.mock("../sync/transaction-triage.js", async () => {
   );
   return { ...actual, triageTransactions: vi.fn() };
 });
+vi.mock("../sync/transaction-rules.js", async () => {
+  const actual = await vi.importActual<typeof import("../sync/transaction-rules.js")>(
+    "../sync/transaction-rules.js",
+  );
+  return { ...actual, inferTransactionRules: vi.fn() };
+});
 vi.mock("../integrations/google/oauth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/oauth.js")>(
     "../integrations/google/oauth.js",
@@ -25,11 +31,13 @@ vi.mock("../integrations/google/sheets-transactions.js", async () => {
 });
 
 import { triageTransactions } from "../sync/transaction-triage.js";
+import { inferTransactionRules } from "../sync/transaction-rules.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
 
 const triageMock = vi.mocked(triageTransactions);
+const inferMock = vi.mocked(inferTransactionRules);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
 const oauthMock = vi.mocked(getOAuthClient);
 const readEnumMock = vi.mocked(readCategoriesEnum);
@@ -59,6 +67,7 @@ describe("routes-transactions", () => {
   beforeEach(async () => {
     await handle.reset();
     triageMock.mockReset();
+    inferMock.mockReset();
     hasCredsMock.mockReset();
     oauthMock.mockReset();
     readEnumMock.mockReset();
@@ -192,6 +201,65 @@ describe("routes-transactions", () => {
       expect(res.status).toBe(503);
       expect(res.text).toMatch(/ANTHROPIC_API_KEY/);
       expect(res.text).toMatch(/Railway/);
+    });
+  });
+
+  describe("POST /ui/transactions/infer-rules", () => {
+    it("returns 503 when sheetId is not configured", async () => {
+      const res = await request(buildApp({ sheetId: undefined })).post(
+        "/ui/transactions/infer-rules",
+      );
+      expect(res.status).toBe(503);
+      expect(inferMock).not.toHaveBeenCalled();
+    });
+
+    it("returns 503 when google creds are missing", async () => {
+      hasCredsMock.mockReturnValue(false);
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/infer-rules",
+      );
+      expect(res.status).toBe(503);
+    });
+
+    it("runs the bootstrap and returns HX-Refresh + summary banner", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      inferMock.mockResolvedValueOnce({
+        created: 7,
+        ambiguous: 2,
+        already_exists: 3,
+        tiller_skipped: 480,
+        empty_skipped: 11,
+        no_key_skipped: 0,
+        groups_examined: 12,
+        created_rules: [],
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/infer-rules",
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers["hx-refresh"]).toBe("true");
+      expect(res.text).toMatch(/created=7/);
+      expect(res.text).toMatch(/already had 3/);
+      expect(res.text).toMatch(/ambiguous 2/);
+      expect(res.text).toMatch(/480 skipped/);
+      // The router passes the same target the GET uses.
+      expect(inferMock.mock.calls[0][1]).toEqual({
+        sheetId: "sheet",
+        transactionsTab: "Transactions",
+        categoriesTab: "Categories",
+      });
+    });
+
+    it("returns a 500 banner when infer throws", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      inferMock.mockRejectedValueOnce(new Error("sheets 503"));
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/infer-rules",
+      );
+      expect(res.status).toBe(500);
+      expect(res.text).toMatch(/sheets 503/);
     });
   });
 });
