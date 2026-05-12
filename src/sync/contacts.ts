@@ -14,37 +14,21 @@ import { buildSheetIndex, findMatch } from "./match.js";
 const RESOURCE_NAME_COL = "google_resource_name";
 
 /**
- * Identity columns we refresh from Google. New canonical names plus legacy
- * dex_-prefixed and `linkedin` aliases so syncs work both before and after
- * the one-time column-cleanup migration. Enrichment columns (groups, tags,
- * starred, archived, location, etc.) are never written by sync regardless
- * of state.
+ * Identity columns sync refreshes from Google. Stripped down post-2026-05-12
+ * to just the fields the dex_contacts CRM actually keeps. Enrichment columns
+ * (groups, tags) are never written by sync — they're the user's domain.
  */
 const IDENTITY_COLUMNS = [
-  // new canonical names (post-cleanup)
   "full_name",
-  "first_name",
-  "last_name",
   "description",
-  "birthday",
-  "birthday_year",
   "job_title",
   "company",
-  "image_url",
-  "linkedin_url",
   "website",
   "email",
   "emails",
   "phone",
   "phones",
   "address",
-  // legacy names (pre-cleanup) — kept so a sync mid-migration writes to whichever set exists
-  "linkedin",
-  "dex_email",
-  "dex_emails",
-  "dex_phone",
-  "dex_phones",
-  "dex_address",
 ] as const;
 
 type IdentityCol = (typeof IDENTITY_COLUMNS)[number];
@@ -95,33 +79,17 @@ function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
   const allEmails = p.emails.join(", ");
   const primaryPhone = p.phones[0] ?? "";
   const allPhones = p.phones.join(", ");
-  const linkedin = p.linkedin_url ?? "";
-  const address = p.address ?? "";
   return {
     full_name: p.display_name ?? "",
-    first_name: p.given_name ?? "",
-    last_name: p.family_name ?? "",
     description: p.biography ?? "",
-    birthday: p.birthday ?? "",
-    birthday_year: p.birthday_year !== null ? String(p.birthday_year) : "",
     job_title: p.job_title ?? "",
     company: p.company ?? "",
-    image_url: p.image_url ?? "",
     website: p.website ?? "",
-    // new canonical
-    linkedin_url: linkedin,
     email: primaryEmail,
     emails: allEmails,
     phone: primaryPhone,
     phones: allPhones,
-    address,
-    // legacy aliases — same values, different column names
-    linkedin,
-    dex_email: primaryEmail,
-    dex_emails: allEmails,
-    dex_phone: primaryPhone,
-    dex_phones: allPhones,
-    dex_address: address,
+    address: p.address ?? "",
   };
 }
 
@@ -278,6 +246,10 @@ export type EnqueueResult = {
   skipped_duplicates: number;
   /** Trivial refreshes that auto-applied (binding resource_name on already-matched rows). */
   resource_name_backfills: number;
+  /** Refreshes where every change was formatting-only (phone/whitespace/etc.) — auto-applied. */
+  formatting_refreshes: number;
+  /** New rows auto-inserted into dex_contacts (Tier-A, no groups assigned). */
+  auto_inserts: number;
 };
 
 export type RunSyncResult = {
@@ -298,14 +270,66 @@ function isResourceNameBackfill(op: RefreshOp): boolean {
 }
 
 /**
- * Default behavior: pull contacts + diff against the sheet, then enqueue every
- * insert/refresh/ambiguous as a `needs_review` row. No direct sheet writes
- * happen except the one-time header-column migration (adding
- * `google_resource_name` when missing). Approving the queued reviews from the
- * UI applies the actual sheet writes via the registered contact appliers.
+ * True iff a single FieldChange is "formatting-only" — same information,
+ * different representation. Safe to auto-apply.
  *
- * Pass `mode: "apply"` to bypass the review queue (matches the pre-2026-05-12
- * behavior — kept for tests and migrations).
+ * - `google_resource_name`: binding Google's stable ID (only set when empty).
+ * - `updated_at`: mechanical sync timestamp.
+ * - `phone`, `phones`: same digits (after stripping non-digits + leading 1).
+ * - `description`: same content after collapsing all whitespace (catches
+ *   Dex import flattening newlines into nothing, e.g. "Vocal teacher24221
+ *   cascades dr" vs Google's "Vocal teacher\n\n24221 cascades dr").
+ */
+function isFormattingOnlyChange(change: FieldChange): boolean {
+  if (change.col === RESOURCE_NAME_COL) return change.from === "";
+  if (change.col === "updated_at") return true;
+  if (change.col === "phone" || change.col === "phones") {
+    return normalizePhoneCsv(change.from) === normalizePhoneCsv(change.to);
+  }
+  if (change.col === "description") {
+    return stripWhitespace(change.from) === stripWhitespace(change.to);
+  }
+  return false;
+}
+
+function stripWhitespace(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+function normalizePhoneCsv(s: string): string {
+  return s
+    .split(/[,;]/)
+    .map((p) => {
+      const digits = p.replace(/\D/g, "");
+      return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    })
+    .filter((p) => p.length > 0)
+    .sort()
+    .join(",");
+}
+
+/**
+ * A refresh op where EVERY change is formatting-only. Whole op auto-applies
+ * as a Tier-A benign write — single changelog entry per row.
+ */
+function isFormattingOnlyRefresh(op: RefreshOp): boolean {
+  return op.updates.length > 0 && op.updates.every(isFormattingOnlyChange);
+}
+
+/**
+ * Default behavior (dex_contacts era, post-2026-05-12):
+ *
+ * - **Inserts auto-apply** as Tier-A benign writes. A new Google contact
+ *   lands in dex_contacts with `groups` empty — that empty cell IS the
+ *   new "pending review" signal (the user assigns groups via the sheet/UI).
+ * - **resource_name backfills** auto-apply (binding Google's stable ID to a
+ *   row matched by email/phone/name — provably benign).
+ * - **Field-diff refreshes** still go through the needs_review queue. The
+ *   existing dex_contacts data is precious — never overwrite without
+ *   explicit approval.
+ * - **Ambiguous** matches still go through the queue.
+ *
+ * Pass `mode: "apply"` to bypass review for everything (tests/migrations).
  */
 export async function runSync(
   client: OAuth2Client,
@@ -332,7 +356,7 @@ export async function runSync(
     await applySyncPlan(client, plan);
     return { plan, summary, applied: true };
   }
-  // mode === "queue" — enqueue review rows, do header migration if needed.
+  // mode === "queue" — header migration if needed, then route by op kind.
   if (plan.needsHeaderUpdate) {
     await setHeaderCell(
       client,
@@ -342,21 +366,48 @@ export async function runSync(
       RESOURCE_NAME_COL,
     );
   }
-  // Partition refreshes: trivial resource_name backfills auto-apply (Tier-A
-  // benign write), real field-diff refreshes go through the review queue.
-  const trivialBackfills = plan.refreshes.filter(isResourceNameBackfill);
-  const realRefreshes = plan.refreshes.filter((op) => !isResourceNameBackfill(op));
+  // Inserts auto-apply: a fresh row with no groups IS the pending-review
+  // state in the new model.
+  let auto_inserts = 0;
+  if (plan.inserts.length > 0) {
+    const { applyInsertsTierA } = await import("./contacts-backfill.js");
+    await applyInsertsTierA(client, plan);
+    auto_inserts = plan.inserts.length;
+  }
+  // Backfills auto-apply (binding google_resource_name on already-matched rows).
+  // Formatting-only refreshes (phone reformat, description whitespace, etc.)
+  // also auto-apply — same information, different representation.
+  const trivialBackfills: RefreshOp[] = [];
+  const formattingRefreshes: RefreshOp[] = [];
+  const realRefreshes: RefreshOp[] = [];
+  for (const op of plan.refreshes) {
+    if (isResourceNameBackfill(op)) trivialBackfills.push(op);
+    else if (isFormattingOnlyRefresh(op)) formattingRefreshes.push(op);
+    else realRefreshes.push(op);
+  }
   if (trivialBackfills.length > 0) {
     const { applyResourceNameBackfills } = await import("./contacts-backfill.js");
     await applyResourceNameBackfills(client, plan, trivialBackfills);
   }
-  const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes };
+  if (formattingRefreshes.length > 0) {
+    const { applyFormattingRefreshes } = await import("./contacts-backfill.js");
+    await applyFormattingRefreshes(client, plan, formattingRefreshes);
+  }
+  // Only field-diff refreshes + ambiguous go to the review queue. Drop the
+  // inserts since we just applied them above.
+  const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes, inserts: [] };
   const { enqueueSyncPlan } = await import("./contacts-review.js");
   const queued = await enqueueSyncPlan(planForQueue);
   return {
     plan,
     summary,
     applied: false,
-    queued: { ...queued, resource_name_backfills: trivialBackfills.length },
+    queued: {
+      ...queued,
+      queued_inserts: 0,
+      auto_inserts,
+      resource_name_backfills: trivialBackfills.length,
+      formatting_refreshes: formattingRefreshes.length,
+    },
   };
 }

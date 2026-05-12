@@ -34,16 +34,11 @@ export const MERGE_STRATEGIES: Record<string, MergeStrategy> = {
   tags: "union_csv",
   legacy_notes: "concat_unique",
   description: "longest",
-  first_name: "longest",
-  last_name: "longest",
   full_name: "longest",
   address: "longest",
   job_title: "longest",
   company: "longest",
-  birthday: "longest",
-  linkedin_url: "longest",
   website: "longest",
-  location: "longest",
 };
 
 function unionCsv(values: string[]): string {
@@ -198,32 +193,12 @@ export function applyMergeStrategy(strategy: MergeStrategy, values: string[]): s
 }
 
 /**
- * Special merge for first_name / last_name.
- *
- * Among the input rows, prefer values from rows that have BOTH first_name
- * AND last_name populated (the "split" rows). Falls back to longest if no
- * split row exists.
- *
- * Why: in practice the canonical Google-sourced row has the name properly
- * split into given/family, while older Dex-imported rows often stuff the
- * full name into a single column ("Jeremy Span Stoneberg Management" in
- * first_name with company suffix appended, or "Swarner" alone with no
- * given name). Preferring split rows preserves the clean form and discards
- * the stuffed/partial forms.
+ * Merge full_name across duplicate rows. Uses pickBetterName so we keep the
+ * clean form when one row has "Aguilera" and another has
+ * "Aguilera Law Center" — the bare surname wins.
  */
-export function mergeNameField(
-  rows: SheetRowAt[],
-  field: "first_name" | "last_name",
-): string {
-  const splitRows = rows.filter((r) => {
-    const f = (r.record.first_name ?? "").trim();
-    const l = (r.record.last_name ?? "").trim();
-    return f !== "" && l !== "";
-  });
-  if (splitRows.length > 0) {
-    return pickBetterName(splitRows.map((r) => r.record[field] ?? ""));
-  }
-  return pickBetterName(rows.map((r) => r.record[field] ?? ""));
+export function mergeFullName(rows: SheetRowAt[]): string {
+  return pickBetterName(rows.map((r) => r.record.full_name ?? ""));
 }
 
 export type MergeUpdate = { col: string; from: string; to: string };
@@ -255,11 +230,8 @@ export function buildMergePlan(rows: SheetRowAt[], headers: string[]): MergePlan
   const updates: MergeUpdate[] = [];
   for (const col of headers) {
     let merged: string;
-    if (col === "first_name" || col === "last_name") {
-      // Special-cased: prefer rows with BOTH names split over rows where one
-      // is empty (covers "Shawn Swarner" beating "Swarner", "Jeremy Span"
-      // beating "Jeremy Span Stoneberg Management", etc.).
-      merged = mergeNameField(sorted, col);
+    if (col === "full_name") {
+      merged = mergeFullName(sorted);
     } else {
       const strategy: MergeStrategy = MERGE_STRATEGIES[col] ?? "longest";
       const allValues = sorted.map((r) => r.record[col] ?? "");

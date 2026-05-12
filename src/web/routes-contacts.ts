@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
+import { getConfig } from "../config.js";
 import {
   hasGoogleCreds,
   getOAuthClient,
@@ -136,17 +137,16 @@ export function makeContactsUiRouter(): Router {
       try {
         const creds = requireGoogleCreds();
         sheetUrl = `https://docs.google.com/spreadsheets/d/${creds.sheetId}/edit`;
-        const tab = await readContactsTab(getOAuthClient(), creds.sheetId);
+        const tabName = getConfig().CONTACTS_TAB;
+        const tab = await readContactsTab(getOAuthClient(), creds.sheetId, { tab: tabName });
         const records = tab.rows.map((r) => r.record);
         const report = findAuditIssues(records);
         const rowView = (rowIndex: number): RowPreview => {
           const r = records[rowIndex] ?? {};
-          const first = (r.first_name ?? "").trim();
-          const last = (r.last_name ?? "").trim();
           const full = (r.full_name ?? "").trim();
           return {
             rowIndex,
-            name: full || `${first} ${last}`.trim() || "(no name)",
+            name: full || "(no name)",
             emails: (r.emails || r.email || "").trim(),
             phones: (r.phones || r.phone || "").trim(),
             company: (r.company || "").trim(),
@@ -247,7 +247,7 @@ export function makeContactsUiRouter(): Router {
     try {
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       if (rowIndex >= tab.rows.length) {
         res
           .status(404)
@@ -293,18 +293,19 @@ export function makeContactsUiRouter(): Router {
     }
     try {
       const creds = requireGoogleCreds();
+      const tabName = getConfig().CONTACTS_TAB;
       const result = await withTriageRun(
         "contact",
         req.sessionId,
         "ui:contacts.sync",
-        () => runSync(getOAuthClient(), creds.sheetId, { dryRun: false }),
+        () => runSync(getOAuthClient(), creds.sheetId, { dryRun: false, tab: tabName }),
       );
       res.setHeader("HX-Refresh", "true");
       const s = result.summary;
       const q = result.queued;
       if (q) {
         res.send(
-          `<div class="flash ok">Queued for review: ${q.queued_inserts} insert${q.queued_inserts === 1 ? '' : 's'}, ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). Auto-bound google_resource_name on ${q.resource_name_backfills} matched row${q.resource_name_backfills === 1 ? '' : 's'}. ${s.unchanged} unchanged.</div>`,
+          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). ${s.unchanged} unchanged.</div>`,
         );
       } else {
         res.send(
@@ -353,7 +354,7 @@ export function makeContactsUiRouter(): Router {
     try {
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       const records = tab.rows.map((r) => r.record);
       // Re-resolve LIVE matches by the contact's email/phone in the CURRENT
       // sheet. Trusting the cached proposedAction.matches[] is dangerous —

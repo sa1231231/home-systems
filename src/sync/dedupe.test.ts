@@ -46,15 +46,6 @@ describe("findClusters", () => {
     expect(findClusters(rows)).toEqual([]);
   });
 
-  it("supports legacy column names (dex_email/dex_phone)", () => {
-    const rows = [
-      row(0, { dex_email: "shared@example.com" }),
-      row(1, { email: "shared@example.com" }),
-    ];
-    const clusters = findClusters(rows);
-    expect(clusters).toHaveLength(1);
-    expect(clusters[0].rowIndices).toEqual([0, 1]);
-  });
 });
 
 describe("pickCanonical", () => {
@@ -89,14 +80,13 @@ describe("pickCanonical", () => {
 describe("buildMerge", () => {
   it("never copies identity fields from duplicates (Google is source of truth)", () => {
     const rows = [
-      row(0, { email: "x@example.com", full_name: "Canonical", google_resource_name: "people/c1", birthday: "" }),
-      row(1, { email: "x@example.com", full_name: "Other", phone: "5551111111", birthday: "CMO" }),
+      row(0, { email: "x@example.com", full_name: "Canonical", google_resource_name: "people/c1" }),
+      row(1, { email: "x@example.com", full_name: "Other", phone: "5551111111" }),
     ];
     const merge = buildMerge(rows, findClusters(rows)[0]);
     expect(merge.canonicalRowIndex).toBe(0); // bound row wins
     expect(merge.fills.full_name).toBeUndefined(); // identity not merged
     expect(merge.fills.phone).toBeUndefined();
-    expect(merge.fills.birthday).toBeUndefined(); // would be garbage anyway
   });
 
   it("concatenates legacy_notes from all rows in the cluster", () => {
@@ -122,24 +112,6 @@ describe("buildMerge", () => {
     const merge = buildMerge(rows, findClusters(rows)[0]);
     expect(merge.fills.groups).toBe("Real Estate, Coaches, Personal");
     expect(merge.fills.tags).toBe("warm, vip");
-  });
-
-  it("uses canonical's location, falling back to first non-empty duplicate", () => {
-    const rows = [
-      row(0, { email: "x@example.com", google_resource_name: "people/c1", location: "" }),
-      row(1, { email: "x@example.com", location: "Austin" }),
-    ];
-    const merge = buildMerge(rows, findClusters(rows)[0]);
-    expect(merge.fills.location).toBe("Austin");
-  });
-
-  it("does not propose a fill when canonical already has the right value", () => {
-    const rows = [
-      row(0, { email: "x@example.com", google_resource_name: "people/c1", location: "Austin" }),
-      row(1, { email: "x@example.com", location: "Berlin" }),
-    ];
-    const merge = buildMerge(rows, findClusters(rows)[0]);
-    expect(merge.fills.location).toBeUndefined();
   });
 
   it("takes the max date for last_seen_at", () => {

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import { getConfig } from "../config.js";
 import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
 import { listConnections } from "../integrations/google/people.js";
 import { previewSheet } from "../integrations/google/sheets.js";
@@ -11,7 +12,6 @@ import {
   addToCsvField,
   ContactNotFoundError,
   removeFromCsvField,
-  setBoolField,
   UnknownColumnError,
 } from "../sync/contact-writes.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
@@ -39,11 +39,6 @@ const NonEmptyString = z.string().trim().min(1).max(200);
 const CsvOpBody = z.object({
   resource_name: ResourceName,
   values: z.array(NonEmptyString).min(1).max(20),
-});
-
-const BoolOpBody = z.object({
-  resource_name: ResourceName,
-  value: z.boolean(),
 });
 
 // 60 write operations per minute per IP. Catches runaway loops without
@@ -75,7 +70,7 @@ export function makeContactsRouter(): Router {
       const { limit } = PreviewQuery.parse(req.query);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const preview = await previewSheet(client, creds.sheetId, { limit });
+      const preview = await previewSheet(client, creds.sheetId, { limit, tab: getConfig().CONTACTS_TAB });
       res.json({ ok: true, ...preview, count: preview.rows.length });
     } catch (err) {
       handleError(err, res);
@@ -87,7 +82,7 @@ export function makeContactsRouter(): Router {
       const { verbose } = SyncQuery.parse(req.query);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await runSync(client, creds.sheetId, { dryRun: true });
+      const result = await runSync(client, creds.sheetId, { dryRun: true, tab: getConfig().CONTACTS_TAB });
       res.json({ ok: true, dry_run: true, summary: result.summary, ...renderPlan(result.plan, verbose) });
     } catch (err) {
       handleError(err, res);
@@ -99,7 +94,7 @@ export function makeContactsRouter(): Router {
       const { verbose } = SyncQuery.parse(req.query);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await runSync(client, creds.sheetId, { dryRun: false });
+      const result = await runSync(client, creds.sheetId, { dryRun: false, tab: getConfig().CONTACTS_TAB });
       res.json({ ok: true, applied: true, summary: result.summary, ...renderPlan(result.plan, verbose) });
     } catch (err) {
       handleError(err, res);
@@ -111,7 +106,7 @@ export function makeContactsRouter(): Router {
       const { verbose } = SyncQuery.parse(req.query);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await runDedupe(client, creds.sheetId, { dryRun: true });
+      const result = await runDedupe(client, creds.sheetId, { dryRun: true, tab: getConfig().CONTACTS_TAB });
       res.json({ ok: true, dry_run: true, summary: result.summary, ...renderDedupe(result.plan, verbose) });
     } catch (err) {
       handleError(err, res);
@@ -123,7 +118,7 @@ export function makeContactsRouter(): Router {
       const { verbose } = SyncQuery.parse(req.query);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const result = await runDedupe(client, creds.sheetId, { dryRun: false });
+      const result = await runDedupe(client, creds.sheetId, { dryRun: false, tab: getConfig().CONTACTS_TAB });
       res.json({ ok: true, applied: true, summary: result.summary, ...renderDedupe(result.plan, verbose) });
     } catch (err) {
       handleError(err, res);
@@ -134,7 +129,7 @@ export function makeContactsRouter(): Router {
     try {
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       const records = tab.rows.map((r) => r.record);
       const report = findAuditIssues(records);
       res.json({ ok: true, total_rows: tab.rows.length, ...report });
@@ -160,7 +155,7 @@ export function makeContactsRouter(): Router {
       const uniq = Array.from(new Set(row_indices)).sort((a, b) => a - b);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       const valid: { row_index: number; record: Record<string, string> }[] = [];
       const outOfRange: number[] = [];
       for (const i of uniq) {
@@ -174,8 +169,6 @@ export function makeContactsRouter(): Router {
           would_delete: valid.map((v) => ({
             row_index: v.row_index,
             full_name: v.record.full_name ?? "",
-            first_name: v.record.first_name ?? "",
-            last_name: v.record.last_name ?? "",
             emails: v.record.emails ?? "",
             phones: v.record.phones ?? "",
           })),
@@ -230,7 +223,7 @@ export function makeContactsRouter(): Router {
       const { columns, dry_run } = CleanupColumnsBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       const matched: { name: string; index: number }[] = [];
       const missing: string[] = [];
       for (const name of columns) {
@@ -279,7 +272,7 @@ export function makeContactsRouter(): Router {
       const { row_index, expected_full_name } = DeleteRowBody.parse(req.body);
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
-      const tab = await readContactsTab(client, creds.sheetId);
+      const tab = await readContactsTab(client, creds.sheetId, { tab: getConfig().CONTACTS_TAB });
       if (row_index >= tab.rows.length) {
         res.status(404).json({
           ok: false,
@@ -327,7 +320,7 @@ export function makeContactsRouter(): Router {
     }
   });
 
-  // --- Narrow per-contact write endpoints (1b-γ) -----------------------
+  // --- Narrow per-contact write endpoints -------------------------------
   router.post("/add-groups", writeLimiter, async (req, res) => {
     try {
       const { resource_name, values } = CsvOpBody.parse(req.body);
@@ -381,36 +374,6 @@ export function makeContactsRouter(): Router {
       const result = await removeFromCsvField(client, creds.sheetId, resource_name, "tags", values, {
         sessionId: req.sessionId,
         caller: "api:contacts.remove-tags",
-      });
-      res.json({ ok: true, ...result });
-    } catch (err) {
-      handleError(err, res);
-    }
-  });
-
-  router.post("/set-archived", writeLimiter, async (req, res) => {
-    try {
-      const { resource_name, value } = BoolOpBody.parse(req.body);
-      const creds = requireGoogleCreds();
-      const client = getOAuthClient();
-      const result = await setBoolField(client, creds.sheetId, resource_name, "is_archived", value, {
-        sessionId: req.sessionId,
-        caller: "api:contacts.set-archived",
-      });
-      res.json({ ok: true, ...result });
-    } catch (err) {
-      handleError(err, res);
-    }
-  });
-
-  router.post("/set-starred", writeLimiter, async (req, res) => {
-    try {
-      const { resource_name, value } = BoolOpBody.parse(req.body);
-      const creds = requireGoogleCreds();
-      const client = getOAuthClient();
-      const result = await setBoolField(client, creds.sheetId, resource_name, "starred", value, {
-        sessionId: req.sessionId,
-        caller: "api:contacts.set-starred",
       });
       res.json({ ok: true, ...result });
     } catch (err) {

@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { getConfig } from "../config.js";
 import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
 import { runSync } from "../sync/contacts.js";
 
@@ -37,7 +38,8 @@ export async function runContactsSyncOnce(): Promise<void> {
   try {
     const creds = requireGoogleCreds();
     const client = getOAuthClient();
-    const { summary } = await runSync(client, creds.sheetId, { dryRun: false });
+    const tab = getConfig().CONTACTS_TAB;
+    const { summary } = await runSync(client, creds.sheetId, { dryRun: false, tab });
     console.log(
       `[cron] contacts sync done: inserted=${summary.inserted} refreshed=${summary.refreshed} unchanged=${summary.unchanged} ambiguous=${summary.ambiguous}`,
     );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findAuditIssues, type SheetRow } from "./contacts-audit.js";
+import { findAuditIssues, findNoGroupRows, type SheetRow } from "./contacts-audit.js";
 
 function row(over: Partial<SheetRow>): SheetRow {
   return { google_resource_name: "", full_name: "", email: "", phone: "", ...over };
@@ -31,20 +31,16 @@ describe("findAuditIssues", () => {
   });
 
   it("ignores canonical rows themselves (rows with any contact info)", () => {
-    const rows = [row({ full_name: "Anyone", email: "x@y" })];
+    // Row has groups assigned so it isn't flagged as no-group either.
+    const rows = [row({ full_name: "Anyone", email: "x@y", groups: "Friends" })];
     expect(findAuditIssues(rows)).toEqual({
       orphans: [],
       emptyRows: [],
       nameOnly: [],
       emailDuplicates: [],
       phoneDuplicates: [],
-      fragmentOrphans: [],
+      noGroup: [],
     });
-  });
-
-  it("treats a LinkedIn URL alone as valid contact info (not name-only)", () => {
-    const rows = [row({ full_name: "Jay Anderson", linkedin_url: "https://linkedin.com/in/j" })];
-    expect(findAuditIssues(rows).nameOnly).toEqual([]);
   });
 
   it("treats a website alone as valid contact info", () => {
@@ -87,23 +83,14 @@ describe("findAuditIssues", () => {
     ];
     expect(findAuditIssues(rows).orphans).toHaveLength(1);
   });
-
-  it("falls back to first_name + last_name when full_name is absent (post-column-cleanup schema)", () => {
-    const rows = [
-      row({ first_name: "Jay", last_name: "Hajeer" }), // orphan, no contact info
-      row({ first_name: "Jay", last_name: "Hajeer", phone: "555" }), // canonical
-    ];
-    const r = findAuditIssues(rows);
-    expect(r.orphans).toEqual([{ rowIndex: 0, fullName: "Jay Hajeer", canonicalRowIndex: 1 }]);
-  });
 });
 
 describe("findAuditIssues — email/phone duplicates", () => {
   it("groups rows that share a normalized email", () => {
     const rows = [
-      row({ first_name: "A", email: "Foo@Bar.com" }),
-      row({ first_name: "B", emails: "foo@bar.com, baz@qux.com" }),
-      row({ first_name: "C", emails: "qux@baz.com" }),
+      row({ full_name: "A", email: "Foo@Bar.com" }),
+      row({ full_name: "B", emails: "foo@bar.com, baz@qux.com" }),
+      row({ full_name: "C", emails: "qux@baz.com" }),
     ];
     const r = findAuditIssues(rows);
     expect(r.emailDuplicates).toEqual([
@@ -113,9 +100,9 @@ describe("findAuditIssues — email/phone duplicates", () => {
 
   it("groups rows that share a normalized phone (digits only, strips leading 1)", () => {
     const rows = [
-      row({ first_name: "A", phone: "+1 (555) 123-4567" }),
-      row({ first_name: "B", phones: "555-123-4567" }),
-      row({ first_name: "C", phone: "555 9999999" }),
+      row({ full_name: "A", phone: "+1 (555) 123-4567" }),
+      row({ full_name: "B", phones: "555-123-4567" }),
+      row({ full_name: "C", phone: "555 9999999" }),
     ];
     const r = findAuditIssues(rows);
     expect(r.phoneDuplicates).toEqual([
@@ -124,80 +111,69 @@ describe("findAuditIssues — email/phone duplicates", () => {
   });
 
   it("does not flag a row whose own CSV repeats the same email twice", () => {
-    const rows = [row({ first_name: "Solo", emails: "x@y.com, x@y.com" })];
+    const rows = [row({ full_name: "Solo", emails: "x@y.com, x@y.com" })];
     expect(findAuditIssues(rows).emailDuplicates).toEqual([]);
   });
 
   it("skips invalid email strings (must contain @)", () => {
     const rows = [
-      row({ first_name: "A", emails: "broken-string" }),
-      row({ first_name: "B", emails: "broken-string" }),
+      row({ full_name: "A", emails: "broken-string" }),
+      row({ full_name: "B", emails: "broken-string" }),
     ];
     expect(findAuditIssues(rows).emailDuplicates).toEqual([]);
   });
 
   it("skips short phone fragments (< 7 digits)", () => {
     const rows = [
-      row({ first_name: "A", phones: "123" }),
-      row({ first_name: "B", phones: "123" }),
+      row({ full_name: "A", phones: "123" }),
+      row({ full_name: "B", phones: "123" }),
     ];
     expect(findAuditIssues(rows).phoneDuplicates).toEqual([]);
   });
 
-  it("flags fragment orphans: first_name = canonical's last_name, no contact info", () => {
-    const rows = [
-      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
-      row({ first_name: "Swarner", last_name: "" }), // orphan
-    ];
-    const r = findAuditIssues(rows);
-    expect(r.fragmentOrphans).toEqual([
-      { rowIndex: 1, firstName: "Swarner", canonicalRowIndex: 0, canonicalName: "Sean Swarner" },
-    ]);
-  });
-
-  it("does NOT flag a single-word first_name as fragment orphan when no canonical matches", () => {
-    const rows = [
-      row({ first_name: "Swarner", last_name: "" }), // no canonical "* Swarner" with contact info
-    ];
-    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
-  });
-
-  it("does NOT flag rows with contact info as fragment orphans", () => {
-    const rows = [
-      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
-      row({ first_name: "Swarner", last_name: "", phone: "555-9999" }), // has its own phone
-    ];
-    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
-  });
-
-  it("does NOT flag multi-word first_name as fragment orphan (different pattern)", () => {
-    const rows = [
-      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
-      row({ first_name: "Sean Swarner", last_name: "" }), // multi-word — not a single-name fragment
-    ];
-    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
-  });
-
-  it("treats canonical's last_name case-insensitively", () => {
-    const rows = [
-      row({ first_name: "Sean", last_name: "swarner", phone: "555-1234" }),
-      row({ first_name: "SWARNER", last_name: "" }),
-    ];
-    expect(findAuditIssues(rows).fragmentOrphans).toHaveLength(1);
-  });
-
   it("sorts duplicate groups by cluster size descending", () => {
     const rows = [
-      row({ first_name: "A", email: "a@b" }),
-      row({ first_name: "B", email: "a@b" }),
-      row({ first_name: "C", email: "a@b" }),
-      row({ first_name: "D", email: "x@y" }),
-      row({ first_name: "E", email: "x@y" }),
+      row({ full_name: "A", email: "a@b" }),
+      row({ full_name: "B", email: "a@b" }),
+      row({ full_name: "C", email: "a@b" }),
+      row({ full_name: "D", email: "x@y" }),
+      row({ full_name: "E", email: "x@y" }),
     ];
     const r = findAuditIssues(rows);
     expect(r.emailDuplicates.map((g) => [g.value, g.rowIndices.length])).toEqual([
       ["a@b", 3],
       ["x@y", 2],
     ]);
+  });
+});
+
+describe("findNoGroupRows", () => {
+  it("flags rows with a full_name and no value in groups", () => {
+    const rows = [
+      row({ full_name: "Needs Group", email: "x@y.com", company: "Acme" }),
+      row({ full_name: "Has Group", email: "y@z.com", groups: "Friends" }),
+      row({ full_name: "" }), // no name → skipped
+    ];
+    expect(findNoGroupRows(rows)).toEqual([
+      {
+        rowIndex: 0,
+        fullName: "Needs Group",
+        primaryEmail: "x@y.com",
+        primaryPhone: "",
+        company: "Acme",
+      },
+    ]);
+  });
+
+  it("treats whitespace-only groups as empty", () => {
+    const rows = [row({ full_name: "Whitespace", email: "x@y.com", groups: "   " })];
+    expect(findNoGroupRows(rows)).toHaveLength(1);
+  });
+
+  it("preserves primary_phone/email when only legacy column populated", () => {
+    const rows = [
+      row({ full_name: "Has Phones CSV", phones: "555-1111, 555-2222" }),
+    ];
+    expect(findNoGroupRows(rows)[0].primaryPhone).toBe("555-1111, 555-2222");
   });
 });

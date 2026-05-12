@@ -45,7 +45,6 @@ vi.mock("../sync/contact-writes.js", async () => {
     ...actual,
     addToCsvField: vi.fn(),
     removeFromCsvField: vi.fn(),
-    setBoolField: vi.fn(),
   };
 });
 
@@ -62,7 +61,6 @@ import {
   addToCsvField,
   ContactNotFoundError,
   removeFromCsvField,
-  setBoolField,
   UnknownColumnError,
 } from "../sync/contact-writes.js";
 import { makeContactsRouter } from "./contacts.js";
@@ -75,7 +73,6 @@ const syncMock = vi.mocked(runSync);
 const dedupeMock = vi.mocked(runDedupe);
 const addMock = vi.mocked(addToCsvField);
 const removeMock = vi.mocked(removeFromCsvField);
-const boolMock = vi.mocked(setBoolField);
 
 const CREDS = {
   clientId: "x",
@@ -108,7 +105,6 @@ describe("api/contacts", () => {
     dedupeMock.mockReset();
     addMock.mockReset();
     removeMock.mockReset();
-    boolMock.mockReset();
   });
 
   describe("GET /contacts/google/preview", () => {
@@ -200,7 +196,7 @@ describe("api/contacts", () => {
       expect(res.status).toBe(400);
     });
 
-    it("POST /contacts/add-groups dispatches to addToCsvField", async () => {
+    it("POST /contacts/add-groups dispatches to addToCsvField with field=groups", async () => {
       addMock.mockResolvedValueOnce({
         resource_name: "people/c1",
         row_index: 0,
@@ -230,7 +226,7 @@ describe("api/contacts", () => {
       expect(addMock.mock.calls[0][3]).toBe("tags");
     });
 
-    it("POST /contacts/remove-groups dispatches to removeFromCsvField", async () => {
+    it("POST /contacts/remove-groups dispatches to removeFromCsvField with field=groups", async () => {
       removeMock.mockResolvedValueOnce({
         resource_name: "people/c1",
         row_index: 0,
@@ -243,34 +239,6 @@ describe("api/contacts", () => {
         .send({ resource_name: "people/c1", values: ["A"] });
       expect(res.status).toBe(200);
       expect(removeMock.mock.calls[0][3]).toBe("groups");
-    });
-
-    it("POST /contacts/set-archived dispatches to setBoolField with field=is_archived", async () => {
-      boolMock.mockResolvedValueOnce({
-        resource_name: "people/c1",
-        row_index: 0,
-        field: "is_archived",
-        value: true,
-        changed: true,
-      });
-      await request(buildApp())
-        .post("/contacts/set-archived")
-        .send({ resource_name: "people/c1", value: true });
-      expect(boolMock.mock.calls[0][3]).toBe("is_archived");
-    });
-
-    it("POST /contacts/set-starred dispatches with field=starred", async () => {
-      boolMock.mockResolvedValueOnce({
-        resource_name: "people/c1",
-        row_index: 0,
-        field: "starred",
-        value: false,
-        changed: false,
-      });
-      await request(buildApp())
-        .post("/contacts/set-starred")
-        .send({ resource_name: "people/c1", value: false });
-      expect(boolMock.mock.calls[0][3]).toBe("starred");
     });
 
     it("returns 404 on ContactNotFoundError", async () => {

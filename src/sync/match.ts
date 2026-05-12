@@ -20,10 +20,13 @@ export type MatchResult =
   | { kind: "none" };
 
 function nameKey(record: Record<string, string>): string {
+  // Prefer full_name (current schema). Fall back to first + last for any
+  // legacy rows still hanging around mid-migration.
+  const full = (record.full_name ?? "").trim().toLowerCase();
+  if (full) return full;
   const first = (record.first_name ?? "").trim().toLowerCase();
   const last = (record.last_name ?? "").trim().toLowerCase();
-  const key = `${first} ${last}`.trim();
-  return key;
+  return `${first} ${last}`.trim();
 }
 
 function personNameKey(person: GooglePerson): string {

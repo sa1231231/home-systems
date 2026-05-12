@@ -37,10 +37,55 @@
 }) %>
 
 <section style="margin-bottom: 32px;">
-  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
-  <% if (pending.length === 0) { %>
-    <p class="muted">No contacts currently waiting for review.</p>
+  <% const noGroupCount = (audit && audit.noGroup) ? audit.noGroup.length : 0; %>
+  <h3 style="margin: 0 0 6px;">
+    Pending review
+    <span class="muted" style="font-weight: normal; font-size: 13px;">
+      (<%= noGroupCount %> without group<% if (pending.length) { %> · <%= pending.length %> queued refresh/ambiguous<% } %>)
+    </span>
+  </h3>
+  <p class="muted" style="margin: 0 0 8px; font-size: 13px;">
+    Contacts with no value in <code>groups</code> are pending review. Assign a group in the sheet
+    (values come from the <code>groups</code> tab) and they drop off this list.
+  </p>
+  <% if (audit && audit.noGroup && audit.noGroup.length > 0) { %>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 60px;">Row</th>
+          <th>Full name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Company</th>
+          <th style="width: 110px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% audit.noGroup.forEach((n) => { %>
+          <tr id="audit-row-nogroup-<%= n.rowIndex %>">
+            <td class="muted"><%= n.rowIndex %></td>
+            <td><%= n.fullName %></td>
+            <td class="muted" style="font-size: 12px;"><%= n.primaryEmail || '—' %></td>
+            <td class="muted" style="font-size: 12px;"><%= n.primaryPhone || '—' %></td>
+            <td class="muted" style="font-size: 12px;"><%= n.company || '—' %></td>
+            <td>
+              <% if (locals.sheetUrl) { %>
+                <a href="<%= sheetUrl %>" target="_blank" rel="noopener noreferrer"
+                   style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; text-decoration: none; color: var(--fg);">
+                  Open in sheet ↗
+                </a>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
   <% } else { %>
+    <p class="muted">Every contact has a group assigned.</p>
+  <% } %>
+
+  <% if (pending.length > 0) { %>
+    <h4 style="margin: 18px 0 4px;">Queue (refresh / ambiguous)</h4>
     <table>
       <thead>
         <tr>

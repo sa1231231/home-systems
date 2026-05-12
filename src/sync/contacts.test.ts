@@ -33,8 +33,8 @@ describe("planSync", () => {
     // dedupe. planSync re-adds it as the last column if the sheet is missing
     // it (the column can be hidden in the Sheets UI to keep things clean).
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_email", "dex_groups"],
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "groups"],
       rows: [],
     };
     const p = person({
@@ -47,7 +47,7 @@ describe("planSync", () => {
     const plan = planSync("sheet-123", tab, [p], NOW);
     expect(plan.needsHeaderUpdate).toBe(true);
     expect(plan.resourceNameColIndex).toBe(3);
-    expect(plan.headers).toEqual(["full_name", "dex_email", "dex_groups", "google_resource_name"]);
+    expect(plan.headers).toEqual(["full_name", "email", "groups", "google_resource_name"]);
     expect(plan.inserts).toHaveLength(1);
     expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", "", "people/c1"]);
     expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0 });
@@ -55,18 +55,18 @@ describe("planSync", () => {
 
   it("refreshes a row matched by email, binding google_resource_name", () => {
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_email", "dex_phone", "updated_at", "google_resource_name", "dex_groups"],
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "phone", "updated_at", "google_resource_name", "groups"],
       rows: [
         {
           rowIndex: 0,
           record: {
             full_name: "Old Name",
-            dex_email: "jane@example.com",
-            dex_phone: "",
+            email: "jane@example.com",
+            phone: "",
             updated_at: "2025-01-01T00:00:00Z",
             google_resource_name: "",
-            dex_groups: "Real Estate",
+            groups: "Real Estate",
           },
         },
       ],
@@ -85,21 +85,21 @@ describe("planSync", () => {
     expect(r.rowIndex).toBe(0);
     const cols = r.updates.map((u) => u.col);
     expect(cols).toContain("full_name");
-    expect(cols).toContain("dex_phone");
+    expect(cols).toContain("phone");
     expect(cols).toContain("google_resource_name");
     expect(cols).toContain("updated_at");
-    // dex_groups must NOT be in updates (enrichment is preserved)
-    expect(cols).not.toContain("dex_groups");
+    // groups must NOT be in updates (enrichment is preserved)
+    expect(cols).not.toContain("groups");
   });
 
   it("counts a row as unchanged when Google data matches Sheet exactly", () => {
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_email", "google_resource_name"],
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "google_resource_name"],
       rows: [
         {
           rowIndex: 0,
-          record: { full_name: "Jane", dex_email: "jane@example.com", google_resource_name: "people/c1" },
+          record: { full_name: "Jane", email: "jane@example.com", google_resource_name: "people/c1" },
         },
       ],
     };
@@ -115,11 +115,11 @@ describe("planSync", () => {
 
   it("flags ambiguous matches when an email maps to multiple unbound rows", () => {
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_email", "google_resource_name"],
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "google_resource_name"],
       rows: [
-        { rowIndex: 0, record: { full_name: "Jane A", dex_email: "shared@example.com", google_resource_name: "" } },
-        { rowIndex: 1, record: { full_name: "Jane B", dex_email: "shared@example.com", google_resource_name: "" } },
+        { rowIndex: 0, record: { full_name: "Jane A", email: "shared@example.com", google_resource_name: "" } },
+        { rowIndex: 1, record: { full_name: "Jane B", email: "shared@example.com", google_resource_name: "" } },
       ],
     };
     const p = person({ resource_name: "people/c1", emails: ["shared@example.com"] });
@@ -133,12 +133,12 @@ describe("planSync", () => {
 
   it("does not overwrite existing Sheet data with empty Google values", () => {
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_phone", "google_resource_name"],
+      tab: "dex_contacts",
+      headers: ["full_name", "phone", "google_resource_name"],
       rows: [
         {
           rowIndex: 0,
-          record: { full_name: "Jane", dex_phone: "5551234", google_resource_name: "people/c1" },
+          record: { full_name: "Jane", phone: "5551234", google_resource_name: "people/c1" },
         },
       ],
     };
@@ -155,10 +155,10 @@ describe("planSync", () => {
 
   it("matches by phone when email doesn't match", () => {
     const tab: ContactsTab = {
-      tab: "Contacts",
-      headers: ["full_name", "dex_email", "dex_phone", "google_resource_name"],
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "phone", "google_resource_name"],
       rows: [
-        { rowIndex: 0, record: { full_name: "Old", dex_email: "old@example.com", dex_phone: "(301) 787-8254", google_resource_name: "" } },
+        { rowIndex: 0, record: { full_name: "Old", email: "old@example.com", phone: "(301) 787-8254", google_resource_name: "" } },
       ],
     };
     const p = person({
@@ -173,7 +173,7 @@ describe("planSync", () => {
   });
 
   it("skips Google persons without a resource_name (defensive)", () => {
-    const tab: ContactsTab = { tab: "Contacts", headers: ["full_name", "google_resource_name"], rows: [] };
+    const tab: ContactsTab = { tab: "dex_contacts", headers: ["full_name", "google_resource_name"], rows: [] };
     const p = person({ resource_name: "" });
     const plan = planSync("sheet-123", tab, [p], NOW);
     expect(plan.inserts).toHaveLength(0);

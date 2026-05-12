@@ -31,13 +31,7 @@ export type DedupePlan = {
 
 function rowEmails(record: Record<string, string>): string[] {
   const out = new Set<string>();
-  const all = [
-    record.email,
-    ...splitCsv(record.emails),
-    record.dex_email,
-    ...splitCsv(record.dex_emails),
-  ];
-  for (const e of all) {
+  for (const e of [record.email, ...splitCsv(record.emails)]) {
     const n = normalizeEmail(e);
     if (n) out.add(n);
   }
@@ -46,13 +40,7 @@ function rowEmails(record: Record<string, string>): string[] {
 
 function rowPhones(record: Record<string, string>): string[] {
   const out = new Set<string>();
-  const all = [
-    record.phone,
-    ...splitCsv(record.phones),
-    record.dex_phone,
-    ...splitCsv(record.dex_phones),
-  ];
-  for (const p of all) {
+  for (const p of [record.phone, ...splitCsv(record.phones)]) {
     const n = normalizePhone(p);
     if (n) out.add(n);
   }
@@ -187,8 +175,6 @@ const MERGEABLE_COLUMNS: Record<string, MergeStrategy> = {
   legacy_notes: { kind: "concat_unique", sep: "\n---\n" },
   groups: { kind: "union_csv" },
   tags: { kind: "union_csv" },
-  location: { kind: "first_non_empty" },
-  starred: { kind: "max_string" }, // "true" > "false" lexicographically — and we only ever store these two
   last_seen_at: { kind: "max_date_iso" },
 };
 

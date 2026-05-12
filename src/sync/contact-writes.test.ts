@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
 import { createTestDb, type TestDbHandle } from "../../tests/helpers/test-db.js";
 import { db } from "../db/client.js";
 import { changelog } from "../db/schema.js";
@@ -10,14 +9,12 @@ vi.mock("../integrations/google/sheets.js", async () => {
   );
   return {
     ...actual,
-    getFirstSheetTitle: vi.fn(),
     readContactsTab: vi.fn(),
     batchUpdateCells: vi.fn(),
   };
 });
 
 import {
-  getFirstSheetTitle,
   readContactsTab,
   batchUpdateCells,
 } from "../integrations/google/sheets.js";
@@ -25,24 +22,22 @@ import {
   addToCsvField,
   ContactNotFoundError,
   removeFromCsvField,
-  setBoolField,
   UnknownColumnError,
 } from "./contact-writes.js";
 
-const titleMock = vi.mocked(getFirstSheetTitle);
 const readMock = vi.mocked(readContactsTab);
 const writeMock = vi.mocked(batchUpdateCells);
 
 const META = { sessionId: "s", caller: "c", intent: "i" };
 
+// CONTACTS_TAB default is "dex_contacts" — the cell range uses that name.
+const TAB = "dex_contacts";
+
 function mockSheet(opts: {
-  tab?: string;
   headers: string[];
   rows: { rowIndex: number; record: Record<string, string> }[];
 }): void {
-  const tab = opts.tab ?? "Contacts";
-  titleMock.mockResolvedValueOnce(tab);
-  readMock.mockResolvedValueOnce({ tab, headers: opts.headers, rows: opts.rows } as never);
+  readMock.mockResolvedValueOnce({ tab: TAB, headers: opts.headers, rows: opts.rows } as never);
 }
 
 describe("contact-writes", () => {
@@ -55,7 +50,6 @@ describe("contact-writes", () => {
   });
   beforeEach(async () => {
     await handle.reset();
-    titleMock.mockReset();
     readMock.mockReset();
     writeMock.mockReset();
   });
@@ -71,7 +65,7 @@ describe("contact-writes", () => {
       expect(result).toMatchObject({ resource_name: "p/1", field: "groups", value: "A, B", changed: true });
       expect(writeMock).toHaveBeenCalledOnce();
       const writeCall = writeMock.mock.calls[0];
-      expect(writeCall[2]).toEqual([{ range: "Contacts!B2", value: "A, B" }]);
+      expect(writeCall[2]).toEqual([{ range: `${TAB}!B2`, value: "A, B" }]);
 
       const logs = await db.select().from(changelog);
       expect(logs).toHaveLength(1);
@@ -137,33 +131,6 @@ describe("contact-writes", () => {
         rows: [{ rowIndex: 0, record: { google_resource_name: "p/1", tags: "x" } }],
       });
       const result = await removeFromCsvField({} as never, "ss", "p/1", "tags", ["y"], META);
-      expect(result.changed).toBe(false);
-      expect(writeMock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("setBoolField", () => {
-    it("writes TRUE/FALSE strings and logs the typed value", async () => {
-      mockSheet({
-        headers: ["google_resource_name", "is_archived"],
-        rows: [{ rowIndex: 0, record: { google_resource_name: "p/1", is_archived: "FALSE" } }],
-      });
-      writeMock.mockResolvedValueOnce(undefined);
-      const result = await setBoolField({} as never, "ss", "p/1", "is_archived", true, META);
-      expect(result).toMatchObject({ field: "is_archived", value: true, changed: true });
-      const writeCall = writeMock.mock.calls[0];
-      expect(writeCall[2]).toEqual([{ range: "Contacts!B2", value: "TRUE" }]);
-      const logs = await db.select().from(changelog);
-      expect(logs[0].beforeState).toEqual({ is_archived: false });
-      expect(logs[0].afterState).toEqual({ is_archived: true });
-    });
-
-    it("returns changed=false when the value is already what we want", async () => {
-      mockSheet({
-        headers: ["google_resource_name", "starred"],
-        rows: [{ rowIndex: 0, record: { google_resource_name: "p/1", starred: "TRUE" } }],
-      });
-      const result = await setBoolField({} as never, "ss", "p/1", "starred", true, META);
       expect(result.changed).toBe(false);
       expect(writeMock).not.toHaveBeenCalled();
     });

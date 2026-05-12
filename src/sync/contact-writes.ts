@@ -1,9 +1,9 @@
 import type { OAuth2Client } from "google-auth-library";
+import { getConfig } from "../config.js";
 import { withChangelog } from "../changelog/index.js";
 import {
   batchUpdateCells,
   colLetter,
-  getFirstSheetTitle,
   readContactsTab,
   type CellUpdate,
 } from "../integrations/google/sheets.js";
@@ -11,6 +11,8 @@ import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 import { addToCsv, removeFromCsv } from "./csv.js";
 
 const RESOURCE_NAME_COL = "google_resource_name";
+
+export type CsvField = "groups" | "tags";
 
 export type FoundRow = {
   rowIndex: number;
@@ -40,7 +42,7 @@ export class UnknownColumnError extends Error {
 }
 
 async function findRow(client: OAuth2Client, spreadsheetId: string, resourceName: string): Promise<FoundRow> {
-  const tab = await getFirstSheetTitle(client, spreadsheetId);
+  const tab = getConfig().CONTACTS_TAB;
   const data = await readContactsTab(client, spreadsheetId, { tab });
   const row = data.rows.find((r) => (r.record[RESOURCE_NAME_COL] ?? "") === resourceName);
   if (!row) throw new ContactNotFoundError(resourceName);
@@ -57,7 +59,7 @@ function cellRangeFor(found: FoundRow, column: string): string {
 export type CsvOpResult = {
   resource_name: string;
   row_index: number;
-  field: "groups" | "tags";
+  field: CsvField;
   value: string; // post-update CSV
   changed: boolean;
 };
@@ -66,7 +68,7 @@ async function applyCsvChange(
   client: OAuth2Client,
   spreadsheetId: string,
   resourceName: string,
-  field: "groups" | "tags",
+  field: CsvField,
   operation: "add_csv" | "remove_csv",
   before: string,
   after: string,
@@ -99,7 +101,7 @@ export async function addToCsvField(
   client: OAuth2Client,
   spreadsheetId: string,
   resourceName: string,
-  field: "groups" | "tags",
+  field: CsvField,
   additions: string[],
   meta: WriteMeta,
 ): Promise<CsvOpResult> {
@@ -116,7 +118,7 @@ export async function removeFromCsvField(
   client: OAuth2Client,
   spreadsheetId: string,
   resourceName: string,
-  field: "groups" | "tags",
+  field: CsvField,
   removals: string[],
   meta: WriteMeta,
 ): Promise<CsvOpResult> {
@@ -139,55 +141,3 @@ export async function removeFromCsvField(
   return { resource_name: resourceName, row_index: found.rowIndex, field, value: result.value, changed: result.changed };
 }
 
-export type BoolOpResult = {
-  resource_name: string;
-  row_index: number;
-  field: "is_archived" | "starred";
-  value: boolean;
-  changed: boolean;
-};
-
-function parseBoolish(raw: string): boolean {
-  return raw.trim().toLowerCase() === "true";
-}
-
-export async function setBoolField(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  resourceName: string,
-  field: "is_archived" | "starred",
-  value: boolean,
-  meta: WriteMeta,
-): Promise<BoolOpResult> {
-  const found = await findRow(client, spreadsheetId, resourceName);
-  const current = parseBoolish(found.record[field] ?? "");
-  const next = value;
-  if (current !== next) {
-    const op = `contacts.set_bool.${field}`;
-    await enforceConfiguredDailyLimit(op);
-    const range = cellRangeFor(found, field);
-    await withChangelog(
-      {
-        caller: meta.caller,
-        sessionId: meta.sessionId,
-        operation: op,
-        targetKind: "contact",
-        targetId: resourceName,
-        intent: meta.intent,
-        before: { [field]: current },
-        after: { [field]: next },
-        externalTarget: `google.sheet:${spreadsheetId}!${range}`,
-      },
-      async () => {
-        await batchUpdateCells(client, spreadsheetId, [{ range, value: next ? "TRUE" : "FALSE" }]);
-      },
-    );
-  }
-  return {
-    resource_name: resourceName,
-    row_index: found.rowIndex,
-    field,
-    value: next,
-    changed: current !== next,
-  };
-}

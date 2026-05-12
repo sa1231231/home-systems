@@ -102,7 +102,7 @@ describe("runContactsSyncOnce", () => {
     expect(runSyncMock).toHaveBeenCalledOnce();
     const [, sheetId, options] = runSyncMock.mock.calls[0];
     expect(sheetId).toBe("sheet-1");
-    expect(options).toEqual({ dryRun: false });
+    expect(options).toMatchObject({ dryRun: false, tab: "dex_contacts" });
   });
 
   it("silently no-ops on missing creds", async () => {

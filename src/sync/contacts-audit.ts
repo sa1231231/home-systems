@@ -28,14 +28,12 @@ export type DuplicateGroup = {
   rowIndices: number[];
 };
 
-export type FragmentOrphan = {
+export type NoGroupRow = {
   rowIndex: number;
-  /** The single-word name in the orphan's first_name column. */
-  firstName: string;
-  /** Canonical row whose last_name matches firstName. */
-  canonicalRowIndex: number;
-  /** "First Last" of the canonical row (for display). */
-  canonicalName: string;
+  fullName: string;
+  primaryEmail: string;
+  primaryPhone: string;
+  company: string;
 };
 
 export type AuditReport = {
@@ -49,12 +47,10 @@ export type AuditReport = {
   emailDuplicates: DuplicateGroup[];
   /** Two-or-more rows that share a normalized phone number (digits only). */
   phoneDuplicates: DuplicateGroup[];
-  /** Rows with a single-word first_name, empty last_name, no contact info,
-   *  where the first_name matches the last_name of another row that DOES
-   *  have contact info. Almost certainly a stuffed-last-name leftover
-   *  from an old Dex import — Sean Swarner's canonical row exists, this
-   *  orphan just has "Swarner" alone with nothing else attached. */
-  fragmentOrphans: FragmentOrphan[];
+  /** Rows where groups is empty — these are "pending review" in the new
+   *  CRM model. Auto-inserted Google contacts and any manually-added row
+   *  without a group land here. */
+  noGroup: NoGroupRow[];
 };
 
 function nonEmpty(value: string | undefined): boolean {
@@ -66,14 +62,13 @@ function get(row: SheetRow, key: string): string {
 }
 
 /** A row counts as "real" if it has any reachable handle: email, phone,
- *  LinkedIn, or website. Per user rule: LinkedIn URL alone is sufficient. */
+ *  or website. */
 function hasContactInfo(row: SheetRow): boolean {
   return (
     nonEmpty(row.email) ||
     nonEmpty(row.emails) ||
     nonEmpty(row.phone) ||
     nonEmpty(row.phones) ||
-    nonEmpty(row.linkedin_url) ||
     nonEmpty(row.website)
   );
 }
@@ -134,14 +129,8 @@ function findValueDuplicates(
   return out;
 }
 
-/** Compose a name key for dedupe — prefers explicit full_name when present
- *  (legacy schema), else falls back to "first last". */
 function nameKey(row: SheetRow): string {
-  const full = get(row, "full_name");
-  if (full) return full;
-  const first = get(row, "first_name");
-  const last = get(row, "last_name");
-  return `${first} ${last}`.trim();
+  return get(row, "full_name");
 }
 
 /**
@@ -192,51 +181,31 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
     nameOnly,
     emailDuplicates: findValueDuplicates(rows, emailsInRow),
     phoneDuplicates: findValueDuplicates(rows, phonesInRow),
-    fragmentOrphans: findFragmentOrphans(rows),
+    noGroup: findNoGroupRows(rows),
   };
 }
 
 /**
- * Look for the "last-name-only stuffed into first_name" pattern:
+ * Rows that have a name + Google ID (or contact info) but no value in
+ * `groups`. These are the new "pending review" — the user needs to
+ * assign a group from groups before the row counts as filed away.
  *
- *   row A: first_name="Sean", last_name="Swarner", phone="555…"   (canonical)
- *   row B: first_name="Swarner", last_name="", no contact info     (orphan)
- *
- * The orphan in B is a leftover from an old import — the dedupe loop can't
- * touch it because nothing matches by email/phone. Surface it so the user
- * can delete it.
- *
- * Match rules: orphan must have first_name be a single word (no space),
- * last_name empty, no email/phone/linkedin/website. The canonical must
- * have BOTH first_name and last_name set AND any contact info AND its
- * last_name (case-insensitive) equal to the orphan's first_name.
+ * Excludes empty rows and rows with no name (those land in other audit
+ * categories).
  */
-export function findFragmentOrphans(rows: SheetRow[]): FragmentOrphan[] {
-  const canonicalByLast = new Map<string, number>();
+export function findNoGroupRows(rows: SheetRow[]): NoGroupRow[] {
+  const out: NoGroupRow[] = [];
   rows.forEach((row, i) => {
-    const first = get(row, "first_name");
-    const last = get(row, "last_name");
-    if (first && last && hasContactInfo(row)) {
-      const key = last.toLowerCase();
-      if (!canonicalByLast.has(key)) canonicalByLast.set(key, i);
-    }
-  });
-
-  const out: FragmentOrphan[] = [];
-  rows.forEach((row, i) => {
-    const first = get(row, "first_name");
-    const last = get(row, "last_name");
-    if (!first || last) return;
-    if (first.includes(" ")) return;
-    if (hasContactInfo(row)) return;
-    const canonicalRowIndex = canonicalByLast.get(first.toLowerCase());
-    if (canonicalRowIndex === undefined || canonicalRowIndex === i) return;
-    const canon = rows[canonicalRowIndex];
+    const name = get(row, "full_name");
+    if (!name) return;
+    const group = get(row, "groups");
+    if (group) return;
     out.push({
       rowIndex: i,
-      firstName: first,
-      canonicalRowIndex,
-      canonicalName: `${(canon.first_name ?? "").trim()} ${(canon.last_name ?? "").trim()}`.trim(),
+      fullName: name,
+      primaryEmail: (row.email || row.emails || "").trim(),
+      primaryPhone: (row.phone || row.phones || "").trim(),
+      company: (row.company || "").trim(),
     });
   });
   return out;
