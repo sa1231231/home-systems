@@ -36,6 +36,56 @@
       <div class="muted" style="font-size: 11px; margin-top: 4px;">
         matches <%= matches.length %> sheet rows via <%= subj.via || "?" %>
       </div>
+      <% if (typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
+        <table style="margin-top: 6px; font-size: 11px; background: #fafafa; border: 1px solid var(--border);">
+          <thead>
+            <tr>
+              <th style="padding: 3px 6px; width: 36px; font-size: 10px;">Row</th>
+              <th style="padding: 3px 6px; font-size: 10px;">Name</th>
+              <th style="padding: 3px 6px; font-size: 10px;">Emails</th>
+              <th style="padding: 3px 6px; font-size: 10px;">Phones</th>
+              <th style="padding: 3px 6px; font-size: 10px;">Company</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% matchedRows.forEach((m) => { %>
+              <tr>
+                <td style="padding: 3px 6px;" class="muted"><%= m.rowIndex %></td>
+                <td style="padding: 3px 6px;"><%= m.name %></td>
+                <td style="padding: 3px 6px;" class="muted"><%= m.emails || '—' %></td>
+                <td style="padding: 3px 6px;" class="muted"><%= m.phones || '—' %></td>
+                <td style="padding: 3px 6px;" class="muted"><%= m.company || '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    <% } %>
+    <% if (kind === "refresh" && typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 6px;">target row:</div>
+      <table style="margin-top: 2px; font-size: 11px; background: #fafafa; border: 1px solid var(--border);">
+        <thead>
+          <tr>
+            <th style="padding: 3px 6px; width: 36px; font-size: 10px;">Row</th>
+            <th style="padding: 3px 6px; font-size: 10px;">Name</th>
+            <th style="padding: 3px 6px; font-size: 10px;">Emails</th>
+            <th style="padding: 3px 6px; font-size: 10px;">Phones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% matchedRows.forEach((m) => { %>
+            <tr>
+              <td style="padding: 3px 6px;" class="muted"><%= m.rowIndex %></td>
+              <td style="padding: 3px 6px;"><%= m.name %></td>
+              <td style="padding: 3px 6px;" class="muted"><%= m.emails || '—' %></td>
+              <td style="padding: 3px 6px;" class="muted"><%= m.phones || '—' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+    <% if (typeof subj.row_index === "number" && kind === "refresh" && !(typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0)) { %>
+      <div class="muted" style="font-size: 11px;">row <%= subj.row_index %></div>
     <% } %>
   </td>
   <td>

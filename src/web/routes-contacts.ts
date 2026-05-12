@@ -59,14 +59,24 @@ export function makeContactsUiRouter(): Router {
       emailDupViews: DupGroupView[];
       phoneDupViews: DupGroupView[];
     };
+    type RowPreview = {
+      rowIndex: number;
+      name: string;
+      emails: string;
+      phones: string;
+      company: string;
+    };
     let audit: AuditView | null = null;
+    let sheetUrl: string | null = null;
+    const matchedRowsByEntryId: Record<number, RowPreview[]> = {};
     if (hasGoogleCreds()) {
       try {
         const creds = requireGoogleCreds();
+        sheetUrl = `https://docs.google.com/spreadsheets/d/${creds.sheetId}/edit`;
         const tab = await readContactsTab(getOAuthClient(), creds.sheetId);
         const records = tab.rows.map((r) => r.record);
         const report = findAuditIssues(records);
-        const rowView = (rowIndex: number) => {
+        const rowView = (rowIndex: number): RowPreview => {
           const r = records[rowIndex] ?? {};
           const first = (r.first_name ?? "").trim();
           const last = (r.last_name ?? "").trim();
@@ -86,6 +96,18 @@ export function makeContactsUiRouter(): Router {
           .slice(0, 50)
           .map((g) => ({ ...g, rows: g.rowIndices.map(rowView) }));
         audit = { ...report, totalRows: tab.rows.length, emailDupViews, phoneDupViews };
+
+        // For ambiguous pending reviews, attach the matched sheet rows so the UI
+        // can render them inline (so the user can see *which* rows the Google
+        // contact is colliding with).
+        for (const entry of pendingRows) {
+          if (entry.subjectKind !== "google_contact_ambiguous") continue;
+          const action = entry.proposedAction as { matches?: number[] } | null;
+          const matches = Array.isArray(action?.matches) ? action!.matches : [];
+          if (matches.length > 0) {
+            matchedRowsByEntryId[entry.id] = matches.map(rowView);
+          }
+        }
       } catch {
         audit = null;
       }
@@ -97,6 +119,8 @@ export function makeContactsUiRouter(): Router {
       flash: null,
       cron: cronInfoForDomain("contact"),
       audit,
+      sheetUrl,
+      matchedRowsByEntryId,
     });
   });
 

@@ -69,6 +69,21 @@ describe("routes-transactions", () => {
       const res = await request(buildApp({ sheetId: undefined })).get("/ui/transactions/");
       expect(res.status).toBe(200);
       expect(res.text).toMatch(/TRANSACTIONS_SHEET_ID is not configured/);
+      // No sheetId → no "Open sheet" link.
+      expect(res.text).not.toMatch(/Open sheet/);
+    });
+
+    it("renders an 'Open sheet' link to docs.google.com when sheetId is configured", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      readEnumMock.mockResolvedValueOnce(["X"]);
+      const res = await request(buildApp({ sheetId: "abc123" })).get("/ui/transactions/");
+      expect(res.text).toMatch(/Open sheet/);
+      expect(res.text).toContain(
+        `href="https://docs.google.com/spreadsheets/d/abc123/edit"`,
+      );
+      expect(res.text).toContain(`target="_blank"`);
+      expect(res.text).toContain(`rel="noopener noreferrer"`);
     });
 
     it("renders a warning banner when google creds are missing", async () => {

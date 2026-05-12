@@ -36,11 +36,14 @@ Signals to use:
 - Description and Full Description (raw merchant text)
 - Amount: a leading "-" means an expense; positive means income
 - Account and Institution (often hint at personal vs. business)
-- Category Hint: Yodlee's coarse pre-classification — usually a good prior
 
 If two categories seem plausible, pick the more specific one. Explain your choice in <=200 characters of reasoning. Never output a category that is not in the list above.`;
 }
 
+// Subject keys here are the fields the rules engine can match on. We
+// intentionally exclude Tiller-owned columns (Category Hint, Source,
+// Categorized By, Categorized Date) so rules and AI classifications only
+// reason about merchant-identifying data, not Tiller's pre-classification.
 export type TransactionSubject = {
   transaction_id: string;
   date: string;
@@ -49,8 +52,6 @@ export type TransactionSubject = {
   amount: string;
   account: string;
   institution: string;
-  category_hint: string;
-  source: string;
 };
 
 export function buildSubject(row: TransactionRow): TransactionSubject {
@@ -62,8 +63,6 @@ export function buildSubject(row: TransactionRow): TransactionSubject {
     amount: row.amount,
     account: row.account,
     institution: row.institution,
-    category_hint: row.categoryHint,
-    source: row.source,
   };
 }
 
@@ -75,8 +74,6 @@ export function buildClassifierInput(row: TransactionRow): string {
     `Amount: ${row.amount || "(unknown)"}`,
     `Account: ${row.account || "(unknown)"}`,
     `Institution: ${row.institution || "(unknown)"}`,
-    `Category Hint: ${row.categoryHint || "(none)"}`,
-    `Source: ${row.source || "(unknown)"}`,
   ].join("\n");
 }
 

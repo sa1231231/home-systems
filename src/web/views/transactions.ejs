@@ -3,6 +3,14 @@
 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
   <h2 style="margin: 0;">Transaction categorization</h2>
   <div class="spacer" style="flex: 1;"></div>
+  <% if (locals.sheetUrl) { %>
+    <a
+      href="<%= sheetUrl %>"
+      target="_blank"
+      rel="noopener noreferrer"
+      style="padding: 6px 14px; background: #fff; color: var(--fg); border: 1px solid var(--border); border-radius: 3px; text-decoration: none; font-size: 13px;"
+    >Open sheet ↗</a>
+  <% } %>
   <form
     hx-post="/ui/transactions/triage"
     hx-target="#triage-result"

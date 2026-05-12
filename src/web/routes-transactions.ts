@@ -55,6 +55,9 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       }
     }
 
+    const sheetUrl = opts.sheetId
+      ? `https://docs.google.com/spreadsheets/d/${opts.sheetId}/edit`
+      : null;
     res.render("transactions", {
       rules: rulesRows,
       pending: pendingRows,
@@ -62,6 +65,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       flash: null,
       warning,
       cron: cronInfoForDomain("transaction"),
+      sheetUrl,
     });
   });
 

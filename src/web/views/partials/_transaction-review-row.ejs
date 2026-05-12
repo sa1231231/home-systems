@@ -15,9 +15,6 @@
   <td>
     <div style="font-weight: 500;"><%= subj.description || subj.full_description || "(no description)" %></div>
     <div class="muted" style="font-size: 12px;"><%= subj.account || "" %><% if (subj.institution) { %> · <%= subj.institution %><% } %></div>
-    <% if (subj.category_hint) { %>
-      <div class="muted" style="font-size: 11px; margin-top: 2px;">hint: <%= subj.category_hint %></div>
-    <% } %>
   </td>
   <td style="white-space: nowrap; font-family: ui-monospace, SFMono-Regular, monospace;">
     <span style="color: <%= isExpense ? 'var(--danger)' : 'var(--ok)' %>;"><%= subj.amount || "" %></span>
