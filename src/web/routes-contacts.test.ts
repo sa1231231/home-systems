@@ -143,4 +143,33 @@ describe("routes-contacts", () => {
       expect(res.text).toMatch(/sheets 429/);
     });
   });
+
+  describe("GET /ui/contacts/triage-status", () => {
+    it("renders the running banner when a run is in-flight for contact", async () => {
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "contact",
+        sessionId: "s",
+        caller: "ui:contacts.sync",
+        status: "running",
+      });
+      const res = await request(buildApp()).get("/ui/contacts/triage-status");
+      expect(res.text).toMatch(/Triage running/);
+      expect(res.text).toContain("/ui/contacts/triage-status?polling=1");
+    });
+
+    it("returns HX-Refresh when polling and the latest contact run just completed", async () => {
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "contact",
+        sessionId: "s",
+        caller: "ui:contacts.sync",
+        status: "success",
+        completedAt: new Date(),
+        summary: { inserted: 1 } as never,
+      });
+      const res = await request(buildApp()).get("/ui/contacts/triage-status?polling=1");
+      expect(res.headers["hx-refresh"]).toBe("true");
+    });
+  });
 });

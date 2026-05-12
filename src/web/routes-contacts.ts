@@ -10,7 +10,13 @@ import {
 } from "../integrations/google/oauth.js";
 import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
-import { findAuditIssues, type AuditReport, type DuplicateGroup } from "../sync/contacts-audit.js";
+import {
+  findAuditIssues,
+  emailsInRow,
+  phonesInRow,
+  type AuditReport,
+  type DuplicateGroup,
+} from "../sync/contacts-audit.js";
 import {
   readContactsTab,
   getSheetIdByTitle,
@@ -27,6 +33,35 @@ const DOMAIN = "contact";
 
 function sevenDaysAgo(now: Date = new Date()): Date {
   return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Authoritative answer to "which rows currently collide with this Google
+ * contact's email/phone in the current sheet." Stored row indices on
+ * needs_review entries go stale the moment any row is inserted or deleted
+ * — never trust them at apply time. Always re-resolve here.
+ */
+function resolveLiveMatches(
+  records: Record<string, string>[],
+  subject: { primary_email?: string | null; primary_phone?: string | null },
+  via: string,
+): number[] {
+  const matches: number[] = [];
+  if (via === "email" && subject.primary_email) {
+    const target = subject.primary_email.toLowerCase().trim();
+    if (!target.includes("@")) return [];
+    records.forEach((r, i) => {
+      if (emailsInRow(r).includes(target)) matches.push(i);
+    });
+  } else if (via === "phone" && subject.primary_phone) {
+    const digits = subject.primary_phone.replace(/\D/g, "");
+    const normalized = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    if (normalized.length < 7) return [];
+    records.forEach((r, i) => {
+      if (phonesInRow(r).includes(normalized)) matches.push(i);
+    });
+  }
+  return matches;
 }
 
 export function makeContactsUiRouter(): Router {
@@ -112,30 +147,40 @@ export function makeContactsUiRouter(): Router {
           .map((g) => ({ ...g, rows: g.rowIndices.map(rowView) }));
         audit = { ...report, totalRows: tab.rows.length, emailDupViews, phoneDupViews };
 
-        // For ambiguous pending reviews, attach the matched sheet rows + a
-        // pre-computed merge preview so the UI can render both inline. The
-        // preview is what the user would get if they clicked Apply merge.
+        // For ambiguous pending reviews, RE-RESOLVE the matching sheet rows
+        // at render time by scanning for rows that currently share the
+        // contact's email/phone. The cached row indices on the needs_review
+        // row are not trustworthy — any row insert or delete shifts the
+        // sheet under them.
         for (const entry of pendingRows) {
           if (entry.subjectKind !== "google_contact_ambiguous") continue;
-          const action = entry.proposedAction as { matches?: number[] } | null;
-          const matches = Array.isArray(action?.matches) ? action!.matches : [];
-          if (matches.length > 0) {
-            matchedRowsByEntryId[entry.id] = matches.map(rowView);
-            const matchedFull = matches
-              .map((i) => (records[i] ? { rowIndex: i, record: records[i] } : null))
-              .filter((x): x is { rowIndex: number; record: Record<string, string> } => x !== null);
-            if (matchedFull.length >= 2) {
-              try {
-                const plan: MergePlan = buildMergePlan(matchedFull, tab.headers);
-                mergePreviewByEntryId[entry.id] = {
-                  keeperRowIndex: plan.keeperRowIndex,
-                  deleteRowIndices: plan.deleteRowIndices,
-                  updates: plan.updates,
-                };
-              } catch {
-                mergePreviewByEntryId[entry.id] = null;
-              }
+          const subj = (entry.subject ?? {}) as {
+            primary_email?: string | null;
+            primary_phone?: string | null;
+          };
+          const action = entry.proposedAction as { matches?: number[]; via?: string } | null;
+          const via = action?.via || "email";
+          const liveMatches = resolveLiveMatches(records, subj, via);
+          if (liveMatches.length > 0) {
+            matchedRowsByEntryId[entry.id] = liveMatches.map(rowView);
+          }
+          if (liveMatches.length >= 2) {
+            const matchedFull = liveMatches.map((i) => ({ rowIndex: i, record: records[i] }));
+            try {
+              const plan: MergePlan = buildMergePlan(matchedFull, tab.headers);
+              mergePreviewByEntryId[entry.id] = {
+                keeperRowIndex: plan.keeperRowIndex,
+                deleteRowIndices: plan.deleteRowIndices,
+                updates: plan.updates,
+              };
+            } catch {
+              mergePreviewByEntryId[entry.id] = null;
             }
+          } else {
+            // 0 or 1 live matches → the duplicate already resolved itself
+            // (or the cached index pointed at unrelated rows). The UI hides
+            // the Preview merge button when mergePreviewByEntryId[id] is null.
+            mergePreviewByEntryId[entry.id] = null;
           }
         }
       } catch {
@@ -289,26 +334,33 @@ export function makeContactsUiRouter(): Router {
       res.status(400).send("merge only applies to ambiguous contact reviews");
       return;
     }
-    const action = entry.proposedAction as { matches?: number[]; tab?: string } | null;
-    const matches = Array.isArray(action?.matches) ? action!.matches : [];
-    if (matches.length < 2) {
-      res.status(400).send("merge requires ≥ 2 matched rows");
-      return;
-    }
+    const action = entry.proposedAction as { matches?: number[]; tab?: string; via?: string } | null;
+    const via = action?.via || "email";
     try {
       const creds = requireGoogleCreds();
       const client = getOAuthClient();
       const tab = await readContactsTab(client, creds.sheetId);
-      const matchedRows = matches
-        .map((rowIndex) => {
-          const r = tab.rows[rowIndex];
-          return r ? { rowIndex, record: r.record } : null;
-        })
-        .filter((x): x is { rowIndex: number; record: Record<string, string> } => x !== null);
-      if (matchedRows.length < 2) {
-        res.status(409).send("one or more matched rows no longer exist (sheet shifted? re-sync first)");
+      const records = tab.rows.map((r) => r.record);
+      // Re-resolve LIVE matches by the contact's email/phone in the CURRENT
+      // sheet. Trusting the cached proposedAction.matches[] is dangerous —
+      // those indices were captured at queue time and the sheet has shifted
+      // since (row deletes, manual edits). Without this guard the merge
+      // would write to unrelated contacts.
+      const subj = (entry.subject ?? {}) as {
+        primary_email?: string | null;
+        primary_phone?: string | null;
+      };
+      const liveMatches = resolveLiveMatches(records, subj, via);
+      if (liveMatches.length < 2) {
+        const what = via === "phone" ? "phone" : "email";
+        res
+          .status(409)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">stale review: only ${liveMatches.length} row(s) currently share this contact's ${what}. The duplicate may already be resolved. Skip this review and re-run sync.</td></tr>`,
+          );
         return;
       }
+      const matchedRows = liveMatches.map((rowIndex) => ({ rowIndex, record: records[rowIndex] }));
       const plan = buildMergePlan(matchedRows, tab.headers);
       const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
       const keeperSheetRow = plan.keeperRowIndex + 2; // +1 1-based, +1 header

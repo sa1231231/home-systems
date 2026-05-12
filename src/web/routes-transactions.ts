@@ -6,7 +6,6 @@ import { needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
 import { triageTransactions } from "../sync/transaction-triage.js";
-import { inferTransactionRules } from "../sync/transaction-rules.js";
 import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
@@ -141,40 +140,6 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
       res.status(500).send(`<div class="flash err">Triage failed: ${message}</div>`);
-    }
-  });
-
-  // One-shot bootstrap: scan the sheet for rows already categorized into the
-  // canonical enum and synthesize deterministic rules for them. Idempotent —
-  // re-running only adds rules for descriptions that don't already have one.
-  router.post("/infer-rules", async (_req, res) => {
-    if (!opts.sheetId) {
-      res
-        .status(503)
-        .send(`<div class="flash err">TRANSACTIONS_SHEET_ID is not configured.</div>`);
-      return;
-    }
-    if (!hasGoogleCreds()) {
-      res.status(503).send(`<div class="flash err">Google credentials not configured.</div>`);
-      return;
-    }
-    try {
-      const result = await inferTransactionRules(getOAuthClient(), {
-        sheetId: opts.sheetId,
-        transactionsTab: opts.transactionsTab,
-        categoriesTab: opts.categoriesTab,
-      });
-      res.setHeader("HX-Refresh", "true");
-      res.send(
-        `<div class="flash ok">Inferred rules: created=${result.created}, already had ${result.already_exists}, ambiguous ${result.ambiguous}, ${result.tiller_skipped} skipped (non-canonical categories), ${result.empty_skipped} empty rows.</div>`,
-      );
-    } catch (err) {
-      const message = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      res
-        .status(500)
-        .send(`<div class="flash err">Infer rules failed: ${message}</div>`);
     }
   });
 

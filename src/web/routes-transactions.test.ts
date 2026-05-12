@@ -3,7 +3,7 @@ import request from "supertest";
 import { createTestDb, type TestDbHandle } from "../../tests/helpers/test-db.js";
 import { makeTestApp, mountViews } from "../../tests/helpers/test-app.js";
 import { db } from "../db/client.js";
-import { needsReview, rules } from "../db/schema.js";
+import { needsReview, rules, triageRuns } from "../db/schema.js";
 
 vi.mock("../sync/transaction-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/transaction-triage.js")>(
@@ -260,6 +260,77 @@ describe("routes-transactions", () => {
       );
       expect(res.status).toBe(500);
       expect(res.text).toMatch(/sheets 503/);
+    });
+  });
+
+  describe("GET /ui/transactions/triage-status", () => {
+    it("renders an empty status div when no recent runs exist", async () => {
+      const res = await request(buildApp({ sheetId: "sheet" })).get(
+        "/ui/transactions/triage-status",
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('id="triage-status"');
+      expect(res.text).not.toMatch(/running/i);
+    });
+
+    it("renders the running banner when a run is in-flight", async () => {
+      await db.insert(triageRuns).values({
+        domain: "transaction",
+        sessionId: "s",
+        caller: "ui:transactions.triage",
+        status: "running",
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).get(
+        "/ui/transactions/triage-status",
+      );
+      expect(res.text).toMatch(/Triage running/);
+      expect(res.text).toMatch(/hx-trigger="every 3s"/);
+      expect(res.text).toContain("/ui/transactions/triage-status?polling=1");
+    });
+
+    it("sends HX-Refresh when polling and the latest run just completed", async () => {
+      await db.insert(triageRuns).values({
+        domain: "transaction",
+        sessionId: "s",
+        caller: "ui:transactions.triage",
+        status: "success",
+        completedAt: new Date(),
+        summary: { total: 1 } as never,
+      });
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .get("/ui/transactions/triage-status?polling=1");
+      expect(res.headers["hx-refresh"]).toBe("true");
+      expect(res.text).toBe("");
+    });
+
+    it("does NOT send HX-Refresh on direct page visit (no polling=1)", async () => {
+      await db.insert(triageRuns).values({
+        domain: "transaction",
+        sessionId: "s",
+        caller: "ui:transactions.triage",
+        status: "success",
+        completedAt: new Date(),
+        summary: { total: 1 } as never,
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).get(
+        "/ui/transactions/triage-status",
+      );
+      expect(res.headers["hx-refresh"]).toBeUndefined();
+      // Should render the "fresh" success banner instead.
+      expect(res.text).toMatch(/Last run finished/);
+    });
+
+    it("ignores runs from other domains", async () => {
+      await db.insert(triageRuns).values({
+        domain: "email",
+        sessionId: "s",
+        caller: "ui:gmail.triage",
+        status: "running",
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).get(
+        "/ui/transactions/triage-status",
+      );
+      expect(res.text).not.toMatch(/Triage running/);
     });
   });
 });

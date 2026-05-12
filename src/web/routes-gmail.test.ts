@@ -186,4 +186,33 @@ describe("routes-gmail", () => {
       expect(res.text).toMatch(/ANTHROPIC_API_KEY/);
     });
   });
+
+  describe("GET /ui/gmail/triage-status", () => {
+    it("renders the running banner when a run is in-flight for email", async () => {
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "email",
+        sessionId: "s",
+        caller: "ui:gmail.triage",
+        status: "running",
+      });
+      const res = await request(buildApp()).get("/ui/gmail/triage-status");
+      expect(res.text).toMatch(/Triage running/);
+      expect(res.text).toContain("/ui/gmail/triage-status?polling=1");
+    });
+
+    it("returns HX-Refresh when polling and the latest run just completed", async () => {
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "email",
+        sessionId: "s",
+        caller: "ui:gmail.triage",
+        status: "success",
+        completedAt: new Date(),
+        summary: { total: 1 } as never,
+      });
+      const res = await request(buildApp()).get("/ui/gmail/triage-status?polling=1");
+      expect(res.headers["hx-refresh"]).toBe("true");
+    });
+  });
 });

@@ -12,17 +12,6 @@
     >Open sheet ↗</a>
   <% } %>
   <form
-    hx-post="/ui/transactions/infer-rules"
-    hx-target="#triage-result"
-    hx-swap="innerHTML"
-    hx-disabled-elt="find button"
-    hx-confirm="Scan the sheet and create rules for every (full_description → canonical category) pairing? Skips Tiller-only categories and existing rules. Idempotent."
-  >
-    <button type="submit" style="padding: 6px 14px; background: #fff; color: var(--fg); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 13px;">
-      Infer rules from sheet
-    </button>
-  </form>
-  <form
     hx-post="/ui/transactions/triage"
     hx-target="#triage-result"
     hx-swap="innerHTML"

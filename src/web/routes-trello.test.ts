@@ -182,4 +182,35 @@ describe("routes-trello", () => {
       expect(res.text).toMatch(/trello 503/);
     });
   });
+
+  describe("GET /ui/trello/triage-status", () => {
+    it("renders the running banner when a reorder is in-flight", async () => {
+      hasCredsMock.mockReturnValue(true);
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "trello",
+        sessionId: "s",
+        caller: "ui:trello.reorder",
+        status: "running",
+      });
+      const res = await request(buildApp()).get("/ui/trello/triage-status");
+      expect(res.text).toMatch(/Triage running/);
+      expect(res.text).toContain("/ui/trello/triage-status?polling=1");
+    });
+
+    it("returns HX-Refresh when polling and the latest reorder just completed", async () => {
+      hasCredsMock.mockReturnValue(true);
+      const { triageRuns } = await import("../db/schema.js");
+      await db.insert(triageRuns).values({
+        domain: "trello",
+        sessionId: "s",
+        caller: "ui:trello.reorder",
+        status: "success",
+        completedAt: new Date(),
+        summary: { moved: 1 } as never,
+      });
+      const res = await request(buildApp()).get("/ui/trello/triage-status?polling=1");
+      expect(res.headers["hx-refresh"]).toBe("true");
+    });
+  });
 });
