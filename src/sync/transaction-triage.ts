@@ -1,6 +1,6 @@
 import type { OAuth2Client } from "google-auth-library";
 import { z } from "zod/v4";
-import { eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { needsReview, processedTransactions } from "../db/schema.js";
 import { evaluate } from "../rules/engine.js";
@@ -203,6 +203,17 @@ export async function triageTransactions(
         ),
       );
     for (const r of seen) alreadyDone.add(r.id);
+  }
+  // Surface the already-done rows in the summary so callers can see why work
+  // didn't happen ("total was 50, 49 skipped because already processed").
+  for (const r of sheetCandidates) {
+    if (alreadyDone.has(r.transactionId)) {
+      items.push({
+        transaction_id: r.transactionId,
+        subject: buildSubject(r),
+        outcome: "skipped",
+      });
+    }
   }
   const candidates = sheetCandidates.filter((r) => !alreadyDone.has(r.transactionId));
   const window = candidates.slice(0, options.limit);

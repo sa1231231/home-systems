@@ -28,9 +28,10 @@ function person(overrides: Partial<GooglePerson> = {}): GooglePerson {
 const NOW = "2026-05-10T12:00:00.000Z";
 
 describe("planSync", () => {
-  it("does NOT auto-re-add the google_resource_name column when missing", () => {
-    // User can drop the column intentionally via /contacts/sheet/cleanup-columns.
-    // planSync must respect that and fall back to email/phone matching.
+  it("auto-re-adds the google_resource_name column when missing", () => {
+    // google_resource_name is the stable Google ID — required for deterministic
+    // dedupe. planSync re-adds it as the last column if the sheet is missing
+    // it (the column can be hidden in the Sheets UI to keep things clean).
     const tab: ContactsTab = {
       tab: "Contacts",
       headers: ["full_name", "dex_email", "dex_groups"],
@@ -44,12 +45,11 @@ describe("planSync", () => {
       emails: ["jane@example.com"],
     });
     const plan = planSync("sheet-123", tab, [p], NOW);
-    expect(plan.needsHeaderUpdate).toBe(false);
-    expect(plan.resourceNameColIndex).toBe(-1);
-    expect(plan.headers).toEqual(["full_name", "dex_email", "dex_groups"]);
+    expect(plan.needsHeaderUpdate).toBe(true);
+    expect(plan.resourceNameColIndex).toBe(3);
+    expect(plan.headers).toEqual(["full_name", "dex_email", "dex_groups", "google_resource_name"]);
     expect(plan.inserts).toHaveLength(1);
-    // 3 columns only — no resource_name slot.
-    expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", ""]);
+    expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", "", "people/c1"]);
     expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0 });
   });
 

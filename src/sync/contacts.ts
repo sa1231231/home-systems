@@ -180,11 +180,16 @@ export function planSync(
   nowIso: string,
 ): SyncPlan {
   const headers = [...contactsTab.headers];
-  // If the sheet doesn't have google_resource_name, we don't auto-re-add it —
-  // dropping the column was an explicit user choice. Matching falls back to
-  // email/phone via findMatch().
-  const resourceNameColIndex = headers.indexOf(RESOURCE_NAME_COL);
-  const needsHeaderUpdate = false;
+  // Auto-add the google_resource_name column when missing. It's the stable
+  // Google ID for each contact — the only reliable dedupe key. The column
+  // can be hidden in the Sheets UI if it's visually noisy.
+  let resourceNameColIndex = headers.indexOf(RESOURCE_NAME_COL);
+  let needsHeaderUpdate = false;
+  if (resourceNameColIndex === -1) {
+    resourceNameColIndex = headers.length;
+    headers.push(RESOURCE_NAME_COL);
+    needsHeaderUpdate = true;
+  }
 
   const idx = buildSheetIndex(contactsTab.rows);
   const headerSet = new Set(headers);
@@ -271,6 +276,8 @@ export type EnqueueResult = {
   queued_refreshes: number;
   queued_ambiguous: number;
   skipped_duplicates: number;
+  /** Trivial refreshes that auto-applied (binding resource_name on already-matched rows). */
+  resource_name_backfills: number;
 };
 
 export type RunSyncResult = {
@@ -280,6 +287,15 @@ export type RunSyncResult = {
   /** Counts when mode='queue' (default) and dryRun=false. */
   queued?: EnqueueResult;
 };
+
+/**
+ * A refresh op whose only change is filling in google_resource_name on a
+ * row that was already matched by email/phone/name. Binding the stable
+ * Google ID is benign + reversible — auto-apply without queueing.
+ */
+function isResourceNameBackfill(op: RefreshOp): boolean {
+  return op.updates.length === 1 && op.updates[0].col === RESOURCE_NAME_COL;
+}
 
 /**
  * Default behavior: pull contacts + diff against the sheet, then enqueue every
@@ -326,7 +342,21 @@ export async function runSync(
       RESOURCE_NAME_COL,
     );
   }
+  // Partition refreshes: trivial resource_name backfills auto-apply (Tier-A
+  // benign write), real field-diff refreshes go through the review queue.
+  const trivialBackfills = plan.refreshes.filter(isResourceNameBackfill);
+  const realRefreshes = plan.refreshes.filter((op) => !isResourceNameBackfill(op));
+  if (trivialBackfills.length > 0) {
+    const { applyResourceNameBackfills } = await import("./contacts-backfill.js");
+    await applyResourceNameBackfills(client, plan, trivialBackfills);
+  }
+  const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes };
   const { enqueueSyncPlan } = await import("./contacts-review.js");
-  const queued = await enqueueSyncPlan(plan);
-  return { plan, summary, applied: false, queued };
+  const queued = await enqueueSyncPlan(planForQueue);
+  return {
+    plan,
+    summary,
+    applied: false,
+    queued: { ...queued, resource_name_backfills: trivialBackfills.length },
+  };
 }

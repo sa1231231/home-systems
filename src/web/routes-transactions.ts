@@ -14,7 +14,7 @@ import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
 const DOMAIN = "transaction";
 
 const TriageBody = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(10),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 
 export type TransactionsRouterOptions = {

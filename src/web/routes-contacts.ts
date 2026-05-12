@@ -290,7 +290,7 @@ export function makeContactsUiRouter(): Router {
       const q = result.queued;
       if (q) {
         res.send(
-          `<div class="flash ok">Queued for review: ${q.queued_inserts} insert${q.queued_inserts === 1 ? '' : 's'}, ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). ${s.unchanged} unchanged.</div>`,
+          `<div class="flash ok">Queued for review: ${q.queued_inserts} insert${q.queued_inserts === 1 ? '' : 's'}, ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). Auto-bound google_resource_name on ${q.resource_name_backfills} matched row${q.resource_name_backfills === 1 ? '' : 's'}. ${s.unchanged} unchanged.</div>`,
         );
       } else {
         res.send(

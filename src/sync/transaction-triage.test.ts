@@ -165,6 +165,50 @@ describe("triageTransactions", () => {
     expect(classifyMock).not.toHaveBeenCalled();
   });
 
+  it("excludes already-processed rows BEFORE applying the limit (no wasted slots)", async () => {
+    // Five rows in the sheet; the first three are already in processed_transactions
+    // as needs_review (success outcome). With limit=2, the old behavior took the
+    // first two from the sheet → both were skipped → zero progress per click.
+    // New behavior: filter alreadyDone first, then slice. Slots go to fresh work.
+    await db.insert(processedTransactions).values([
+      { id: "tx-A", outcome: "needs_review", outcomeId: 100 },
+      { id: "tx-B", outcome: "needs_review", outcomeId: 101 },
+      { id: "tx-C", outcome: "needs_review", outcomeId: 102 },
+    ]);
+    readSheet.mockResolvedValueOnce(
+      makeTab([
+        makeRow({ transactionId: "tx-A" }),
+        makeRow({ transactionId: "tx-B" }),
+        makeRow({ transactionId: "tx-C" }),
+        makeRow({ transactionId: "tx-D" }),
+        makeRow({ transactionId: "tx-E" }),
+      ]),
+    );
+    readEnum.mockResolvedValueOnce(["X"]);
+    classifyMock.mockResolvedValue({
+      output: { category: "X", reasoning: "x" },
+      callId: 1,
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    } as never);
+
+    const summary = await triageTransactions({} as never, {
+      limit: 2,
+      sessionId: "test",
+      target: TARGET,
+    });
+    // Skipped surfaces the 3 already-done rows; queued is the 2 fresh ones
+    // that fit under limit=2. tx-A/B/C are skipped (already done); tx-D and
+    // tx-E are newly queued. The classifier is called exactly 2 times.
+    expect(summary.skipped).toBe(3);
+    expect(summary.queued).toBe(2);
+    expect(classifyMock).toHaveBeenCalledTimes(2);
+    const queuedIds = summary.items
+      .filter((i) => i.outcome === "queued_for_review")
+      .map((i) => i.transaction_id)
+      .sort();
+    expect(queuedIds).toEqual(["tx-D", "tx-E"]);
+  });
+
   it("retries rows that previously errored", async () => {
     await db.insert(processedTransactions).values({
       id: "tx-err",
