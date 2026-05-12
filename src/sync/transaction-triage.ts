@@ -1,6 +1,6 @@
 import type { OAuth2Client } from "google-auth-library";
 import { z } from "zod/v4";
-import { eq } from "drizzle-orm";
+import { eq, inArray, ne } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { needsReview, processedTransactions } from "../db/schema.js";
 import { evaluate } from "../rules/engine.js";
@@ -184,8 +184,27 @@ export async function triageTransactions(
     reasoning: z.string().min(1).max(500),
   });
 
-  // Only process rows that are not yet categorized in the sheet.
-  const candidates = tab.rows.filter((r) => !r.category || r.category.trim() === "");
+  // Candidates = rows with no Category yet in the sheet AND not already
+  // recorded in processed_transactions with a non-error outcome. Filter out
+  // already-processed rows BEFORE applying the limit; otherwise the limit
+  // gets wasted on rows that would immediately fall through to the per-row
+  // "skipped" branch and every run after the first does ~zero new work.
+  const sheetCandidates = tab.rows.filter((r) => !r.category || r.category.trim() === "");
+  const alreadyDone = new Set<string>();
+  if (sheetCandidates.length > 0) {
+    const candidateIds = sheetCandidates.map((r) => r.transactionId);
+    const seen = await db
+      .select({ id: processedTransactions.id })
+      .from(processedTransactions)
+      .where(
+        and(
+          inArray(processedTransactions.id, candidateIds),
+          ne(processedTransactions.outcome, "error"),
+        ),
+      );
+    for (const r of seen) alreadyDone.add(r.id);
+  }
+  const candidates = sheetCandidates.filter((r) => !alreadyDone.has(r.transactionId));
   const window = candidates.slice(0, options.limit);
 
   for (const row of window) {

@@ -32,7 +32,7 @@ export type RefreshReviewAction = {
   type: "refresh";
   tab: string;
   row_index: number;
-  via: "resource_name" | "email" | "phone";
+  via: "resource_name" | "email" | "phone" | "name";
   updates: FieldChange[];
 };
 
@@ -40,7 +40,7 @@ export type AmbiguousReviewAction = {
   type: "ambiguous";
   tab: string;
   matches: number[];
-  via: "email" | "phone";
+  via: "email" | "phone" | "name";
 };
 
 export type ContactReviewAction = InsertReviewAction | RefreshReviewAction | AmbiguousReviewAction;

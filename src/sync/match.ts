@@ -7,14 +7,33 @@ export type SheetIndex = {
   byResourceName: Map<string, number>;
   byEmail: Map<string, number[]>;
   byPhone: Map<string, number[]>;
+  /** Fallback for contacts with no email/phone. Key is "first last" lowercased + trimmed. */
+  byNameKey: Map<string, number[]>;
 };
 
 export type MatchResult =
   | { kind: "resource_name"; rowIndex: number }
   | { kind: "email"; rowIndex: number }
   | { kind: "phone"; rowIndex: number }
-  | { kind: "ambiguous"; matches: number[]; via: "email" | "phone" }
+  | { kind: "name"; rowIndex: number }
+  | { kind: "ambiguous"; matches: number[]; via: "email" | "phone" | "name" }
   | { kind: "none" };
+
+function nameKey(record: Record<string, string>): string {
+  const first = (record.first_name ?? "").trim().toLowerCase();
+  const last = (record.last_name ?? "").trim().toLowerCase();
+  const key = `${first} ${last}`.trim();
+  return key;
+}
+
+function personNameKey(person: GooglePerson): string {
+  const first = (person.given_name ?? "").trim().toLowerCase();
+  const last = (person.family_name ?? "").trim().toLowerCase();
+  const key = `${first} ${last}`.trim();
+  // If Google didn't give us a split name, fall back to the display name lowercased.
+  if (key) return key;
+  return (person.display_name ?? "").trim().toLowerCase();
+}
 
 function rowEmails(record: Record<string, string>): string[] {
   const all = [
@@ -50,6 +69,7 @@ export function buildSheetIndex(rows: SheetRow[]): SheetIndex {
   const byResourceName = new Map<string, number>();
   const byEmail = new Map<string, number[]>();
   const byPhone = new Map<string, number[]>();
+  const byNameKey = new Map<string, number[]>();
 
   for (const { rowIndex, record } of rows) {
     const resource = record.google_resource_name?.trim();
@@ -69,9 +89,15 @@ export function buildSheetIndex(rows: SheetRow[]): SheetIndex {
       arr.push(rowIndex);
       byPhone.set(p, arr);
     }
+    const nk = nameKey(record);
+    if (nk) {
+      const arr = byNameKey.get(nk) ?? [];
+      arr.push(rowIndex);
+      byNameKey.set(nk, arr);
+    }
   }
 
-  return { byResourceName, byEmail, byPhone };
+  return { byResourceName, byEmail, byPhone, byNameKey };
 }
 
 export function findMatch(person: GooglePerson, idx: SheetIndex): MatchResult {
@@ -106,5 +132,23 @@ export function findMatch(person: GooglePerson, idx: SheetIndex): MatchResult {
   if (ambiguousVia && ambiguousRows.size > 0) {
     return { kind: "ambiguous", matches: [...ambiguousRows].sort((a, b) => a - b), via: ambiguousVia };
   }
+
+  // Last-resort fallback: match by name. Only triggered for Google contacts
+  // that have NO email and NO phone — those can't be matched any other way,
+  // and without this fallback every sync would propose a fresh insert
+  // forever, even after the user approved one. Limited to no-handle contacts
+  // so it can't accidentally collide two different "Smith"s who both have
+  // their own email/phone.
+  if (person.emails.length === 0 && person.phones.length === 0) {
+    const key = personNameKey(person);
+    if (key) {
+      const m = idx.byNameKey.get(key);
+      if (m && m.length === 1) return { kind: "name", rowIndex: m[0] };
+      if (m && m.length > 1) {
+        return { kind: "ambiguous", matches: [...m].sort((a, b) => a - b), via: "name" };
+      }
+    }
+  }
+
   return { kind: "none" };
 }

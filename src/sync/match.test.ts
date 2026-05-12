@@ -90,4 +90,55 @@ describe("findMatch", () => {
     const result = findMatch(person({ emails: [], phones: [] }), idx);
     expect(result).toEqual({ kind: "none" });
   });
+
+  it("matches by name as a last resort when the contact has no email/phone", () => {
+    // A previously-approved insert for Tom Jackson left a row with no email
+    // or phone (because Google's contact had none). The next sync must
+    // recognize the existing row by name so it doesn't propose another insert.
+    const idx = buildSheetIndex([
+      { rowIndex: 7, record: { first_name: "Tom", last_name: "Jackson" } },
+    ]);
+    const result = findMatch(
+      person({ given_name: "Tom", family_name: "Jackson", emails: [], phones: [] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "name", rowIndex: 7 });
+  });
+
+  it("name-fallback is case-insensitive", () => {
+    const idx = buildSheetIndex([
+      { rowIndex: 1, record: { first_name: "bobby", last_name: "MAGEE" } },
+    ]);
+    const result = findMatch(
+      person({ given_name: "Bobby", family_name: "Magee", emails: [], phones: [] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "name", rowIndex: 1 });
+  });
+
+  it("name-fallback returns ambiguous when two sheet rows share the same name", () => {
+    const idx = buildSheetIndex([
+      { rowIndex: 1, record: { first_name: "Bobby", last_name: "Magee" } },
+      { rowIndex: 5, record: { first_name: "Bobby", last_name: "Magee" } },
+    ]);
+    const result = findMatch(
+      person({ given_name: "Bobby", family_name: "Magee", emails: [], phones: [] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "ambiguous", matches: [1, 5], via: "name" });
+  });
+
+  it("name-fallback is NOT used for contacts that have email or phone", () => {
+    // Even if the name happens to match a sheet row, contacts with their own
+    // email/phone must go through the email/phone path so an unrelated
+    // "Smith" doesn't get coalesced into the wrong row.
+    const idx = buildSheetIndex([
+      { rowIndex: 1, record: { first_name: "Jane", last_name: "Smith" } },
+    ]);
+    const result = findMatch(
+      person({ given_name: "Jane", family_name: "Smith", emails: ["jane@elsewhere.com"] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "none" });
+  });
 });

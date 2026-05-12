@@ -54,7 +54,7 @@ export type FieldChange = { col: string; from: string; to: string };
 export type RefreshOp = {
   rowIndex: number;
   person: GooglePerson;
-  via: "resource_name" | "email" | "phone";
+  via: "resource_name" | "email" | "phone" | "name";
   updates: FieldChange[];
 };
 
@@ -67,7 +67,7 @@ export type InsertOp = {
 export type AmbiguousOp = {
   person: GooglePerson;
   matches: number[];
-  via: "email" | "phone";
+  via: "email" | "phone" | "name";
 };
 
 export type SyncPlan = {
