@@ -29,6 +29,7 @@ import {
   TRIAGE_DOMAIN,
 } from "../src/sync/transaction-triage.js";
 import { correctEntry } from "../src/needs-review/service.js";
+import { reviewAppliers } from "../src/needs-review/appliers.js";
 import { newSessionId } from "../src/changelog/index.js";
 
 type RuleSpec = {
@@ -122,6 +123,52 @@ async function sweepPending(): Promise<void> {
   console.log(`  done: matched=${matched} applied=${applied} failed=${failed}`);
 }
 
+/**
+ * Re-call the applier for every entry currently in status="corrected" whose
+ * decision is a transaction action. applyTransactionCategory short-circuits
+ * to changed=false when the sheet row already has the right Category, so
+ * this is a no-op for already-applied entries and a successful write for any
+ * that got stuck (e.g. the previous run hit Google Sheets rate limits).
+ */
+async function retryCorrectedApplies(): Promise<void> {
+  const corrected = await db
+    .select()
+    .from(needsReview)
+    .where(and(eq(needsReview.domain, TRIAGE_DOMAIN), eq(needsReview.status, "corrected")));
+  console.log(`  scanning ${corrected.length} corrected transaction reviews…`);
+
+  let attempted = 0;
+  let wrote = 0;
+  let skipped = 0;
+  let failed = 0;
+  const sessionId = `script:retry-corrected:${newSessionId()}`;
+  for (const entry of corrected) {
+    if (!entry.decision) continue;
+    attempted++;
+    try {
+      const result = (await reviewAppliers.apply(
+        entry.subjectKind,
+        entry.subjectId,
+        entry.decision,
+        { sessionId, caller: "script:retry-corrected", intent: `retry review:${entry.id}` },
+      )) as { changed?: boolean };
+      if (result.changed) {
+        wrote++;
+        console.log(`  ✓ entry #${entry.id} re-applied (sheet updated)`);
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      failed++;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`  ✗ entry #${entry.id} retry failed: ${msg}`);
+    }
+  }
+  console.log(
+    `  done: attempted=${attempted} wrote=${wrote} already-up-to-date=${skipped} failed=${failed}`,
+  );
+}
+
 async function main(): Promise<void> {
   console.log("seed-tx-rules-and-sweep starting");
 
@@ -146,6 +193,9 @@ async function main(): Promise<void> {
 
   console.log("step 3: sweeping pending reviews against current rules");
   await sweepPending();
+
+  console.log("step 4: retrying corrected entries whose apply may have failed");
+  await retryCorrectedApplies();
 
   await pool.end();
   console.log("done");

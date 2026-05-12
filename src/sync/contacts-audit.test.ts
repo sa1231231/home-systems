@@ -38,6 +38,7 @@ describe("findAuditIssues", () => {
       nameOnly: [],
       emailDuplicates: [],
       phoneDuplicates: [],
+      fragmentOrphans: [],
     });
   });
 
@@ -141,6 +142,48 @@ describe("findAuditIssues — email/phone duplicates", () => {
       row({ first_name: "B", phones: "123" }),
     ];
     expect(findAuditIssues(rows).phoneDuplicates).toEqual([]);
+  });
+
+  it("flags fragment orphans: first_name = canonical's last_name, no contact info", () => {
+    const rows = [
+      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
+      row({ first_name: "Swarner", last_name: "" }), // orphan
+    ];
+    const r = findAuditIssues(rows);
+    expect(r.fragmentOrphans).toEqual([
+      { rowIndex: 1, firstName: "Swarner", canonicalRowIndex: 0, canonicalName: "Sean Swarner" },
+    ]);
+  });
+
+  it("does NOT flag a single-word first_name as fragment orphan when no canonical matches", () => {
+    const rows = [
+      row({ first_name: "Swarner", last_name: "" }), // no canonical "* Swarner" with contact info
+    ];
+    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
+  });
+
+  it("does NOT flag rows with contact info as fragment orphans", () => {
+    const rows = [
+      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
+      row({ first_name: "Swarner", last_name: "", phone: "555-9999" }), // has its own phone
+    ];
+    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
+  });
+
+  it("does NOT flag multi-word first_name as fragment orphan (different pattern)", () => {
+    const rows = [
+      row({ first_name: "Sean", last_name: "Swarner", phone: "555-1234" }),
+      row({ first_name: "Sean Swarner", last_name: "" }), // multi-word — not a single-name fragment
+    ];
+    expect(findAuditIssues(rows).fragmentOrphans).toEqual([]);
+  });
+
+  it("treats canonical's last_name case-insensitively", () => {
+    const rows = [
+      row({ first_name: "Sean", last_name: "swarner", phone: "555-1234" }),
+      row({ first_name: "SWARNER", last_name: "" }),
+    ];
+    expect(findAuditIssues(rows).fragmentOrphans).toHaveLength(1);
   });
 
   it("sorts duplicate groups by cluster size descending", () => {
