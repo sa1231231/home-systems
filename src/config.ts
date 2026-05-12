@@ -59,6 +59,8 @@ export const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   TRELLO_REORDER_CRON_SCHEDULE: z.string().default("0 11 * * *"),
+  EVENTS_LOCATION: z.string().default("Richmond, VA"),
+  EVENTBRITE_API_KEY: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

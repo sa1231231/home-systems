@@ -177,6 +177,54 @@ export const dailyOpCounters = pgTable(
  * transitions running → success | error. Summary is the domain-specific
  * payload (TriageSummary, SyncSummary, ReorderResult counts, etc.).
  */
+/**
+ * Web scraper output. One row per item scraped from a source, deduped by
+ * (kind, item_url). `kind` discriminates the source family (e.g.
+ * "ai_news", "events"). Content is intentionally stored truncated — the
+ * goal is enough text to summarize, not full archives.
+ */
+export const scraperItems = pgTable(
+  "scraper_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+    source: text("source").notNull(),
+    itemUrl: text("item_url").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    tags: jsonb("tags").notNull().default(sql`'[]'::jsonb`),
+    rawSnippet: text("raw_snippet"),
+  },
+  (t) => ({
+    kindCreatedIdx: index("scraper_items_kind_created_idx").on(t.kind, t.createdAt),
+    uniqueKindUrl: index("scraper_items_kind_url_idx").on(t.kind, t.itemUrl),
+  }),
+);
+
+/**
+ * AI-generated briefing/digest produced from a batch of scraper_items.
+ * One row per (kind, run). Each digest references the item IDs it
+ * summarized and stores the AI's narrative output.
+ */
+export const scraperDigests = pgTable(
+  "scraper_digests",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    itemIds: jsonb("item_ids").notNull().default(sql`'[]'::jsonb`),
+    summary: text("summary").notNull(),
+    aiCallId: bigint("ai_call_id", { mode: "number" }),
+  },
+  (t) => ({
+    kindCreatedIdx: index("scraper_digests_kind_created_idx").on(t.kind, t.createdAt),
+  }),
+);
+
 export const triageRuns = pgTable(
   "triage_runs",
   {

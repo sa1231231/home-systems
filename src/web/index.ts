@@ -8,6 +8,7 @@ import { makeReviewUiRouter } from "./routes-review.js";
 import { makeRulesUiRouter } from "./routes-rules.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
 import { makeTrelloUiRouter } from "./routes-trello.js";
+import { makeScraperUiRouter } from "./routes-scraper.js";
 import { makeSessionsUiRouter } from "./routes-sessions.js";
 
 export type WebRouterOptions = {
@@ -54,6 +55,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
   );
   router.use("/contacts", gate, makeContactsUiRouter());
   router.use("/trello", gate, makeTrelloUiRouter());
+  router.use("/scraper", gate, makeScraperUiRouter());
   router.use("/needs-review", gate, makeReviewUiRouter());
   router.use("/rules", gate, makeRulesUiRouter());
 
