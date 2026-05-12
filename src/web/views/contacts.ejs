@@ -57,14 +57,14 @@
         <tr>
           <th style="width: 130px;">When (UTC)</th>
           <th>Contact</th>
-          <th style="width: 130px;">Category</th>
+          <th style="width: 160px;">Change</th>
           <th style="width: 140px;">Status</th>
-          <th style="width: 320px;">Decide</th>
+          <th style="width: 200px;">Decide</th>
         </tr>
       </thead>
       <tbody>
         <% pending.forEach((entry) => { %>
-          <%- include("partials/_review-row", { entry, applyOutcome: null }) %>
+          <%- include("partials/_contact-review-row", { entry, applyOutcome: null }) %>
         <% }); %>
       </tbody>
     </table>
