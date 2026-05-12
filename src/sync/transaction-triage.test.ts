@@ -30,7 +30,7 @@ import {
   type TransactionRow,
   type TransactionsTab,
 } from "../integrations/google/sheets-transactions.js";
-import { classify, ClassificationParseError } from "../ai/index.js";
+import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { applyTransactionCategory } from "./transaction-actions.js";
 import {
   registerTransactionApplier,
@@ -322,6 +322,34 @@ describe("triageTransactions", () => {
       .where(eq(processedTransactions.id, "tx-bad"));
     expect(processed[0].outcome).toBe("error");
     expect(processed[0].error).toMatch(/ai_call 55/);
+  });
+
+  it("aborts the whole run on MissingAnthropicKeyError instead of grinding rows", async () => {
+    readSheet.mockResolvedValueOnce(
+      makeTab([
+        makeRow({ transactionId: "tx-1" }),
+        makeRow({ transactionId: "tx-2" }),
+        makeRow({ transactionId: "tx-3" }),
+      ]),
+    );
+    readEnum.mockResolvedValueOnce(["X"]);
+    classifyMock.mockRejectedValue(new MissingAnthropicKeyError());
+
+    await expect(
+      triageTransactions({} as never, {
+        limit: 10,
+        sessionId: "test",
+        target: TARGET,
+      }),
+    ).rejects.toBeInstanceOf(MissingAnthropicKeyError);
+
+    // Only the first row should have hit classify before the error bubbled.
+    expect(classifyMock).toHaveBeenCalledOnce();
+    // No needs_review entries should have been written for any row.
+    expect(await db.select().from(needsReview)).toEqual([]);
+    // No processed_transactions error rows either — the error is a
+    // configuration problem, not a per-row failure.
+    expect(await db.select().from(processedTransactions)).toEqual([]);
   });
 });
 

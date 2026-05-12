@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { needsReview, processedEmails } from "../db/schema.js";
 import { evaluate } from "../rules/engine.js";
-import { classify, ClassificationParseError } from "../ai/index.js";
+import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { getMessageMetadata, listTriageInbox, type GmailMetadata } from "../integrations/google/gmail.js";
 import { applyEmailAction, type EmailAction } from "./email-actions.js";
 import { reviewAppliers } from "../needs-review/appliers.js";
@@ -245,6 +245,12 @@ export async function triageEmails(
         proposed = result.output;
         aiCallId = result.callId;
       } catch (err) {
+        // Configuration-level failure (no API key) — abort the whole run so we
+        // don't grind through N identical errors. The route surfaces a clear
+        // banner from the bubble-out.
+        if (err instanceof MissingAnthropicKeyError) {
+          throw err;
+        }
         // ClassificationParseError already persists the ai_calls row; record the email as errored.
         const message =
           err instanceof ClassificationParseError

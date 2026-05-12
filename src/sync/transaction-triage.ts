@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { needsReview, processedTransactions } from "../db/schema.js";
 import { evaluate } from "../rules/engine.js";
-import { classify, ClassificationParseError } from "../ai/index.js";
+import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { reviewAppliers } from "../needs-review/appliers.js";
 import {
   readCategoriesEnum,
@@ -261,6 +261,12 @@ export async function triageTransactions(
         proposed = result.output;
         aiCallId = result.callId;
       } catch (err) {
+        // Configuration-level failure (no API key) — abort the whole run so
+        // we don't grind through N identical errors. The route will surface
+        // a single clear banner.
+        if (err instanceof MissingAnthropicKeyError) {
+          throw err;
+        }
         const message =
           err instanceof ClassificationParseError
             ? `classifier output rejected (ai_call ${err.callId})`

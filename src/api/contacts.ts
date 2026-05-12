@@ -148,6 +148,78 @@ export function makeContactsRouter(): Router {
     expected_full_name: z.string().max(500).optional(),
   });
 
+  const DeleteRowsBody = z.object({
+    row_indices: z.array(z.coerce.number().int().min(0).max(100_000)).min(1).max(2000),
+    dry_run: z.boolean().default(false),
+    reason: z.string().max(500).optional(),
+  });
+
+  router.post("/sheet/delete-rows", writeLimiter, async (req, res) => {
+    try {
+      const { row_indices, dry_run, reason } = DeleteRowsBody.parse(req.body);
+      const uniq = Array.from(new Set(row_indices)).sort((a, b) => a - b);
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      const valid: { row_index: number; record: Record<string, string> }[] = [];
+      const outOfRange: number[] = [];
+      for (const i of uniq) {
+        if (i >= tab.rows.length) outOfRange.push(i);
+        else valid.push({ row_index: i, record: tab.rows[i].record });
+      }
+      if (dry_run) {
+        res.json({
+          ok: true,
+          dry_run: true,
+          would_delete: valid.map((v) => ({
+            row_index: v.row_index,
+            full_name: v.record.full_name ?? "",
+            first_name: v.record.first_name ?? "",
+            last_name: v.record.last_name ?? "",
+            emails: v.record.emails ?? "",
+            phones: v.record.phones ?? "",
+          })),
+          out_of_range: outOfRange,
+        });
+        return;
+      }
+      if (valid.length === 0) {
+        res.json({ ok: true, dry_run: false, deleted: [], out_of_range: outOfRange });
+        return;
+      }
+      const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
+      await withChangelog(
+        {
+          caller: "api:contacts.sheet.delete-rows",
+          sessionId: req.sessionId,
+          operation: "contacts.sheet.delete_rows",
+          targetKind: "contact_rows",
+          targetId: `${tab.tab}!bulk[${valid.length}]`,
+          intent: reason ?? `bulk delete ${valid.length} rows`,
+          before: { tab: tab.tab, rows: valid },
+          after: { deleted_count: valid.length },
+          externalTarget: `google.sheet:${creds.sheetId}!${tab.tab}`,
+        },
+        async () => {
+          await deleteDataRows(
+            client,
+            creds.sheetId,
+            sheetId,
+            valid.map((v) => v.row_index),
+          );
+        },
+      );
+      res.json({
+        ok: true,
+        dry_run: false,
+        deleted_count: valid.length,
+        out_of_range: outOfRange,
+      });
+    } catch (err) {
+      handleError(err, res);
+    }
+  });
+
   const CleanupColumnsBody = z.object({
     columns: z.array(z.string().min(1).max(200)).min(1).max(50),
     dry_run: z.boolean().default(false),

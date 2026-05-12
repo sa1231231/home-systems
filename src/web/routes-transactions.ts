@@ -7,6 +7,7 @@ import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js"
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
 import { triageTransactions } from "../sync/transaction-triage.js";
 import { newSessionId } from "../changelog/index.js";
+import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
 
 const DOMAIN = "transaction";
@@ -95,12 +96,18 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
         `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res
-        .status(500)
-        .send(
-          `<div class="flash err">Triage failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
-        );
+      if (err instanceof MissingAnthropicKeyError) {
+        res
+          .status(503)
+          .send(
+            `<div class="flash err">ANTHROPIC_API_KEY is not set in Railway. Set it in the home-systems service variables and redeploy; the cron will pick it up automatically.</div>`,
+          );
+        return;
+      }
+      const message = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res.status(500).send(`<div class="flash err">Triage failed: ${message}</div>`);
     }
   });
 
