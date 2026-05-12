@@ -79,7 +79,9 @@
       <%= audit.totalRows %> rows ·
       <%= audit.orphans.length %> orphan dupe<%= audit.orphans.length === 1 ? '' : 's' %>,
       <%= audit.emptyRows.length %> empty,
-      <%= audit.nameOnly.length %> name-only
+      <%= audit.nameOnly.length %> name-only,
+      <%= audit.emailDuplicates.length %> email dup-cluster<%= audit.emailDuplicates.length === 1 ? '' : 's' %>,
+      <%= audit.phoneDuplicates.length %> phone dup-cluster<%= audit.phoneDuplicates.length === 1 ? '' : 's' %>
     </span>
   </h3>
   <p class="muted" style="margin: 0 0 8px;">
@@ -155,6 +157,62 @@
       </tbody>
     </table>
   <% } %>
+
+  <%
+    const dupSections = [
+      { title: "Email duplicates", groups: audit.emailDupViews, total: audit.emailDuplicates.length, label: "email" },
+      { title: "Phone duplicates", groups: audit.phoneDupViews, total: audit.phoneDuplicates.length, label: "phone" },
+    ];
+  %>
+  <% dupSections.forEach((sec) => { %>
+    <% if (sec.groups.length > 0) { %>
+      <h4 style="margin: 18px 0 4px;">
+        <%= sec.title %>
+        <span class="muted" style="font-weight: normal; font-size: 12px;">
+          (<%= sec.total %> cluster<%= sec.total === 1 ? '' : 's' %><%= sec.total > sec.groups.length ? `, showing top ${sec.groups.length}` : '' %>)
+        </span>
+      </h4>
+      <p class="muted" style="margin: 0 0 8px; font-size: 12px;">Two-or-more rows share a <%= sec.label %>. Decide which row is the keeper; Delete the rest.</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 200px;">Shared <%= sec.label %></th>
+            <th style="width: 50px;">Row</th>
+            <th>Name</th>
+            <th>Emails</th>
+            <th>Phones</th>
+            <th>Company</th>
+            <th style="width: 90px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% sec.groups.forEach((g, gi) => { %>
+            <% g.rows.forEach((r, ri) => { %>
+              <tr id="audit-row-<%= sec.label %>-<%= gi %>-<%= r.rowIndex %>" style="<%= ri === 0 ? 'border-top: 2px solid var(--border);' : '' %>">
+                <% if (ri === 0) { %>
+                  <td rowspan="<%= g.rows.length %>" style="vertical-align: top; font-family: monospace; font-size: 12px;"><%= g.value %></td>
+                <% } %>
+                <td class="muted"><%= r.rowIndex %></td>
+                <td><%= r.name %></td>
+                <td class="muted" style="font-size: 12px;"><%= r.emails || '—' %></td>
+                <td class="muted" style="font-size: 12px;"><%= r.phones || '—' %></td>
+                <td class="muted" style="font-size: 12px;"><%= r.company || '—' %></td>
+                <td>
+                  <button
+                    hx-post="/ui/contacts/delete-orphan/<%= r.rowIndex %>"
+                    hx-target="#audit-row-<%= sec.label %>-<%= gi %>-<%= r.rowIndex %>"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete row <%= r.rowIndex %> ('<%= r.name %>')?"
+                    style="padding: 4px 10px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 3px; cursor: pointer;"
+                  >Delete</button>
+                </td>
+              </tr>
+            <% }); %>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  <% }); %>
 </section>
 <% } %>
 

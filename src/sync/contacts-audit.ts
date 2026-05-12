@@ -21,12 +21,24 @@ export type NameOnlyRow = {
   fullName: string;
 };
 
+export type DuplicateGroup = {
+  /** The normalized email or phone shared by every row in the group. */
+  value: string;
+  /** All sheet row indices that share this value (always ≥ 2). */
+  rowIndices: number[];
+};
+
 export type AuditReport = {
   orphans: OrphanDuplicate[];
   emptyRows: EmptyRow[];
   /** Rows with a full_name but no resource_name, email, or phone — and no
    *  matching canonical row. Likely manual entries with no Google contact. */
   nameOnly: NameOnlyRow[];
+  /** Two-or-more rows that share a normalized email address. Sorted largest
+   *  cluster first. */
+  emailDuplicates: DuplicateGroup[];
+  /** Two-or-more rows that share a normalized phone number (digits only). */
+  phoneDuplicates: DuplicateGroup[];
 };
 
 function nonEmpty(value: string | undefined): boolean {
@@ -48,6 +60,62 @@ function hasContactInfo(row: SheetRow): boolean {
     nonEmpty(row.linkedin_url) ||
     nonEmpty(row.website)
   );
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function normalizeEmail(s: string): string {
+  return s.toLowerCase().trim();
+}
+
+function normalizePhone(s: string): string {
+  // Keep digits only. Drop a leading "1" (US country code) if there are 11
+  // digits so "+1 555-1234" and "555-1234" collapse to the same key.
+  const digits = s.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
+}
+
+/** Extracted set of normalized emails from a row (legacy + canonical cols). */
+export function emailsInRow(row: SheetRow): string[] {
+  const all = [...splitCsv(get(row, "email")), ...splitCsv(get(row, "emails"))];
+  return all.map(normalizeEmail).filter((e) => e.length > 0 && e.includes("@"));
+}
+
+/** Extracted set of normalized phones (digit-only, leading 1 stripped). */
+export function phonesInRow(row: SheetRow): string[] {
+  const all = [...splitCsv(get(row, "phone")), ...splitCsv(get(row, "phones"))];
+  // Require ≥ 7 digits so we don't cluster on extension numbers / fragments.
+  return all.map(normalizePhone).filter((p) => p.length >= 7);
+}
+
+function findValueDuplicates(
+  rows: SheetRow[],
+  extract: (row: SheetRow) => string[],
+): DuplicateGroup[] {
+  const byValue = new Map<string, number[]>();
+  rows.forEach((row, i) => {
+    const seenForThisRow = new Set<string>();
+    for (const v of extract(row)) {
+      if (seenForThisRow.has(v)) continue; // a row that lists the same email twice still counts as one
+      seenForThisRow.add(v);
+      const list = byValue.get(v);
+      if (list) list.push(i);
+      else byValue.set(v, [i]);
+    }
+  });
+  const out: DuplicateGroup[] = [];
+  for (const [value, indices] of byValue) {
+    if (indices.length > 1) out.push({ value, rowIndices: indices });
+  }
+  // Sort by cluster size desc, then by value for stable output.
+  out.sort((a, b) => b.rowIndices.length - a.rowIndices.length || a.value.localeCompare(b.value));
+  return out;
 }
 
 /** Compose a name key for dedupe — prefers explicit full_name when present
@@ -102,5 +170,11 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
     nameOnly.push({ rowIndex: i, fullName: name });
   });
 
-  return { orphans, emptyRows, nameOnly };
+  return {
+    orphans,
+    emptyRows,
+    nameOnly,
+    emailDuplicates: findValueDuplicates(rows, emailsInRow),
+    phoneDuplicates: findValueDuplicates(rows, phonesInRow),
+  };
 }

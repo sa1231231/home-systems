@@ -32,7 +32,13 @@ describe("findAuditIssues", () => {
 
   it("ignores canonical rows themselves (rows with any contact info)", () => {
     const rows = [row({ full_name: "Anyone", email: "x@y" })];
-    expect(findAuditIssues(rows)).toEqual({ orphans: [], emptyRows: [], nameOnly: [] });
+    expect(findAuditIssues(rows)).toEqual({
+      orphans: [],
+      emptyRows: [],
+      nameOnly: [],
+      emailDuplicates: [],
+      phoneDuplicates: [],
+    });
   });
 
   it("treats a LinkedIn URL alone as valid contact info (not name-only)", () => {
@@ -88,5 +94,67 @@ describe("findAuditIssues", () => {
     ];
     const r = findAuditIssues(rows);
     expect(r.orphans).toEqual([{ rowIndex: 0, fullName: "Jay Hajeer", canonicalRowIndex: 1 }]);
+  });
+});
+
+describe("findAuditIssues — email/phone duplicates", () => {
+  it("groups rows that share a normalized email", () => {
+    const rows = [
+      row({ first_name: "A", email: "Foo@Bar.com" }),
+      row({ first_name: "B", emails: "foo@bar.com, baz@qux.com" }),
+      row({ first_name: "C", emails: "qux@baz.com" }),
+    ];
+    const r = findAuditIssues(rows);
+    expect(r.emailDuplicates).toEqual([
+      { value: "foo@bar.com", rowIndices: [0, 1] },
+    ]);
+  });
+
+  it("groups rows that share a normalized phone (digits only, strips leading 1)", () => {
+    const rows = [
+      row({ first_name: "A", phone: "+1 (555) 123-4567" }),
+      row({ first_name: "B", phones: "555-123-4567" }),
+      row({ first_name: "C", phone: "555 9999999" }),
+    ];
+    const r = findAuditIssues(rows);
+    expect(r.phoneDuplicates).toEqual([
+      { value: "5551234567", rowIndices: [0, 1] },
+    ]);
+  });
+
+  it("does not flag a row whose own CSV repeats the same email twice", () => {
+    const rows = [row({ first_name: "Solo", emails: "x@y.com, x@y.com" })];
+    expect(findAuditIssues(rows).emailDuplicates).toEqual([]);
+  });
+
+  it("skips invalid email strings (must contain @)", () => {
+    const rows = [
+      row({ first_name: "A", emails: "broken-string" }),
+      row({ first_name: "B", emails: "broken-string" }),
+    ];
+    expect(findAuditIssues(rows).emailDuplicates).toEqual([]);
+  });
+
+  it("skips short phone fragments (< 7 digits)", () => {
+    const rows = [
+      row({ first_name: "A", phones: "123" }),
+      row({ first_name: "B", phones: "123" }),
+    ];
+    expect(findAuditIssues(rows).phoneDuplicates).toEqual([]);
+  });
+
+  it("sorts duplicate groups by cluster size descending", () => {
+    const rows = [
+      row({ first_name: "A", email: "a@b" }),
+      row({ first_name: "B", email: "a@b" }),
+      row({ first_name: "C", email: "a@b" }),
+      row({ first_name: "D", email: "x@y" }),
+      row({ first_name: "E", email: "x@y" }),
+    ];
+    const r = findAuditIssues(rows);
+    expect(r.emailDuplicates.map((g) => [g.value, g.rowIndices.length])).toEqual([
+      ["a@b", 3],
+      ["x@y", 2],
+    ]);
   });
 });

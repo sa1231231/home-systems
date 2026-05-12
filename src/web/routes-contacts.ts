@@ -10,7 +10,7 @@ import {
 } from "../integrations/google/oauth.js";
 import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
-import { findAuditIssues, type AuditReport } from "../sync/contacts-audit.js";
+import { findAuditIssues, type AuditReport, type DuplicateGroup } from "../sync/contacts-audit.js";
 import { readContactsTab, getSheetIdByTitle, deleteDataRows } from "../integrations/google/sheets.js";
 import { withChangelog } from "../changelog/index.js";
 
@@ -45,13 +45,47 @@ export function makeContactsUiRouter(): Router {
         .orderBy(desc(changelog.id))
         .limit(200),
     ]);
-    let audit: (AuditReport & { totalRows: number }) | null = null;
+    type DupGroupView = DuplicateGroup & {
+      rows: Array<{
+        rowIndex: number;
+        name: string;
+        emails: string;
+        phones: string;
+        company: string;
+      }>;
+    };
+    type AuditView = AuditReport & {
+      totalRows: number;
+      emailDupViews: DupGroupView[];
+      phoneDupViews: DupGroupView[];
+    };
+    let audit: AuditView | null = null;
     if (hasGoogleCreds()) {
       try {
         const creds = requireGoogleCreds();
         const tab = await readContactsTab(getOAuthClient(), creds.sheetId);
-        const report = findAuditIssues(tab.rows.map((r) => r.record));
-        audit = { ...report, totalRows: tab.rows.length };
+        const records = tab.rows.map((r) => r.record);
+        const report = findAuditIssues(records);
+        const rowView = (rowIndex: number) => {
+          const r = records[rowIndex] ?? {};
+          const first = (r.first_name ?? "").trim();
+          const last = (r.last_name ?? "").trim();
+          const full = (r.full_name ?? "").trim();
+          return {
+            rowIndex,
+            name: full || `${first} ${last}`.trim() || "(no name)",
+            emails: (r.emails || r.email || "").trim(),
+            phones: (r.phones || r.phone || "").trim(),
+            company: (r.company || "").trim(),
+          };
+        };
+        const emailDupViews: DupGroupView[] = report.emailDuplicates
+          .slice(0, 50)
+          .map((g) => ({ ...g, rows: g.rowIndices.map(rowView) }));
+        const phoneDupViews: DupGroupView[] = report.phoneDuplicates
+          .slice(0, 50)
+          .map((g) => ({ ...g, rows: g.rowIndices.map(rowView) }));
+        audit = { ...report, totalRows: tab.rows.length, emailDupViews, phoneDupViews };
       } catch {
         audit = null;
       }
