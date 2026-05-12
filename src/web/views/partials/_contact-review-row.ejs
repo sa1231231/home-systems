@@ -110,12 +110,10 @@
         <% } %>
         <% if (kind === "ambiguous" && matches.length >= 2) { %>
           <button
-            hx-post="/ui/contacts/merge-review/<%= entry.id %>"
-            hx-target="#review-row-<%= entry.id %>"
-            hx-swap="outerHTML"
-            hx-confirm="Merge <%= matches.length %> rows into row <%= Math.min(...matches) %>? The keeper gets the union of emails/phones/groups/tags + longest of each scalar field; the other rows are deleted. This is logged + reversible from /ui/changes."
+            type="button"
+            onclick="(function(el){var p=document.getElementById('merge-preview-<%= entry.id %>'); var open=p.style.display!=='none'&&p.style.display!==''; p.style.display=open?'none':'block'; el.textContent=open?'Preview merge ▾':'Hide preview'})(this)"
             style="padding: 4px 12px; background: #fff3cd; border: 1px solid #b35a00; color: #b35a00; border-radius: 3px; cursor: pointer;"
-          >Merge</button>
+          >Preview merge ▾</button>
         <% } %>
         <button
           hx-post="/ui/needs-review/<%= entry.id %>/reject"
@@ -127,6 +125,49 @@
       <% if (kind === "ambiguous") { %>
         <div class="muted" style="font-size: 11px; margin-top: 6px;">
           <strong>Merge</strong>: same person, combine the rows. <strong>Skip</strong>: different people, leave both rows alone.
+        </div>
+      <% } %>
+      <% if (kind === "ambiguous" && typeof mergePreview !== "undefined" && mergePreview) { %>
+        <div id="merge-preview-<%= entry.id %>" style="display: none; margin-top: 10px; padding: 10px; background: #fffaf0; border: 1px solid #b35a00; border-radius: 4px;">
+          <div style="font-size: 12px; margin-bottom: 6px;">
+            <strong>If you Apply merge:</strong> keep row <strong><%= mergePreview.keeperRowIndex %></strong>, delete row<%= mergePreview.deleteRowIndices.length === 1 ? '' : 's' %>
+            <% mergePreview.deleteRowIndices.forEach((d, di) => { %><strong><%= d %></strong><%= di < mergePreview.deleteRowIndices.length - 1 ? ', ' : '' %><% }); %>.
+          </div>
+          <% if (mergePreview.updates.length === 0) { %>
+            <div class="muted" style="font-size: 11px;">Keeper already has all the data — no cell updates, just the deletes.</div>
+          <% } else { %>
+            <table style="font-size: 11px; background: #fff; border: 1px solid var(--border); margin-top: 4px;">
+              <thead>
+                <tr>
+                  <th style="padding: 3px 6px; font-size: 10px;">Column</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">Keeper now</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">→ After merge</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% mergePreview.updates.forEach((u) => { %>
+                  <tr>
+                    <td style="padding: 3px 6px; font-family: monospace; vertical-align: top;"><%= u.col %></td>
+                    <td style="padding: 3px 6px; color: #666; vertical-align: top; max-width: 240px; word-break: break-word;"><%= u.from || '(empty)' %></td>
+                    <td style="padding: 3px 6px; color: #128a3e; vertical-align: top; max-width: 240px; word-break: break-word;"><%= u.to %></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          <% } %>
+          <div style="margin-top: 10px;">
+            <button
+              hx-post="/ui/contacts/merge-review/<%= entry.id %>"
+              hx-target="#review-row-<%= entry.id %>"
+              hx-swap="outerHTML"
+              style="padding: 4px 12px; background: #128a3e; border: 1px solid #128a3e; color: #fff; border-radius: 3px; cursor: pointer;"
+            >Apply merge</button>
+            <button
+              type="button"
+              onclick="(function(){var p=document.getElementById('merge-preview-<%= entry.id %>'); p.style.display='none'; var trigger=p.parentElement.querySelector('button[onclick*=\"merge-preview-<%= entry.id %>\"]'); if(trigger){trigger.textContent='Preview merge ▾';}})()"
+              style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; margin-left: 6px;"
+            >Cancel</button>
+          </div>
         </div>
       <% } %>
     <% } else { %>

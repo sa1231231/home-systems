@@ -20,7 +20,7 @@ import {
   type CellUpdate,
 } from "../integrations/google/sheets.js";
 import { withChangelog } from "../changelog/index.js";
-import { buildMergePlan } from "../sync/contacts-merge.js";
+import { buildMergePlan, type MergePlan } from "../sync/contacts-merge.js";
 
 const DOMAIN = "contact";
 
@@ -74,9 +74,15 @@ export function makeContactsUiRouter(): Router {
       phones: string;
       company: string;
     };
+    type MergePreview = {
+      keeperRowIndex: number;
+      deleteRowIndices: number[];
+      updates: Array<{ col: string; from: string; to: string }>;
+    };
     let audit: AuditView | null = null;
     let sheetUrl: string | null = null;
     const matchedRowsByEntryId: Record<number, RowPreview[]> = {};
+    const mergePreviewByEntryId: Record<number, MergePreview | null> = {};
     if (hasGoogleCreds()) {
       try {
         const creds = requireGoogleCreds();
@@ -105,15 +111,30 @@ export function makeContactsUiRouter(): Router {
           .map((g) => ({ ...g, rows: g.rowIndices.map(rowView) }));
         audit = { ...report, totalRows: tab.rows.length, emailDupViews, phoneDupViews };
 
-        // For ambiguous pending reviews, attach the matched sheet rows so the UI
-        // can render them inline (so the user can see *which* rows the Google
-        // contact is colliding with).
+        // For ambiguous pending reviews, attach the matched sheet rows + a
+        // pre-computed merge preview so the UI can render both inline. The
+        // preview is what the user would get if they clicked Apply merge.
         for (const entry of pendingRows) {
           if (entry.subjectKind !== "google_contact_ambiguous") continue;
           const action = entry.proposedAction as { matches?: number[] } | null;
           const matches = Array.isArray(action?.matches) ? action!.matches : [];
           if (matches.length > 0) {
             matchedRowsByEntryId[entry.id] = matches.map(rowView);
+            const matchedFull = matches
+              .map((i) => (records[i] ? { rowIndex: i, record: records[i] } : null))
+              .filter((x): x is { rowIndex: number; record: Record<string, string> } => x !== null);
+            if (matchedFull.length >= 2) {
+              try {
+                const plan: MergePlan = buildMergePlan(matchedFull, tab.headers);
+                mergePreviewByEntryId[entry.id] = {
+                  keeperRowIndex: plan.keeperRowIndex,
+                  deleteRowIndices: plan.deleteRowIndices,
+                  updates: plan.updates,
+                };
+              } catch {
+                mergePreviewByEntryId[entry.id] = null;
+              }
+            }
           }
         }
       } catch {
@@ -129,6 +150,7 @@ export function makeContactsUiRouter(): Router {
       audit,
       sheetUrl,
       matchedRowsByEntryId,
+      mergePreviewByEntryId,
     });
   });
 
