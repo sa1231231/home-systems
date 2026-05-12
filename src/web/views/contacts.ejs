@@ -49,6 +49,7 @@
     (values come from the <code>groups</code> tab) and they drop off this list.
   </p>
   <% if (audit && audit.noGroup && audit.noGroup.length > 0) { %>
+    <% const groups = (locals.availableGroups || []); %>
     <table>
       <thead>
         <tr>
@@ -57,7 +58,7 @@
           <th>Email</th>
           <th>Phone</th>
           <th>Company</th>
-          <th style="width: 110px;">Action</th>
+          <th style="width: 280px;">Assign group</th>
         </tr>
       </thead>
       <tbody>
@@ -69,11 +70,30 @@
             <td class="muted" style="font-size: 12px;"><%= n.primaryPhone || '—' %></td>
             <td class="muted" style="font-size: 12px;"><%= n.company || '—' %></td>
             <td>
-              <% if (locals.sheetUrl) { %>
-                <a href="<%= sheetUrl %>" target="_blank" rel="noopener noreferrer"
-                   style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; text-decoration: none; color: var(--fg);">
-                  Open in sheet ↗
-                </a>
+              <% if (groups.length > 0) { %>
+                <form
+                  hx-post="/ui/contacts/assign-group/<%= n.rowIndex %>"
+                  hx-target="#audit-row-nogroup-<%= n.rowIndex %>"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="find button"
+                  style="display: flex; gap: 6px; align-items: center;"
+                >
+                  <input type="hidden" name="expected_full_name" value="<%= n.fullName %>" />
+                  <select name="group" required style="flex: 1; padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; font-size: 12px; background: #fff;">
+                    <option value="" disabled selected>— pick group —</option>
+                    <% groups.forEach((g) => { %>
+                      <option value="<%= g %>"><%= g %></option>
+                    <% }); %>
+                  </select>
+                  <button type="submit" style="padding: 4px 10px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer; font-size: 12px;">
+                    Assign
+                  </button>
+                </form>
+              <% } else { %>
+                <span class="muted" style="font-size: 12px;">No groups loaded.</span>
+                <% if (locals.sheetUrl) { %>
+                  <a href="<%= sheetUrl %>" target="_blank" rel="noopener noreferrer" style="font-size: 12px;">Open in sheet ↗</a>
+                <% } %>
               <% } %>
             </td>
           </tr>

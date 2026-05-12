@@ -80,6 +80,34 @@ export async function readContactsTab(
   return { tab, headers, rows };
 }
 
+/**
+ * Read the list of available group names from a lookup tab (e.g. "Lookup")
+ * with a `Group` column header. Returns names in sheet order, blanks filtered.
+ */
+export async function readGroupNames(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+  column: string = "Group",
+): Promise<string[]> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${tab}!A1:Z2000`,
+  });
+  const values = (res.data.values ?? []) as (string | number | boolean | null)[][];
+  if (values.length === 0) return [];
+  const headers = (values[0] ?? []).map((h) => String(h ?? ""));
+  const colIdx = headers.indexOf(column);
+  if (colIdx === -1) return [];
+  const out: string[] = [];
+  for (const row of values.slice(1)) {
+    const v = String(row[colIdx] ?? "").trim();
+    if (v) out.push(v);
+  }
+  return out;
+}
+
 export async function setHeaderCell(
   client: OAuth2Client,
   spreadsheetId: string,

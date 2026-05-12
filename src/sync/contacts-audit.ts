@@ -34,6 +34,8 @@ export type NoGroupRow = {
   primaryEmail: string;
   primaryPhone: string;
   company: string;
+  /** google_resource_name on this row, if bound (empty string if not). */
+  resourceName: string;
 };
 
 export type AuditReport = {
@@ -206,6 +208,7 @@ export function findNoGroupRows(rows: SheetRow[]): NoGroupRow[] {
       primaryEmail: (row.email || row.emails || "").trim(),
       primaryPhone: (row.phone || row.phones || "").trim(),
       company: (row.company || "").trim(),
+      resourceName: (row.google_resource_name || "").trim(),
     });
   });
   return out;

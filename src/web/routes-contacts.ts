@@ -21,12 +21,14 @@ import {
 import { groupBySession } from "./session-groups.js";
 import {
   readContactsTab,
+  readGroupNames,
   getSheetIdByTitle,
   deleteDataRows,
   batchUpdateCells,
   colLetter,
   type CellUpdate,
 } from "../integrations/google/sheets.js";
+import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 import { withChangelog } from "../changelog/index.js";
 import { buildMergePlan, type MergePlan } from "../sync/contacts-merge.js";
 import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
@@ -131,14 +133,26 @@ export function makeContactsUiRouter(): Router {
     };
     let audit: AuditView | null = null;
     let sheetUrl: string | null = null;
+    let availableGroups: string[] = [];
     const matchedRowsByEntryId: Record<number, RowPreview[]> = {};
     const mergePreviewByEntryId: Record<number, MergePreview | null> = {};
     if (hasGoogleCreds()) {
       try {
         const creds = requireGoogleCreds();
         sheetUrl = `https://docs.google.com/spreadsheets/d/${creds.sheetId}/edit`;
-        const tabName = getConfig().CONTACTS_TAB;
+        const cfg = getConfig();
+        const tabName = cfg.CONTACTS_TAB;
         const tab = await readContactsTab(getOAuthClient(), creds.sheetId, { tab: tabName });
+        try {
+          availableGroups = await readGroupNames(
+            getOAuthClient(),
+            creds.sheetId,
+            cfg.CONTACTS_GROUPS_LOOKUP_TAB,
+            cfg.CONTACTS_GROUPS_LOOKUP_COLUMN,
+          );
+        } catch {
+          availableGroups = [];
+        }
         const records = tab.rows.map((r) => r.record);
         const report = findAuditIssues(records);
         const rowView = (rowIndex: number): RowPreview => {
@@ -210,6 +224,7 @@ export function makeContactsUiRouter(): Router {
       cron: cronInfoForDomain("contact"),
       audit,
       sheetUrl,
+      availableGroups,
       matchedRowsByEntryId,
       mergePreviewByEntryId,
       run,
@@ -442,6 +457,99 @@ export function makeContactsUiRouter(): Router {
       res
         .status(500)
         .send(`<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">merge failed: ${msg}</td></tr>`);
+    }
+  });
+
+  // Assign a group to a row in dex_contacts. Used by the "Pending review
+  // (no group)" panel — picks the row by row_index + full_name guard, writes
+  // the chosen group to the `groups` column, logs to the changelog.
+  const AssignGroupBody = z.object({
+    row_index: z.coerce.number().int().min(0).max(100_000),
+    expected_full_name: z.string().max(500),
+    group: z.string().trim().min(1).max(200),
+  });
+
+  router.post("/assign-group/:rowIndex", async (req, res) => {
+    if (!hasGoogleCreds()) {
+      res.status(503).send(
+        `<tr><td colspan="6" class="muted">Google credentials not configured.</td></tr>`,
+      );
+      return;
+    }
+    let body: z.infer<typeof AssignGroupBody>;
+    try {
+      body = AssignGroupBody.parse({ ...req.body, row_index: req.params.rowIndex });
+    } catch {
+      res.status(400).send("invalid request");
+      return;
+    }
+    try {
+      await enforceConfiguredDailyLimit("contacts.assign_group");
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tabName = getConfig().CONTACTS_TAB;
+      const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
+      if (body.row_index >= tab.rows.length) {
+        res
+          .status(404)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">Row ${body.row_index} no longer exists. Reload.</td></tr>`,
+          );
+        return;
+      }
+      const record = tab.rows[body.row_index].record;
+      const currentName = (record.full_name ?? "").trim();
+      if (currentName !== body.expected_full_name.trim()) {
+        res
+          .status(409)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">Row changed since page load. Reload.</td></tr>`,
+          );
+        return;
+      }
+      const colIdx = tab.headers.indexOf("groups");
+      if (colIdx === -1) {
+        res
+          .status(500)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">groups column not found in ${tabName}.</td></tr>`,
+          );
+        return;
+      }
+      const sheetRow = body.row_index + 2; // +1 1-based, +1 header
+      const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
+      const before = (record.groups ?? "").trim();
+      // Append to existing CSV if there's already a value (defensive — the
+      // noGroup audit only surfaces rows where groups is empty, but a race
+      // could land us here with an existing value).
+      const after = before ? `${before}, ${body.group}` : body.group;
+      await withChangelog(
+        {
+          caller: "ui:contacts.assign-group",
+          sessionId: req.sessionId,
+          operation: "contacts.assign_group",
+          targetKind: "contact_row",
+          targetId: `${tabName}!row${body.row_index}`,
+          intent: `assign group "${body.group}" to ${currentName}`,
+          before: { row_index: body.row_index, full_name: currentName, groups: before },
+          after: { row_index: body.row_index, full_name: currentName, groups: after },
+          externalTarget: `google.sheet:${creds.sheetId}!${range}`,
+        },
+        async () => {
+          await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
+        },
+      );
+      // Empty body → HTMX outerHTML swap removes the row from the table.
+      res.status(200).send("");
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res
+        .status(500)
+        .send(
+          `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">assign failed: ${msg}</td></tr>`,
+        );
     }
   });
 

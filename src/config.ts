@@ -10,6 +10,8 @@ export const ConfigSchema = z.object({
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
   CRM_SHEET_ID: z.string().optional(),
   CONTACTS_TAB: z.string().default("dex_contacts"),
+  CONTACTS_GROUPS_LOOKUP_TAB: z.string().default("Lookup"),
+  CONTACTS_GROUPS_LOOKUP_COLUMN: z.string().default("Group"),
   CONTACTS_SYNC_CRON_ENABLED: z
     .string()
     .optional()

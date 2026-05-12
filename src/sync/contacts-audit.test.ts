@@ -161,8 +161,16 @@ describe("findNoGroupRows", () => {
         primaryEmail: "x@y.com",
         primaryPhone: "",
         company: "Acme",
+        resourceName: "",
       },
     ]);
+  });
+
+  it("includes resourceName when present", () => {
+    const rows = [
+      row({ full_name: "With ID", email: "x@y.com", google_resource_name: "people/c1" }),
+    ];
+    expect(findNoGroupRows(rows)[0].resourceName).toBe("people/c1");
   });
 
   it("treats whitespace-only groups as empty", () => {
