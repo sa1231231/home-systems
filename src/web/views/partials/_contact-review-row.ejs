@@ -108,6 +108,15 @@
             style="padding: 4px 12px; background: #e3f5e9; border: 1px solid #128a3e; color: #128a3e; border-radius: 3px; cursor: pointer;"
           >Approve</button>
         <% } %>
+        <% if (kind === "ambiguous" && matches.length >= 2) { %>
+          <button
+            hx-post="/ui/contacts/merge-review/<%= entry.id %>"
+            hx-target="#review-row-<%= entry.id %>"
+            hx-swap="outerHTML"
+            hx-confirm="Merge <%= matches.length %> rows into row <%= Math.min(...matches) %>? The keeper gets the union of emails/phones/groups/tags + longest of each scalar field; the other rows are deleted. This is logged + reversible from /ui/changes."
+            style="padding: 4px 12px; background: #fff3cd; border: 1px solid #b35a00; color: #b35a00; border-radius: 3px; cursor: pointer;"
+          >Merge</button>
+        <% } %>
         <button
           hx-post="/ui/needs-review/<%= entry.id %>/reject"
           hx-target="#review-row-<%= entry.id %>"
@@ -117,7 +126,7 @@
       </div>
       <% if (kind === "ambiguous") { %>
         <div class="muted" style="font-size: 11px; margin-top: 6px;">
-          Resolve duplicates via the audit panel first, then re-run sync.
+          <strong>Merge</strong>: same person, combine the rows. <strong>Skip</strong>: different people, leave both rows alone.
         </div>
       <% } %>
     <% } else { %>

@@ -11,8 +11,16 @@ import {
 import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import { findAuditIssues, type AuditReport, type DuplicateGroup } from "../sync/contacts-audit.js";
-import { readContactsTab, getSheetIdByTitle, deleteDataRows } from "../integrations/google/sheets.js";
+import {
+  readContactsTab,
+  getSheetIdByTitle,
+  deleteDataRows,
+  batchUpdateCells,
+  colLetter,
+  type CellUpdate,
+} from "../integrations/google/sheets.js";
 import { withChangelog } from "../changelog/index.js";
+import { buildMergePlan } from "../sync/contacts-merge.js";
 
 const DOMAIN = "contact";
 
@@ -207,6 +215,122 @@ export function makeContactsUiRouter(): Router {
         .send(
           `<div class="flash err">Sync failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
         );
+    }
+  });
+
+  // Merge action for ambiguous contact-domain reviews. Reads the matched
+  // sheet rows, picks the lowest-index row as keeper, unions emails/phones/
+  // groups/tags, picks the longest name/company/etc. across all rows,
+  // concats legacy_notes, then deletes the non-keeper rows.
+  router.post("/merge-review/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).send("invalid review id");
+      return;
+    }
+    if (!hasGoogleCreds()) {
+      res.status(503).send(`<tr><td colspan="5" class="muted">Google credentials not configured.</td></tr>`);
+      return;
+    }
+    const [entry] = await db.select().from(needsReview).where(eq(needsReview.id, id));
+    if (!entry) {
+      res.status(404).send("not found");
+      return;
+    }
+    if (entry.status !== "pending") {
+      res.status(409).send("already decided");
+      return;
+    }
+    if (entry.domain !== "contact" || entry.subjectKind !== "google_contact_ambiguous") {
+      res.status(400).send("merge only applies to ambiguous contact reviews");
+      return;
+    }
+    const action = entry.proposedAction as { matches?: number[]; tab?: string } | null;
+    const matches = Array.isArray(action?.matches) ? action!.matches : [];
+    if (matches.length < 2) {
+      res.status(400).send("merge requires ≥ 2 matched rows");
+      return;
+    }
+    try {
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tab = await readContactsTab(client, creds.sheetId);
+      const matchedRows = matches
+        .map((rowIndex) => {
+          const r = tab.rows[rowIndex];
+          return r ? { rowIndex, record: r.record } : null;
+        })
+        .filter((x): x is { rowIndex: number; record: Record<string, string> } => x !== null);
+      if (matchedRows.length < 2) {
+        res.status(409).send("one or more matched rows no longer exist (sheet shifted? re-sync first)");
+        return;
+      }
+      const plan = buildMergePlan(matchedRows, tab.headers);
+      const sheetId = await getSheetIdByTitle(client, creds.sheetId, tab.tab);
+      const keeperSheetRow = plan.keeperRowIndex + 2; // +1 1-based, +1 header
+      const cellUpdates: CellUpdate[] = plan.updates.map((u) => ({
+        range: `${tab.tab}!${colLetter(tab.headers.indexOf(u.col))}${keeperSheetRow}`,
+        value: u.to,
+      }));
+      await withChangelog(
+        {
+          caller: "ui:contacts.merge-review",
+          sessionId: req.sessionId,
+          operation: "contacts.merge_review",
+          targetKind: "contact_row",
+          targetId: `${tab.tab}!row${plan.keeperRowIndex}`,
+          intent: `merge ${matchedRows.length} rows for review #${id}`,
+          before: {
+            review_id: id,
+            keeper_row_index: plan.keeperRowIndex,
+            delete_row_indices: plan.deleteRowIndices,
+            rows: plan.beforeRows,
+          },
+          after: {
+            keeper_row_index: plan.keeperRowIndex,
+            deleted_count: plan.deleteRowIndices.length,
+            updates: plan.updates,
+          },
+          externalTarget: `google.sheet:${creds.sheetId}!${tab.tab}`,
+        },
+        async () => {
+          if (cellUpdates.length > 0) {
+            await batchUpdateCells(client, creds.sheetId, cellUpdates);
+          }
+          if (plan.deleteRowIndices.length > 0) {
+            await deleteDataRows(client, creds.sheetId, sheetId, plan.deleteRowIndices);
+          }
+        },
+      );
+      // Close out the needs_review row as approved.
+      await db
+        .update(needsReview)
+        .set({
+          status: "approved",
+          decision: {
+            merged: true,
+            keeperRowIndex: plan.keeperRowIndex,
+            deletedRowIndices: plan.deleteRowIndices,
+            updates: plan.updates.length,
+          } as never,
+          decidedAt: new Date(),
+          decidedBy: "ui",
+          updatedAt: new Date(),
+        })
+        .where(eq(needsReview.id, id));
+      const [updated] = await db.select().from(needsReview).where(eq(needsReview.id, id));
+      res.render("partials/_contact-review-row", {
+        entry: updated,
+        applyOutcome: { applied: true, apply_result: { merged: true, kept: plan.keeperRowIndex, deleted: plan.deleteRowIndices } },
+        matchedRows: null,
+      });
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res
+        .status(500)
+        .send(`<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">merge failed: ${msg}</td></tr>`);
     }
   });
 
