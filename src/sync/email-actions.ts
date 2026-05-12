@@ -2,7 +2,11 @@ import type { OAuth2Client } from "google-auth-library";
 import { withChangelog } from "../changelog/index.js";
 import { registry } from "../changelog/reversers.js";
 import type { ChangelogRow } from "../changelog/types.js";
-import { getMessageMetadata, modifyLabels } from "../integrations/google/gmail.js";
+import {
+  getMessageMetadata,
+  modifyLabels,
+  resolveLabelIds,
+} from "../integrations/google/gmail.js";
 import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 
 export const EMAIL_MODIFY_OP = "email.modify_labels";
@@ -51,9 +55,20 @@ export async function applyEmailAction(
   action: EmailAction,
   meta: ApplyMeta,
 ): Promise<ApplyResult> {
+  // Gmail's modify API only accepts label IDs, so translate the human-readable
+  // names from the rule/AI proposal before computing the diff. resolveLabelIds
+  // creates missing user labels on demand so first-run "just works".
+  const [addLabelIds, removeLabelIds] = await Promise.all([
+    resolveLabelIds(client, action.add_labels),
+    resolveLabelIds(client, action.remove_labels),
+  ]);
   const message = await getMessageMetadata(client, gmailId);
   const before = [...message.labelIds].sort();
-  const plan = planLabelChange(before, action);
+  const plan = planLabelChange(before, {
+    add_labels: addLabelIds,
+    remove_labels: removeLabelIds,
+    reasoning: action.reasoning,
+  });
 
   if (!plan.changed) {
     return { gmail_id: gmailId, before_labels: before, after_labels: before, changed: false };
@@ -69,7 +84,15 @@ export async function applyEmailAction(
       targetKind: "email",
       targetId: gmailId,
       intent: meta.intent,
-      before: { labels: before, removed: plan.removed, added: plan.added, reasoning: action.reasoning ?? null },
+      before: {
+        labels: before,
+        removed: plan.removed,
+        added: plan.added,
+        // Store human-readable names too so the activity tab is legible.
+        add_label_names: action.add_labels,
+        remove_label_names: action.remove_labels,
+        reasoning: action.reasoning ?? null,
+      },
       after: { labels: plan.afterLabels },
       externalTarget: `gmail:message:${gmailId}`,
     },
