@@ -12,6 +12,7 @@ import {
 import { makeTrelloClient } from "../integrations/trello/client.js";
 import { runTrelloReorderOnce } from "../sync/trello-runner.js";
 import { cronInfoForDomain } from "./cron-info.js";
+import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
 
 export function makeTrelloUiRouter(): Router {
   const router = Router();
@@ -23,22 +24,41 @@ export function makeTrelloUiRouter(): Router {
         flash: null,
         activity: [],
         cron: cronInfoForDomain("trello"),
+        run: null,
       });
       return;
     }
     const since = windowStartFor24h();
-    const activity = await db
-      .select()
-      .from(changelog)
-      .where(and(like(changelog.operation, "trello.%"), gte(changelog.createdAt, since)))
-      .orderBy(desc(changelog.id))
-      .limit(50);
+    const [activity, run] = await Promise.all([
+      db
+        .select()
+        .from(changelog)
+        .where(and(like(changelog.operation, "trello.%"), gte(changelog.createdAt, since)))
+        .orderBy(desc(changelog.id))
+        .limit(50),
+      latestRunFor("trello"),
+    ]);
     res.render("trello", {
       notConfigured: false,
       flash: null,
       activity,
       cron: cronInfoForDomain("trello"),
+      run,
     });
+  });
+
+  router.get("/triage-status", async (req, res) => {
+    const polling = req.query.polling === "1";
+    const run = await latestRunFor("trello");
+    if (polling && run && run.status !== "running") {
+      const completedMs = run.completedAt ? new Date(run.completedAt).getTime() : 0;
+      if (completedMs && Date.now() - completedMs <= 60_000) {
+        res.setHeader("HX-Refresh", "true");
+        res.send("");
+        return;
+      }
+    }
+    res.render("partials/_triage-status", { run, statusUrl: "/ui/trello/triage-status" });
   });
 
   router.post("/reorder", async (req, res) => {
@@ -49,11 +69,14 @@ export function makeTrelloUiRouter(): Router {
     try {
       const creds = requireTrelloCreds();
       const client = makeTrelloClient({ apiKey: creds.apiKey, token: creds.token });
-      const result = await runTrelloReorderOnce(client, creds, {
-        dryRun: false,
-        sessionId: req.sessionId ?? newSessionId(),
-        caller: "ui:trello.reorder",
-      });
+      const sessionId = req.sessionId ?? newSessionId();
+      const result = await withTriageRun("trello", sessionId, "ui:trello.reorder", () =>
+        runTrelloReorderOnce(client, creds, {
+          dryRun: false,
+          sessionId,
+          caller: "ui:trello.reorder",
+        }),
+      );
       const errs = result.errors.length;
       res.setHeader("HX-Refresh", "true");
       const kind = errs > 0 ? "err" : "ok";

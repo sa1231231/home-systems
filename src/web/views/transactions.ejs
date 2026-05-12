@@ -38,6 +38,7 @@
 </div>
 <style>.htmx-indicator{opacity:0;transition:opacity .2s}.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{opacity:1}</style>
 <%- include("partials/_cron-banner", { cron }) %>
+<%- include("partials/_triage-status", { run: locals.run, statusUrl: "/ui/transactions/triage-status" }) %>
 <div id="triage-result"></div>
 
 <% if (locals.warning) { %>

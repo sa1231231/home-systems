@@ -1,0 +1,45 @@
+<%
+  // Renders one of:
+  //   • nothing (no recent run)
+  //   • "running" banner that self-polls every 3s
+  //   • "just finished" banner (last completed ≤30s ago)
+  //
+  // Expected locals:
+  //   run         — TriageRunRow | null
+  //   statusUrl   — the GET endpoint the running banner polls, e.g. "/ui/gmail/triage-status"
+
+  const now = Date.now();
+  const startedMs = run ? new Date(run.startedAt).getTime() : 0;
+  const completedMs = run && run.completedAt ? new Date(run.completedAt).getTime() : 0;
+  const elapsedSec = run ? Math.max(0, Math.round((now - startedMs) / 1000)) : 0;
+  const sinceCompletedSec = completedMs ? Math.max(0, Math.round((now - completedMs) / 1000)) : null;
+
+  let state = "none";
+  if (run && run.status === "running") state = "running";
+  else if (run && sinceCompletedSec !== null && sinceCompletedSec <= 30) state = "fresh";
+%>
+<% if (state === "running") { %>
+  <div
+    id="triage-status"
+    class="flash"
+    style="background:#fff7d6;border-color:#b35a00;color:#7a3f00;"
+    hx-get="<%= statusUrl %>?polling=1"
+    hx-trigger="every 3s"
+    hx-swap="outerHTML"
+  >
+    <span style="font-weight:600;">Triage running…</span>
+    <span class="muted" style="margin-left:8px;font-size:12px;">
+      started <%= elapsedSec %>s ago by <code><%= run.caller %></code>
+    </span>
+  </div>
+<% } else if (state === "fresh" && run.status === "success") { %>
+  <div id="triage-status" class="flash ok">
+    Last run finished <%= sinceCompletedSec %>s ago.
+  </div>
+<% } else if (state === "fresh" && run.status === "error") { %>
+  <div id="triage-status" class="flash err">
+    Last run failed <%= sinceCompletedSec %>s ago: <code><%= run.error || "(no detail)" %></code>
+  </div>
+<% } else { %>
+  <div id="triage-status"></div>
+<% } %>

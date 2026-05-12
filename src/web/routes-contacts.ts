@@ -21,6 +21,7 @@ import {
 } from "../integrations/google/sheets.js";
 import { withChangelog } from "../changelog/index.js";
 import { buildMergePlan, type MergePlan } from "../sync/contacts-merge.js";
+import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
 
 const DOMAIN = "contact";
 
@@ -141,6 +142,7 @@ export function makeContactsUiRouter(): Router {
         audit = null;
       }
     }
+    const run = await latestRunFor("contact");
     res.render("contacts", {
       rules: rulesRows,
       pending: pendingRows,
@@ -151,7 +153,22 @@ export function makeContactsUiRouter(): Router {
       sheetUrl,
       matchedRowsByEntryId,
       mergePreviewByEntryId,
+      run,
     });
+  });
+
+  router.get("/triage-status", async (req, res) => {
+    const polling = req.query.polling === "1";
+    const run = await latestRunFor("contact");
+    if (polling && run && run.status !== "running") {
+      const completedMs = run.completedAt ? new Date(run.completedAt).getTime() : 0;
+      if (completedMs && Date.now() - completedMs <= 60_000) {
+        res.setHeader("HX-Refresh", "true");
+        res.send("");
+        return;
+      }
+    }
+    res.render("partials/_triage-status", { run, statusUrl: "/ui/contacts/triage-status" });
   });
 
   const DeleteOrphanParams = z.coerce.number().int().min(0).max(100_000);
@@ -210,14 +227,19 @@ export function makeContactsUiRouter(): Router {
     }
   });
 
-  router.post("/sync", async (_req, res) => {
+  router.post("/sync", async (req, res) => {
     if (!hasGoogleCreds()) {
       res.status(503).send(`<div class="flash err">Google credentials not configured.</div>`);
       return;
     }
     try {
       const creds = requireGoogleCreds();
-      const result = await runSync(getOAuthClient(), creds.sheetId, { dryRun: false });
+      const result = await withTriageRun(
+        "contact",
+        req.sessionId,
+        "ui:contacts.sync",
+        () => runSync(getOAuthClient(), creds.sheetId, { dryRun: false }),
+      );
       res.setHeader("HX-Refresh", "true");
       const s = result.summary;
       const q = result.queued;

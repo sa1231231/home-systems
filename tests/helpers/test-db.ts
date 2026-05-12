@@ -30,6 +30,7 @@ const ALL_TABLES = [
   "processed_emails",
   "processed_transactions",
   "daily_op_counters",
+  "triage_runs",
   "_meta",
 ];
 

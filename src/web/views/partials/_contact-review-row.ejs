@@ -35,31 +35,10 @@
     <% if (kind === "ambiguous") { %>
       <div class="muted" style="font-size: 11px; margin-top: 4px;">
         matches <%= matches.length %> sheet rows via <%= subj.via || "?" %>
+        <% if (typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
+          (rows <%= matchedRows.map((m) => m.rowIndex).join(", ") %>)
+        <% } %>
       </div>
-      <% if (typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
-        <table style="margin-top: 6px; font-size: 11px; background: #fafafa; border: 1px solid var(--border);">
-          <thead>
-            <tr>
-              <th style="padding: 3px 6px; width: 36px; font-size: 10px;">Row</th>
-              <th style="padding: 3px 6px; font-size: 10px;">Name</th>
-              <th style="padding: 3px 6px; font-size: 10px;">Emails</th>
-              <th style="padding: 3px 6px; font-size: 10px;">Phones</th>
-              <th style="padding: 3px 6px; font-size: 10px;">Company</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% matchedRows.forEach((m) => { %>
-              <tr>
-                <td style="padding: 3px 6px;" class="muted"><%= m.rowIndex %></td>
-                <td style="padding: 3px 6px;"><%= m.name %></td>
-                <td style="padding: 3px 6px;" class="muted"><%= m.emails || '—' %></td>
-                <td style="padding: 3px 6px;" class="muted"><%= m.phones || '—' %></td>
-                <td style="padding: 3px 6px;" class="muted"><%= m.company || '—' %></td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      <% } %>
     <% } %>
     <% if (kind === "refresh" && typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
       <div class="muted" style="font-size: 11px; margin-top: 6px;">target row:</div>
@@ -136,6 +115,7 @@
           <% if (mergePreview.updates.length === 0) { %>
             <div class="muted" style="font-size: 11px;">Keeper already has all the data — no cell updates, just the deletes.</div>
           <% } else { %>
+            <div style="font-size: 11px; font-weight: 600; margin: 6px 0 2px;">Changes the merge will make to the keeper row:</div>
             <table style="font-size: 11px; background: #fff; border: 1px solid var(--border); margin-top: 4px;">
               <thead>
                 <tr>
@@ -154,6 +134,34 @@
                 <% }); %>
               </tbody>
             </table>
+          <% } %>
+          <% if (typeof matchedRows !== "undefined" && matchedRows && matchedRows.length > 0) { %>
+            <div style="font-size: 11px; font-weight: 600; margin: 12px 0 2px;">Current sheet rows being merged:</div>
+            <table style="font-size: 11px; background: #fff; border: 1px solid var(--border); margin-top: 4px;">
+              <thead>
+                <tr>
+                  <th style="padding: 3px 6px; width: 36px; font-size: 10px;">Row</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">Name</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">Emails</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">Phones</th>
+                  <th style="padding: 3px 6px; font-size: 10px;">Company</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% matchedRows.forEach((m) => { %>
+                  <tr style="<%= m.rowIndex === mergePreview.keeperRowIndex ? 'background:#e3f5e9;' : '' %>">
+                    <td style="padding: 3px 6px; vertical-align: top;" class="muted">
+                      <%= m.rowIndex %><% if (m.rowIndex === mergePreview.keeperRowIndex) { %> ★<% } %>
+                    </td>
+                    <td style="padding: 3px 6px; vertical-align: top;"><%= m.name %></td>
+                    <td style="padding: 3px 6px; vertical-align: top;" class="muted" style="max-width: 200px; word-break: break-word;"><%= m.emails || '—' %></td>
+                    <td style="padding: 3px 6px; vertical-align: top;" class="muted"><%= m.phones || '—' %></td>
+                    <td style="padding: 3px 6px; vertical-align: top;" class="muted"><%= m.company || '—' %></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+            <div class="muted" style="font-size: 10px; margin-top: 4px;">★ = keeper (lowest row index — receives the merged values)</div>
           <% } %>
           <div style="margin-top: 10px;">
             <button

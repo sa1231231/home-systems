@@ -8,6 +8,7 @@ import { triageEmails } from "../sync/email-triage.js";
 import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
+import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
 
 const DOMAIN = "email";
 
@@ -19,7 +20,7 @@ export function makeGmailUiRouter(): Router {
   const router = Router();
 
   router.get("/", async (_req, res) => {
-    const [rulesRows, pendingRows] = await Promise.all([
+    const [rulesRows, pendingRows, run] = await Promise.all([
       db
         .select()
         .from(rules)
@@ -32,13 +33,29 @@ export function makeGmailUiRouter(): Router {
         .where(and(eq(needsReview.domain, DOMAIN), eq(needsReview.status, "pending")))
         .orderBy(desc(needsReview.id))
         .limit(200),
+      latestRunFor("email"),
     ]);
     res.render("gmail", {
       rules: rulesRows,
       pending: pendingRows,
       flash: null,
       cron: cronInfoForDomain("email"),
+      run,
     });
+  });
+
+  router.get("/triage-status", async (req, res) => {
+    const polling = req.query.polling === "1";
+    const run = await latestRunFor("email");
+    if (polling && run && run.status !== "running") {
+      const completedMs = run.completedAt ? new Date(run.completedAt).getTime() : 0;
+      if (completedMs && Date.now() - completedMs <= 60_000) {
+        res.setHeader("HX-Refresh", "true");
+        res.send("");
+        return;
+      }
+    }
+    res.render("partials/_triage-status", { run, statusUrl: "/ui/gmail/triage-status" });
   });
 
   router.post("/triage", async (req, res) => {
@@ -49,11 +66,13 @@ export function makeGmailUiRouter(): Router {
     try {
       const { limit } = TriageBody.parse(req.body ?? {});
       const sessionId = req.sessionId ?? newSessionId();
-      const summary = await triageEmails(getOAuthClient(), {
-        limit,
-        sessionId,
-        caller: "ui:gmail.triage",
-      });
+      const summary = await withTriageRun("email", sessionId, "ui:gmail.triage", () =>
+        triageEmails(getOAuthClient(), {
+          limit,
+          sessionId,
+          caller: "ui:gmail.triage",
+        }),
+      );
       res.setHeader("HX-Refresh", "true");
       res.send(
         `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,

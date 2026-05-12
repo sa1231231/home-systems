@@ -27,6 +27,7 @@
   </div>
 <% } else { %>
   <%- include("partials/_cron-banner", { cron }) %>
+  <%- include("partials/_triage-status", { run: locals.run, statusUrl: "/ui/trello/triage-status" }) %>
   <div id="reorder-result"></div>
 
   <section>

@@ -50,6 +50,13 @@
       "when": 1778523004433,
       "tag": "0006_oval_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778587889742,
+      "tag": "0007_breezy_abomination",
+      "breakpoints": true
     }
   ]
 }

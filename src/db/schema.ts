@@ -170,3 +170,28 @@ export const dailyOpCounters = pgTable(
     pk: primaryKey({ columns: [t.operation, t.day] }),
   }),
 );
+
+/**
+ * One row per manual or cron-triggered triage/sync run, used to surface
+ * "Triage is currently running" banners that survive page reload. Status
+ * transitions running → success | error. Summary is the domain-specific
+ * payload (TriageSummary, SyncSummary, ReorderResult counts, etc.).
+ */
+export const triageRuns = pgTable(
+  "triage_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    domain: text("domain").notNull(), // "email" | "transaction" | "contact" | "trello"
+    caller: text("caller").notNull(),
+    sessionId: text("session_id").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    status: text("status").notNull().default("running"), // running | success | error
+    summary: jsonb("summary"),
+    error: text("error"),
+  },
+  (t) => ({
+    domainStartedIdx: index("triage_runs_domain_started_idx").on(t.domain, t.startedAt),
+    statusIdx: index("triage_runs_status_idx").on(t.status, t.startedAt),
+  }),
+);

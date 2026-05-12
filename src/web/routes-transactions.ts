@@ -10,6 +10,7 @@ import { inferTransactionRules } from "../sync/transaction-rules.js";
 import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
+import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
 
 const DOMAIN = "transaction";
 
@@ -59,6 +60,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
     const sheetUrl = opts.sheetId
       ? `https://docs.google.com/spreadsheets/d/${opts.sheetId}/edit`
       : null;
+    const run = await latestRunFor("transaction");
     res.render("transactions", {
       rules: rulesRows,
       pending: pendingRows,
@@ -67,6 +69,26 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       warning,
       cron: cronInfoForDomain("transaction"),
       sheetUrl,
+      run,
+    });
+  });
+
+  // Polled by the in-progress banner. When called with ?polling=1 and the run
+  // has just finished, sets HX-Refresh so the page reloads with new state.
+  router.get("/triage-status", async (req, res) => {
+    const polling = req.query.polling === "1";
+    const run = await latestRunFor("transaction");
+    if (polling && run && run.status !== "running") {
+      const completedMs = run.completedAt ? new Date(run.completedAt).getTime() : 0;
+      if (completedMs && Date.now() - completedMs <= 60_000) {
+        res.setHeader("HX-Refresh", "true");
+        res.send("");
+        return;
+      }
+    }
+    res.render("partials/_triage-status", {
+      run,
+      statusUrl: "/ui/transactions/triage-status",
     });
   });
 
@@ -86,16 +108,22 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
     try {
       const { limit } = TriageBody.parse(req.body ?? {});
       const sessionId = req.sessionId ?? newSessionId();
-      const summary = await triageTransactions(getOAuthClient(), {
-        limit,
+      const summary = await withTriageRun(
+        "transaction",
         sessionId,
-        caller: "ui:transactions.triage",
-        target: {
-          sheetId: opts.sheetId,
-          transactionsTab: opts.transactionsTab,
-          categoriesTab: opts.categoriesTab,
-        },
-      });
+        "ui:transactions.triage",
+        () =>
+          triageTransactions(getOAuthClient(), {
+            limit,
+            sessionId,
+            caller: "ui:transactions.triage",
+            target: {
+              sheetId: opts.sheetId!,
+              transactionsTab: opts.transactionsTab,
+              categoriesTab: opts.categoriesTab,
+            },
+          }),
+      );
       res.setHeader("HX-Refresh", "true");
       res.send(
         `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,

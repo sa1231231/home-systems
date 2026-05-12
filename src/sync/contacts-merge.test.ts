@@ -115,4 +115,72 @@ describe("buildMergePlan", () => {
   it("requires at least 2 rows", () => {
     expect(() => buildMergePlan([row(1, {})], headers)).toThrow(/≥ 2 rows/);
   });
+
+  it("prefers split first/last names over a partial name (Shawn Swarner > Swarner)", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Shawn", last_name: "Swarner" }), // split, keeper
+        row(20, { first_name: "Swarner", last_name: "" }), // unsplit
+      ],
+      headers,
+    );
+    expect(plan.keeperRowIndex).toBe(10);
+    // Keeper already has the right values → no updates needed for names
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBeUndefined();
+    expect(cols.last_name).toBeUndefined();
+  });
+
+  it("prefers split names even when the keeper is the unsplit row", () => {
+    // The keeper is row 10 (unsplit) but the merge should still pull the
+    // split first/last from row 20 because that row is the "real" split.
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Swarner", last_name: "" }), // unsplit keeper
+        row(20, { first_name: "Shawn", last_name: "Swarner" }), // split donor
+      ],
+      headers,
+    );
+    expect(plan.keeperRowIndex).toBe(10);
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBe("Shawn");
+    expect(cols.last_name).toBe("Swarner");
+  });
+
+  it("prefers split names over stuffed-with-company first_name (Jeremy Span > Jeremy Span Stoneberg Management)", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Jeremy Span Stoneberg Management", last_name: "" }),
+        row(20, { first_name: "Jeremy", last_name: "Span" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBe("Jeremy");
+    expect(cols.last_name).toBe("Span");
+  });
+
+  it("falls back to longest when no row has both names split", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Sam", last_name: "" }),
+        row(20, { first_name: "Samuel", last_name: "" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBe("Samuel");
+  });
+
+  it("picks the longest first_name among split rows when several qualify", () => {
+    const plan = buildMergePlan(
+      [
+        row(10, { first_name: "Sam", last_name: "Astra" }),
+        row(20, { first_name: "Samuel", last_name: "Astra" }),
+      ],
+      headers,
+    );
+    const cols = Object.fromEntries(plan.updates.map((u) => [u.col, u.to]));
+    expect(cols.first_name).toBe("Samuel");
+  });
 });

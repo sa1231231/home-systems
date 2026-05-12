@@ -94,6 +94,35 @@ export function applyMergeStrategy(strategy: MergeStrategy, values: string[]): s
   }
 }
 
+/**
+ * Special merge for first_name / last_name.
+ *
+ * Among the input rows, prefer values from rows that have BOTH first_name
+ * AND last_name populated (the "split" rows). Falls back to longest if no
+ * split row exists.
+ *
+ * Why: in practice the canonical Google-sourced row has the name properly
+ * split into given/family, while older Dex-imported rows often stuff the
+ * full name into a single column ("Jeremy Span Stoneberg Management" in
+ * first_name with company suffix appended, or "Swarner" alone with no
+ * given name). Preferring split rows preserves the clean form and discards
+ * the stuffed/partial forms.
+ */
+export function mergeNameField(
+  rows: SheetRowAt[],
+  field: "first_name" | "last_name",
+): string {
+  const splitRows = rows.filter((r) => {
+    const f = (r.record.first_name ?? "").trim();
+    const l = (r.record.last_name ?? "").trim();
+    return f !== "" && l !== "";
+  });
+  if (splitRows.length > 0) {
+    return longest(splitRows.map((r) => r.record[field] ?? ""));
+  }
+  return longest(rows.map((r) => r.record[field] ?? ""));
+}
+
 export type MergeUpdate = { col: string; from: string; to: string };
 
 export type MergePlan = {
@@ -122,9 +151,17 @@ export function buildMergePlan(rows: SheetRowAt[], headers: string[]): MergePlan
 
   const updates: MergeUpdate[] = [];
   for (const col of headers) {
-    const strategy: MergeStrategy = MERGE_STRATEGIES[col] ?? "longest";
-    const allValues = sorted.map((r) => r.record[col] ?? "");
-    const merged = applyMergeStrategy(strategy, allValues);
+    let merged: string;
+    if (col === "first_name" || col === "last_name") {
+      // Special-cased: prefer rows with BOTH names split over rows where one
+      // is empty (covers "Shawn Swarner" beating "Swarner", "Jeremy Span"
+      // beating "Jeremy Span Stoneberg Management", etc.).
+      merged = mergeNameField(sorted, col);
+    } else {
+      const strategy: MergeStrategy = MERGE_STRATEGIES[col] ?? "longest";
+      const allValues = sorted.map((r) => r.record[col] ?? "");
+      merged = applyMergeStrategy(strategy, allValues);
+    }
     const oldVal = (keeper.record[col] ?? "").trim();
     if (merged !== oldVal && merged !== "") {
       updates.push({ col, from: oldVal, to: merged });
