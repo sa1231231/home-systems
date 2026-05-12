@@ -1,0 +1,80 @@
+<%
+  const subj = (entry.subject && typeof entry.subject === "object") ? entry.subject : {};
+  const kind = subj.kind || (entry.subjectKind || "").replace(/^google_contact_/, "");
+  const kindPill = kind === "insert" ? "pending" : kind === "refresh" ? "" : "rejected";
+  const proposed = (entry.proposedAction && typeof entry.proposedAction === "object") ? entry.proposedAction : {};
+  const changedFields = Array.isArray(subj.changed_fields) ? subj.changed_fields : [];
+  const matches = Array.isArray(subj.matches) ? subj.matches : [];
+%>
+<tr id="review-row-<%= entry.id %>">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;">
+    <%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z
+  </td>
+  <td>
+    <div style="font-weight: 500;"><%= subj.display_name || subj.resource_name || entry.subjectId %></div>
+    <% if (subj.primary_email) { %>
+      <div class="muted" style="font-size: 12px;"><%= subj.primary_email %></div>
+    <% } %>
+    <% if (subj.primary_phone) { %>
+      <div class="muted" style="font-size: 12px;"><%= subj.primary_phone %></div>
+    <% } %>
+    <% if (subj.company || subj.job_title) { %>
+      <div class="muted" style="font-size: 11px;"><%= [subj.job_title, subj.company].filter(Boolean).join(" · ") %></div>
+    <% } %>
+  </td>
+  <td>
+    <span class="pill <%= kindPill %>"><%= kind %></span>
+    <% if (kind === "refresh" && changedFields.length > 0) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 4px;">
+        fields: <%= changedFields.slice(0, 6).join(", ") %><%= changedFields.length > 6 ? ` + ${changedFields.length - 6} more` : "" %>
+      </div>
+      <% if (typeof subj.row_index === "number") { %>
+        <div class="muted" style="font-size: 11px;">row <%= subj.row_index %></div>
+      <% } %>
+    <% } %>
+    <% if (kind === "ambiguous") { %>
+      <div class="muted" style="font-size: 11px; margin-top: 4px;">
+        matches <%= matches.length %> sheet rows via <%= subj.via || "?" %>
+      </div>
+    <% } %>
+  </td>
+  <td>
+    <span class="pill <%= entry.status %>"><%= entry.status === "rejected" ? "skipped" : entry.status %></span>
+    <% if (typeof applyOutcome !== "undefined" && applyOutcome) { %>
+      <div style="font-size: 11px; margin-top: 4px;">
+        <% if (applyOutcome.applied) { %>
+          <span style="color: var(--ok);">applied ✓</span>
+        <% } else { %>
+          <span style="color: var(--danger);">apply failed: <%= applyOutcome.apply_error %></span>
+        <% } %>
+      </div>
+    <% } %>
+  </td>
+  <td>
+    <% if (entry.status === "pending") { %>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <% if (kind !== "ambiguous") { %>
+          <button
+            hx-post="/ui/needs-review/<%= entry.id %>/approve"
+            hx-target="#review-row-<%= entry.id %>"
+            hx-swap="outerHTML"
+            style="padding: 4px 12px; background: #e3f5e9; border: 1px solid #128a3e; color: #128a3e; border-radius: 3px; cursor: pointer;"
+          >Approve</button>
+        <% } %>
+        <button
+          hx-post="/ui/needs-review/<%= entry.id %>/reject"
+          hx-target="#review-row-<%= entry.id %>"
+          hx-swap="outerHTML"
+          style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Skip</button>
+      </div>
+      <% if (kind === "ambiguous") { %>
+        <div class="muted" style="font-size: 11px; margin-top: 6px;">
+          Resolve duplicates via the audit panel first, then re-run sync.
+        </div>
+      <% } %>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;"><%= entry.decidedBy || "—" %></span>
+    <% } %>
+  </td>
+</tr>

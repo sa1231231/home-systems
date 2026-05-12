@@ -18,6 +18,7 @@ const IdParam = z.coerce.number().int().positive();
 
 function partialFor(domain: string): string {
   if (domain === "transaction") return "partials/_transaction-review-row";
+  if (domain === "contact") return "partials/_contact-review-row";
   return "partials/_review-row";
 }
 
@@ -80,10 +81,13 @@ export function makeReviewUiRouter(): Router {
     try {
       const cfg = getDomainConfig(pending.domain);
       const result = await approveEntry(id, {
-        promoteToRule: {
-          name: cfg.defaultRuleName(pending),
-          match: cfg.defaultMatch(pending),
-        },
+        promoteToRule:
+          cfg.promotesOnApprove === false
+            ? undefined
+            : {
+                name: cfg.defaultRuleName(pending),
+                match: cfg.defaultMatch(pending),
+              },
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.approve",
       });
@@ -140,6 +144,14 @@ export function makeReviewUiRouter(): Router {
     }
     try {
       const cfg = getDomainConfig(pending.domain);
+      if (cfg.supportsCorrect === false) {
+        res
+          .status(400)
+          .send(
+            `<tr><td colspan="5" class="muted">Correct isn't supported for the '${pending.domain}' domain. Approve or skip.</td></tr>`,
+          );
+        return;
+      }
       const body = cfg.validateCorrection(req.body ?? {});
       const previousCategory =
         (pending.proposedAction as { category?: string } | null)?.category ?? "unknown";

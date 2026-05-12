@@ -266,12 +266,45 @@ export async function applySyncPlan(client: OAuth2Client, plan: SyncPlan): Promi
   }
 }
 
+export type RunSyncMode = "queue" | "apply";
+
+export type EnqueueResult = {
+  queued_inserts: number;
+  queued_refreshes: number;
+  queued_ambiguous: number;
+  skipped_duplicates: number;
+};
+
+export type RunSyncResult = {
+  plan: SyncPlan;
+  summary: SyncSummary;
+  applied: boolean;
+  /** Counts when mode='queue' (default) and dryRun=false. */
+  queued?: EnqueueResult;
+};
+
+/**
+ * Default behavior: pull contacts + diff against the sheet, then enqueue every
+ * insert/refresh/ambiguous as a `needs_review` row. No direct sheet writes
+ * happen except the one-time header-column migration (adding
+ * `google_resource_name` when missing). Approving the queued reviews from the
+ * UI applies the actual sheet writes via the registered contact appliers.
+ *
+ * Pass `mode: "apply"` to bypass the review queue (matches the pre-2026-05-12
+ * behavior — kept for tests and migrations).
+ */
 export async function runSync(
   client: OAuth2Client,
   spreadsheetId: string,
-  opts: { dryRun: boolean; tab?: string; nowIso?: string } = { dryRun: true },
-): Promise<{ plan: SyncPlan; summary: SyncSummary; applied: boolean }> {
+  opts: {
+    dryRun: boolean;
+    tab?: string;
+    nowIso?: string;
+    mode?: RunSyncMode;
+  } = { dryRun: true },
+): Promise<RunSyncResult> {
   const nowIso = opts.nowIso ?? new Date().toISOString();
+  const mode: RunSyncMode = opts.mode ?? "queue";
   const [people, contactsTab] = await Promise.all([
     listAllConnections(client),
     readContactsTab(client, spreadsheetId, { tab: opts.tab }),
@@ -281,6 +314,21 @@ export async function runSync(
   if (opts.dryRun) {
     return { plan, summary, applied: false };
   }
-  await applySyncPlan(client, plan);
-  return { plan, summary, applied: true };
+  if (mode === "apply") {
+    await applySyncPlan(client, plan);
+    return { plan, summary, applied: true };
+  }
+  // mode === "queue" — enqueue review rows, do header migration if needed.
+  if (plan.needsHeaderUpdate) {
+    await setHeaderCell(
+      client,
+      plan.spreadsheetId,
+      plan.tab,
+      plan.resourceNameColIndex,
+      RESOURCE_NAME_COL,
+    );
+  }
+  const { enqueueSyncPlan } = await import("./contacts-review.js");
+  const queued = await enqueueSyncPlan(plan);
+  return { plan, summary, applied: false, queued };
 }

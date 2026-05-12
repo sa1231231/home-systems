@@ -129,11 +129,19 @@ export function makeContactsUiRouter(): Router {
     }
     try {
       const creds = requireGoogleCreds();
-      const { summary } = await runSync(getOAuthClient(), creds.sheetId, { dryRun: false });
+      const result = await runSync(getOAuthClient(), creds.sheetId, { dryRun: false });
       res.setHeader("HX-Refresh", "true");
-      res.send(
-        `<div class="flash ok">Sync done: inserted=${summary.inserted} refreshed=${summary.refreshed} unchanged=${summary.unchanged} ambiguous=${summary.ambiguous}</div>`,
-      );
+      const s = result.summary;
+      const q = result.queued;
+      if (q) {
+        res.send(
+          `<div class="flash ok">Queued for review: ${q.queued_inserts} insert${q.queued_inserts === 1 ? '' : 's'}, ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). ${s.unchanged} unchanged.</div>`,
+        );
+      } else {
+        res.send(
+          `<div class="flash ok">Sync done: inserted=${s.inserted} refreshed=${s.refreshed} unchanged=${s.unchanged} ambiguous=${s.ambiguous}</div>`,
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res

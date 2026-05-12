@@ -8,6 +8,10 @@ export type DomainConfig = {
   defaultRuleName: (entry: NeedsReviewRow) => string;
   defaultMatch: (entry: NeedsReviewRow) => unknown;
   buildCorrectedDecision: (category: string, previousCategory: string) => unknown;
+  /** If false, the UI Approve button skips rule promotion (apply once). */
+  promotesOnApprove?: boolean;
+  /** If false, the Correct flow is disabled for this domain. */
+  supportsCorrect?: boolean;
 };
 
 const EmailCategoryEnum = z.enum(["noise", "worth_reading", "needs_reply"]);
@@ -65,9 +69,26 @@ const transactionConfig: DomainConfig = {
   }),
 };
 
+const contactConfig: DomainConfig = {
+  // Contacts sync rows carry a concrete sheet operation in proposed_action, not
+  // a category. There is no "wrong category, pick a different one" mode for
+  // these — the user either accepts the sheet change as-is or skips it.
+  validateCorrection: () => {
+    throw new UnknownDomainError("contact: correction not supported");
+  },
+  defaultRuleName: (entry) => `contact: review #${entry.id}`,
+  defaultMatch: () => ({ op: "present", field: "google_resource_name" }),
+  buildCorrectedDecision: () => {
+    throw new UnknownDomainError("contact: correction not supported");
+  },
+  promotesOnApprove: false,
+  supportsCorrect: false,
+};
+
 const configs: Record<string, DomainConfig> = {
   email: emailConfig,
   transaction: transactionConfig,
+  contact: contactConfig,
 };
 
 export class UnknownDomainError extends Error {

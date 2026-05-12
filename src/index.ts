@@ -15,8 +15,9 @@ import { makeEmailsRouter } from "./api/emails.js";
 import { registerEmailReverser } from "./sync/email-actions.js";
 import { registerEmailApplier } from "./sync/email-triage.js";
 import { registerTransactionApplier } from "./sync/transaction-triage.js";
+import { registerContactReviewAppliers } from "./sync/contacts-applier.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
-import { getOAuthClient, hasGoogleCreds } from "./integrations/google/oauth.js";
+import { getOAuthClient, hasGoogleCreds, requireGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
 import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
@@ -115,10 +116,12 @@ async function start() {
 
   if (hasGoogleCreds()) {
     const oauth = getOAuthClient();
+    const sheetCreds = requireGoogleCreds();
     registerContactReversers(oauth);
     registerEmailReverser(oauth);
     registerEmailApplier(oauth);
-    console.log("contact + email reversers + email applier registered");
+    registerContactReviewAppliers(oauth, { spreadsheetId: sheetCreds.sheetId });
+    console.log("contact + email reversers + email/contact appliers registered");
 
     if (config.TRANSACTIONS_SHEET_ID) {
       registerTransactionApplier(oauth, {
