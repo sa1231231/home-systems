@@ -6,6 +6,7 @@
  *
  * Not bundled into the Docker image — see Dockerfile.
  */
+import "dotenv/config";
 import http from "http";
 import { URL } from "url";
 import open from "open";
