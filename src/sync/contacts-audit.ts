@@ -37,36 +37,48 @@ function get(row: SheetRow, key: string): string {
   return (row[key] ?? "").trim();
 }
 
+/** A row counts as "real" if it has any reachable handle: email, phone,
+ *  LinkedIn, or website. Per user rule: LinkedIn URL alone is sufficient. */
 function hasContactInfo(row: SheetRow): boolean {
   return (
     nonEmpty(row.email) ||
     nonEmpty(row.emails) ||
     nonEmpty(row.phone) ||
-    nonEmpty(row.phones)
+    nonEmpty(row.phones) ||
+    nonEmpty(row.linkedin_url) ||
+    nonEmpty(row.website)
   );
 }
 
+/** Compose a name key for dedupe — prefers explicit full_name when present
+ *  (legacy schema), else falls back to "first last". */
+function nameKey(row: SheetRow): string {
+  const full = get(row, "full_name");
+  if (full) return full;
+  const first = get(row, "first_name");
+  const last = get(row, "last_name");
+  return `${first} ${last}`.trim();
+}
+
 /**
- * Find rows that look like leftover duplicates from an earlier broken sync:
+ * Categorize the sheet:
  *
- *   1. row has NO google_resource_name (orphan)
- *   2. row has a full_name
- *   3. there's another row with the SAME full_name that DOES have a
- *      google_resource_name (the canonical row)
- *
- * Returns one OrphanDuplicate per orphan, pointing at the canonical row.
+ * - **orphans**: a row with NO contact info whose name matches another
+ *   row that DOES have contact info. The other row wins; this row is
+ *   a leftover. Works on both legacy schemas (full_name + resource_name)
+ *   and the post-cleanup schema (first_name + last_name only).
+ * - **emptyRows**: every cell is blank.
+ * - **nameOnly**: has a name, no contact info, AND no matching
+ *   canonical row. Could be a manual entry without contact data yet,
+ *   could be junk — surfaced for human review, not auto-deleted.
  */
 export function findAuditIssues(rows: SheetRow[]): AuditReport {
-  // Index canonical rows (those that have a resource_name) by trimmed full_name.
+  // Index canonical rows (those that have at least one form of contact info) by name.
   const canonicalByName = new Map<string, number>();
   rows.forEach((row, i) => {
-    const fullName = get(row, "full_name");
-    const resourceName = get(row, "google_resource_name");
-    if (fullName && resourceName) {
-      // first canonical row wins; keep the lowest row index
-      if (!canonicalByName.has(fullName)) {
-        canonicalByName.set(fullName, i);
-      }
+    const name = nameKey(row);
+    if (name && hasContactInfo(row)) {
+      if (!canonicalByName.has(name)) canonicalByName.set(name, i);
     }
   });
 
@@ -75,26 +87,19 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
   const nameOnly: NameOnlyRow[] = [];
 
   rows.forEach((row, i) => {
-    const fullName = get(row, "full_name");
-    const resourceName = get(row, "google_resource_name");
-    // Skip the canonical row itself.
-    if (resourceName) return;
-    if (!fullName) {
-      // No name and no resource_name — truly empty row, definitely orphan.
+    if (hasContactInfo(row)) return; // canonical or non-orphan extra — leave alone
+    const name = nameKey(row);
+    if (!name) {
       const anyValue = Object.values(row).some(nonEmpty);
       if (!anyValue) emptyRows.push({ rowIndex: i });
       return;
     }
-    const canonicalRowIndex = canonicalByName.get(fullName);
+    const canonicalRowIndex = canonicalByName.get(name);
     if (canonicalRowIndex !== undefined && canonicalRowIndex !== i) {
-      orphans.push({ rowIndex: i, fullName, canonicalRowIndex });
+      orphans.push({ rowIndex: i, fullName: name, canonicalRowIndex });
       return;
     }
-    // Name set but no canonical match. If the row also has no contact info,
-    // it's a manual / name-only entry; surface so the user can delete or fix.
-    if (!hasContactInfo(row)) {
-      nameOnly.push({ rowIndex: i, fullName });
-    }
+    nameOnly.push({ rowIndex: i, fullName: name });
   });
 
   return { orphans, emptyRows, nameOnly };

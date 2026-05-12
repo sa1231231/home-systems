@@ -304,6 +304,11 @@ export async function triageEmails(
         proposed_action: proposed,
       });
     } catch (err) {
+      // Don't trap configuration-level failures in the per-row catch — let
+      // them abort the whole run.
+      if (err instanceof MissingAnthropicKeyError) {
+        throw err;
+      }
       const message = err instanceof Error ? err.message : String(err);
       // Best-effort: record the failure so we have a record of what went wrong.
       try {

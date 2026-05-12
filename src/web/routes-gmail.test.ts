@@ -172,5 +172,18 @@ describe("routes-gmail", () => {
       expect(res.text).not.toContain("<script>alert");
       expect(res.text).toContain("&lt;script");
     });
+
+    it("returns 503 with an actionable banner when ANTHROPIC_API_KEY is missing", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      const { MissingAnthropicKeyError } = await import("../ai/index.js");
+      triageMock.mockRejectedValueOnce(new MissingAnthropicKeyError());
+      const res = await request(buildApp())
+        .post("/ui/gmail/triage")
+        .type("form")
+        .send({ limit: "5" });
+      expect(res.status).toBe(503);
+      expect(res.text).toMatch(/ANTHROPIC_API_KEY/);
+    });
   });
 });

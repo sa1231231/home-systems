@@ -164,5 +164,19 @@ describe("routes-transactions", () => {
       expect(res.status).toBe(500);
       expect(res.text).toMatch(/triage broke/);
     });
+
+    it("returns 503 with an actionable banner when ANTHROPIC_API_KEY is missing", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      const { MissingAnthropicKeyError } = await import("../ai/index.js");
+      triageMock.mockRejectedValueOnce(new MissingAnthropicKeyError());
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post("/ui/transactions/triage")
+        .type("form")
+        .send({ limit: "5" });
+      expect(res.status).toBe(503);
+      expect(res.text).toMatch(/ANTHROPIC_API_KEY/);
+      expect(res.text).toMatch(/Railway/);
+    });
   });
 });

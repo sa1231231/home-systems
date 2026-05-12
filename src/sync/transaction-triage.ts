@@ -315,6 +315,11 @@ export async function triageTransactions(
         proposed_action: proposed,
       });
     } catch (err) {
+      // Don't trap configuration-level failures in the per-row catch — let
+      // them abort the whole run.
+      if (err instanceof MissingAnthropicKeyError) {
+        throw err;
+      }
       const message = err instanceof Error ? err.message : String(err);
       try {
         await recordOutcome({
