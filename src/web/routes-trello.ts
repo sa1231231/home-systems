@@ -1,4 +1,3 @@
-import type { Response, Router as ExpressRouter } from "express";
 import { Router } from "express";
 import { and, desc, gte, like } from "drizzle-orm";
 import { db } from "../db/client.js";
@@ -10,165 +9,65 @@ import {
   MissingTrelloCredsError,
   requireTrelloCreds,
 } from "../integrations/trello/auth.js";
-import { makeTrelloClient, type TrelloCard } from "../integrations/trello/client.js";
-import {
-  isCustomFieldChecked,
-  runTrelloReorderOnce,
-  toCardForOrdering,
-  type FieldIds,
-  type TrelloReorderResult,
-} from "../sync/trello-runner.js";
-import {
-  bucketize,
-  toLocalDate,
-  type ReorderContext,
-} from "../sync/trello-reorder.js";
+import { makeTrelloClient } from "../integrations/trello/client.js";
+import { runTrelloReorderOnce } from "../sync/trello-runner.js";
 import { cronInfoForDomain } from "./cron-info.js";
 
-const BUCKET_NAMES: Record<number, string> = {
-  1: "due",
-  2: "daily",
-  3: "weekdays",
-  4: "weekends",
-  5: "other",
-};
-
-export type CardView = {
-  id: string;
-  name: string;
-  pos: number;
-  dueLocal: string | null;
-  labels: { name: string }[];
-  flags: { daily: boolean; weekdays: boolean; weekends: boolean };
-  bucket: 1 | 2 | 3 | 4 | 5;
-};
-
-export function makeTrelloUiRouter(): ExpressRouter {
+export function makeTrelloUiRouter(): Router {
   const router = Router();
 
-  router.get("/", async (req, res) => {
+  router.get("/", async (_req, res) => {
     if (!hasTrelloCreds()) {
-      renderEmpty(res, { notConfigured: true });
+      res.render("trello", {
+        notConfigured: true,
+        flash: null,
+        activity: [],
+        cron: cronInfoForDomain("trello"),
+      });
       return;
     }
-    try {
-      const result = await runOnce(req.sessionId, true);
-      await render(res, { result, flash: null });
-    } catch (err) {
-      renderError(res, err);
-    }
+    const since = windowStartFor24h();
+    const activity = await db
+      .select()
+      .from(changelog)
+      .where(and(like(changelog.operation, "trello.%"), gte(changelog.createdAt, since)))
+      .orderBy(desc(changelog.id))
+      .limit(50);
+    res.render("trello", {
+      notConfigured: false,
+      flash: null,
+      activity,
+      cron: cronInfoForDomain("trello"),
+    });
   });
 
   router.post("/reorder", async (req, res) => {
     if (!hasTrelloCreds()) {
-      res.status(503).send("trello credentials not configured");
+      res.status(503).send(`<div class="flash err">Trello credentials not configured.</div>`);
       return;
     }
     try {
-      const result = await runOnce(req.sessionId, false);
+      const creds = requireTrelloCreds();
+      const client = makeTrelloClient({ apiKey: creds.apiKey, token: creds.token });
+      const result = await runTrelloReorderOnce(client, creds, {
+        dryRun: false,
+        sessionId: req.sessionId ?? newSessionId(),
+        caller: "ui:trello.reorder",
+      });
       const errs = result.errors.length;
-      const msg = `Reorder: ${result.moved} moved, ${result.reordered} reordered, ${result.unchanged} unchanged${errs ? `, ${errs} errors` : ""}.`;
-      await render(res, { result, flash: { kind: errs > 0 ? "err" : "ok", message: msg } });
+      res.setHeader("HX-Refresh", "true");
+      const kind = errs > 0 ? "err" : "ok";
+      res.send(
+        `<div class="flash ${kind}">Reorder: ${result.moved} moved, ${result.reordered} reordered, ${result.unchanged} unchanged${errs ? `, ${errs} errors` : ""}.</div>`,
+      );
     } catch (err) {
-      renderError(res, err);
+      const status = err instanceof MissingTrelloCredsError ? 503 : 500;
+      const message = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res.status(status).send(`<div class="flash err">Reorder failed: ${message}</div>`);
     }
   });
 
   return router;
-}
-
-async function runOnce(sessionId: string | undefined, dryRun: boolean): Promise<TrelloReorderResult> {
-  const creds = requireTrelloCreds();
-  const client = makeTrelloClient({ apiKey: creds.apiKey, token: creds.token });
-  return runTrelloReorderOnce(client, creds, {
-    dryRun,
-    sessionId: sessionId ?? newSessionId(),
-    caller: dryRun ? "ui:trello.preview" : "ui:trello.reorder",
-  });
-}
-
-async function render(
-  res: Response,
-  args: { result: TrelloReorderResult; flash: { kind: "ok" | "err"; message: string } | null },
-): Promise<void> {
-  const creds = requireTrelloCreds();
-  const client = makeTrelloClient({ apiKey: creds.apiKey, token: creds.token });
-  const [waiting, todayCards] = await Promise.all([
-    client.listCards(creds.waitingListId),
-    client.listCards(creds.todayListId),
-  ]);
-  const ctx: ReorderContext = {
-    today: args.result.today,
-    tz: creds.tz,
-  };
-  const fields: FieldIds = {
-    daily: creds.dailyFieldId,
-    weekdays: creds.weekdaysFieldId,
-    weekends: creds.weekendsFieldId,
-  };
-
-  const incomingIds = new Set(args.result.ops.filter((o) => o.kind === "move").map((o) => o.cardId));
-  const incomingView = waiting
-    .filter((c) => incomingIds.has(c.id))
-    .map((c) => toCardView(c, ctx, fields));
-  const todayView = todayCards
-    .map((c) => toCardView(c, ctx, fields))
-    .sort((a, b) => a.pos - b.pos);
-
-  const since = windowStartFor24h();
-  const activity = await db
-    .select()
-    .from(changelog)
-    .where(and(like(changelog.operation, "trello.%"), gte(changelog.createdAt, since)))
-    .orderBy(desc(changelog.id))
-    .limit(20);
-
-  res.render("trello", {
-    notConfigured: false,
-    flash: args.flash,
-    result: args.result,
-    todayView,
-    incomingView,
-    activity,
-    bucketNames: BUCKET_NAMES,
-    tz: creds.tz,
-    cron: cronInfoForDomain("trello"),
-  });
-}
-
-function renderEmpty(res: Response, opts: { notConfigured: boolean; flash?: { kind: "ok" | "err"; message: string } | null }): void {
-  res.render("trello", {
-    notConfigured: opts.notConfigured,
-    flash: opts.flash ?? null,
-    result: null,
-    todayView: [],
-    incomingView: [],
-    activity: [],
-    bucketNames: BUCKET_NAMES,
-    tz: null,
-    cron: cronInfoForDomain("trello"),
-  });
-}
-
-function renderError(res: Response, err: unknown): void {
-  const status = err instanceof MissingTrelloCredsError ? 503 : 500;
-  const message = err instanceof Error ? err.message : String(err);
-  res.status(status);
-  renderEmpty(res, {
-    notConfigured: err instanceof MissingTrelloCredsError,
-    flash: { kind: "err", message },
-  });
-}
-
-function toCardView(raw: TrelloCard, ctx: ReorderContext, fields: FieldIds): CardView {
-  const ord = toCardForOrdering(raw, fields);
-  return {
-    id: raw.id,
-    name: raw.name,
-    pos: raw.pos,
-    dueLocal: raw.due ? toLocalDate(raw.due, ctx.tz) : null,
-    labels: (raw.labels ?? []).filter((l) => l.name).map((l) => ({ name: l.name })),
-    flags: ord.flags,
-    bucket: bucketize(ord, ctx),
-  };
 }

@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import request from "supertest";
 import { createTestDb, type TestDbHandle } from "../../tests/helpers/test-db.js";
 import { makeTestApp, mountViews } from "../../tests/helpers/test-app.js";
+import { db } from "../db/client.js";
+import { changelog } from "../db/schema.js";
 
 vi.mock("../integrations/trello/auth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/trello/auth.js")>(
@@ -32,18 +34,6 @@ const requireCredsMock = vi.mocked(requireTrelloCreds);
 const makeClientMock = vi.mocked(makeTrelloClient);
 const runReorderMock = vi.mocked(runTrelloReorderOnce);
 
-function fakeClient() {
-  return {
-    listCards: vi.fn().mockResolvedValue([]) as never,
-    moveCard: vi.fn().mockResolvedValue({}) as never,
-    getBoard: vi.fn() as never,
-    getLists: vi.fn() as never,
-    getLabels: vi.fn() as never,
-    getCard: vi.fn() as never,
-    listMemberBoards: vi.fn() as never,
-  };
-}
-
 const CREDS = {
   apiKey: "k",
   token: "t",
@@ -53,7 +43,7 @@ const CREDS = {
   tz: "UTC",
 };
 
-const DRY_RESULT = {
+const BASE_RESULT = {
   today: "2026-05-11",
   planned: 0,
   moved: 0,
@@ -87,23 +77,57 @@ describe("routes-trello", () => {
   });
 
   describe("GET /ui/trello", () => {
-    it("renders a not-configured banner when creds are missing", async () => {
+    it("renders the not-configured banner when creds are missing", async () => {
       hasCredsMock.mockReturnValue(false);
       const res = await request(buildApp()).get("/ui/trello/");
       expect(res.status).toBe(200);
       expect(res.text).toMatch(/isn't configured/i);
+      // GET should NOT hit Trello at all in the simplified flow.
+      expect(runReorderMock).not.toHaveBeenCalled();
+      expect(makeClientMock).not.toHaveBeenCalled();
     });
 
-    it("runs a dry-run reorder and renders the page when creds are configured", async () => {
+    it("renders just the activity table when configured (no Trello API calls)", async () => {
       hasCredsMock.mockReturnValue(true);
-      requireCredsMock.mockReturnValue(CREDS);
-      makeClientMock.mockReturnValue(fakeClient() as never);
-      runReorderMock.mockResolvedValueOnce(DRY_RESULT);
       const res = await request(buildApp()).get("/ui/trello/");
       expect(res.status).toBe(200);
-      expect(runReorderMock).toHaveBeenCalledOnce();
-      // dryRun should be true on the GET path
-      expect(runReorderMock.mock.calls[0][2].dryRun).toBe(true);
+      expect(res.text).toContain("Recent activity");
+      // No dry-run preview anymore — confirm we don't touch Trello on GET.
+      expect(runReorderMock).not.toHaveBeenCalled();
+      expect(makeClientMock).not.toHaveBeenCalled();
+    });
+
+    it("shows recent trello.* changelog rows", async () => {
+      hasCredsMock.mockReturnValue(true);
+      await db.insert(changelog).values({
+        caller: "test",
+        sessionId: "s",
+        operation: "trello.move_card",
+        targetKind: "trello_card",
+        targetId: "marker-card-id",
+        beforeState: {} as never,
+        afterState: {} as never,
+        status: "success",
+      });
+      const res = await request(buildApp()).get("/ui/trello/");
+      expect(res.text).toContain("marker-card-id");
+      expect(res.text).toContain("trello.move_card");
+    });
+
+    it("excludes non-trello changelog rows", async () => {
+      hasCredsMock.mockReturnValue(true);
+      await db.insert(changelog).values({
+        caller: "test",
+        sessionId: "s",
+        operation: "email.modify_labels",
+        targetKind: "email",
+        targetId: "should-not-appear-in-trello",
+        beforeState: {} as never,
+        afterState: {} as never,
+        status: "success",
+      });
+      const res = await request(buildApp()).get("/ui/trello/");
+      expect(res.text).not.toContain("should-not-appear-in-trello");
     });
   });
 
@@ -115,38 +139,47 @@ describe("routes-trello", () => {
       expect(runReorderMock).not.toHaveBeenCalled();
     });
 
-    it("runs a non-dry reorder and renders a success flash", async () => {
+    it("runs a non-dry reorder and returns HX-Refresh + success banner", async () => {
       hasCredsMock.mockReturnValue(true);
       requireCredsMock.mockReturnValue(CREDS);
-      makeClientMock.mockReturnValue(fakeClient() as never);
+      makeClientMock.mockReturnValue({} as never);
       runReorderMock.mockResolvedValueOnce({
-        ...DRY_RESULT,
+        ...BASE_RESULT,
         planned: 3,
         moved: 1,
         reordered: 2,
-        unchanged: 0,
       });
       const res = await request(buildApp()).post("/ui/trello/reorder");
       expect(res.status).toBe(200);
+      expect(res.headers["hx-refresh"]).toBe("true");
       expect(runReorderMock.mock.calls[0][2].dryRun).toBe(false);
+      expect(res.text).toMatch(/flash ok/);
       expect(res.text).toMatch(/1 moved/);
       expect(res.text).toMatch(/2 reordered/);
     });
 
-    it("renders an error flash when there are per-op errors", async () => {
+    it("renders an error banner when there are per-op errors", async () => {
       hasCredsMock.mockReturnValue(true);
       requireCredsMock.mockReturnValue(CREDS);
-      makeClientMock.mockReturnValue(fakeClient() as never);
+      makeClientMock.mockReturnValue({} as never);
       runReorderMock.mockResolvedValueOnce({
-        ...DRY_RESULT,
+        ...BASE_RESULT,
         planned: 1,
-        moved: 0,
-        reordered: 0,
-        unchanged: 0,
         errors: [{ cardId: "c", error: "boom" }],
       });
       const res = await request(buildApp()).post("/ui/trello/reorder");
+      expect(res.text).toMatch(/flash err/);
       expect(res.text).toMatch(/1 errors/);
+    });
+
+    it("returns a 500 banner when runOnce throws", async () => {
+      hasCredsMock.mockReturnValue(true);
+      requireCredsMock.mockReturnValue(CREDS);
+      makeClientMock.mockReturnValue({} as never);
+      runReorderMock.mockRejectedValueOnce(new Error("trello 503"));
+      const res = await request(buildApp()).post("/ui/trello/reorder");
+      expect(res.status).toBe(500);
+      expect(res.text).toMatch(/trello 503/);
     });
   });
 });
