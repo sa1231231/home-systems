@@ -48,6 +48,27 @@ describe("findAuditIssues", () => {
     expect(findAuditIssues(rows).nameOnly).toEqual([]);
   });
 
+  it("treats a value in the linkedin or instagram column as valid contact info", () => {
+    expect(findAuditIssues([row({ full_name: "A", linkedin: "https://linkedin.com/in/a" })]).nameOnly).toEqual([]);
+    expect(findAuditIssues([row({ full_name: "B", instagram: "https://instagram.com/b" })]).nameOnly).toEqual([]);
+  });
+
+  it("treats a LinkedIn/Instagram URL in description as valid contact info", () => {
+    const cases = [
+      row({ full_name: "Jay", description: "https://www.instagram.com/jay/" }),
+      row({ full_name: "Pat", description: "linkedin.com/in/pat" }),
+      row({ full_name: "Sam", description: "Met at conference, see https://example.com" }),
+    ];
+    for (const r of cases) {
+      expect(findAuditIssues([r]).nameOnly).toEqual([]);
+    }
+  });
+
+  it("still flags rows with description but no URL/handle as name-only", () => {
+    const rows = [row({ full_name: "No Link", description: "Met at coffee" })];
+    expect(findAuditIssues(rows).nameOnly).toHaveLength(1);
+  });
+
   it("flags fully-empty rows separately", () => {
     const rows = [row({}), row({ google_resource_name: "p/x", full_name: "Bob" })];
     expect(findAuditIssues(rows).emptyRows).toEqual([{ rowIndex: 0 }]);

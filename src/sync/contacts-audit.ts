@@ -64,15 +64,29 @@ function get(row: SheetRow, key: string): string {
 }
 
 /** A row counts as "real" if it has any reachable handle: email, phone,
- *  or website. */
+ *  website, a LinkedIn / Instagram URL in its own column, OR a URL embedded
+ *  in the description (X/Twitter profile links and similar fall here). */
 function hasContactInfo(row: SheetRow): boolean {
   return (
     nonEmpty(row.email) ||
     nonEmpty(row.emails) ||
     nonEmpty(row.phone) ||
     nonEmpty(row.phones) ||
-    nonEmpty(row.website)
+    nonEmpty(row.website) ||
+    nonEmpty(row.linkedin) ||
+    nonEmpty(row.instagram) ||
+    descriptionHasUrl(row.description)
   );
+}
+
+const URL_OR_HANDLE_RE = /(https?:\/\/|www\.|linkedin\.com|instagram\.com|x\.com\/|twitter\.com|facebook\.com|t\.me\/|tiktok\.com|youtube\.com)/i;
+
+/** True if the description text contains a URL or a recognizable social
+ *  handle. Lets a row with "linkedin.com/in/jane" in description count as
+ *  a contactable person even with no email/phone column populated. */
+export function descriptionHasUrl(description: string | undefined): boolean {
+  if (!description) return false;
+  return URL_OR_HANDLE_RE.test(description);
 }
 
 function splitCsv(value: string): string[] {
