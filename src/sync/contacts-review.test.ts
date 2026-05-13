@@ -198,4 +198,91 @@ describe("enqueueSyncPlan", () => {
     expect(summary.queued_inserts).toBe(0);
     expect(await pendingCount(CONTACT_INSERT_KIND)).toBe(0);
   });
+
+  it("does not re-queue an ambiguous review the user previously rejected", async () => {
+    const p = person({ resource_name: "people/c-rani", display_name: "Rani Sangid" });
+    const plan: SyncPlan = {
+      ...emptyPlan(),
+      ambiguous: [{ person: p, matches: [10, 20], via: "email" }],
+    };
+    const first = await enqueueSyncPlan(plan);
+    expect(first.queued_ambiguous).toBe(1);
+
+    // User rejects via the UI.
+    await db
+      .update(needsReview)
+      .set({ status: "rejected", decidedBy: "api", decidedAt: new Date() })
+      .where(eq(needsReview.subjectId, "people/c-rani"));
+
+    // Next sync proposes the same ambiguous decision again.
+    const second = await enqueueSyncPlan(plan);
+    expect(second.queued_ambiguous).toBe(0);
+    expect(second.blocked_by_prior_reject).toBe(1);
+    // No new pending row was created.
+    expect(await pendingCount(CONTACT_AMBIGUOUS_KIND)).toBe(0);
+  });
+
+  it("does not re-queue a refresh whose change-set matches a prior reject", async () => {
+    const p = person({ resource_name: "people/c-x" });
+    const planA: SyncPlan = {
+      ...emptyPlan(),
+      refreshes: [
+        {
+          rowIndex: 5,
+          person: p,
+          via: "email",
+          updates: [{ col: "full_name", from: "Bob", to: "Robert" }],
+        },
+      ],
+    };
+    await enqueueSyncPlan(planA);
+    await db
+      .update(needsReview)
+      .set({ status: "rejected", decidedBy: "api", decidedAt: new Date() })
+      .where(eq(needsReview.subjectId, "people/c-x"));
+
+    // Same change → blocked.
+    const second = await enqueueSyncPlan(planA);
+    expect(second.queued_refreshes).toBe(0);
+    expect(second.blocked_by_prior_reject).toBe(1);
+
+    // DIFFERENT change to the same contact → queued (real new content).
+    const planB: SyncPlan = {
+      ...emptyPlan(),
+      refreshes: [
+        {
+          rowIndex: 5,
+          person: p,
+          via: "email",
+          updates: [{ col: "full_name", from: "Bob", to: "Robert J." }],
+        },
+      ],
+    };
+    const third = await enqueueSyncPlan(planB);
+    expect(third.queued_refreshes).toBe(1);
+    expect(third.blocked_by_prior_reject).toBe(0);
+  });
+
+  it("ignores cleanup-script rejects when deciding to re-queue", async () => {
+    const p = person({ resource_name: "people/c-cleanup" });
+    const plan: SyncPlan = {
+      ...emptyPlan(),
+      ambiguous: [{ person: p, matches: [1, 2], via: "phone" }],
+    };
+    await enqueueSyncPlan(plan);
+    // Simulate a cleanup script bulk-skipping (not a user decision).
+    await db
+      .update(needsReview)
+      .set({
+        status: "skipped",
+        decidedBy: "cleanup:stale-tab-reviews",
+        decidedAt: new Date(),
+      })
+      .where(eq(needsReview.subjectId, "people/c-cleanup"));
+
+    const second = await enqueueSyncPlan(plan);
+    // Cleanup-script skip should NOT count as a user decision — re-queue.
+    expect(second.queued_ambiguous).toBe(1);
+    expect(second.blocked_by_prior_reject).toBe(0);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db as defaultDb } from "../db/client.js";
 import { needsReview } from "../db/schema.js";
 import type { GooglePerson } from "../integrations/google/people.js";
@@ -50,6 +50,10 @@ export type EnqueueSummary = {
   queued_refreshes: number;
   queued_ambiguous: number;
   skipped_duplicates: number;
+  /** Re-proposals that were blocked because the user previously rejected
+   *  the same change-set. Counted so the user can see their decisions are
+   *  being remembered. */
+  blocked_by_prior_reject: number;
 };
 
 export function buildInsertReview(op: InsertOp, plan: SyncPlan): {
@@ -135,13 +139,87 @@ async function findExistingPending(
   return row?.id ?? null;
 }
 
+/**
+ * Fingerprint a proposed refresh action: subjectId + the set of (col, to)
+ * pairs in the updates, excluding noise (`updated_at`, `google_resource_name`
+ * which are mechanical). Two refresh actions with the same fingerprint mean
+ * "the user already saw this exact change-set" — if they previously rejected
+ * one with this fingerprint, don't re-queue.
+ */
+function refreshFingerprint(action: ContactReviewAction): string {
+  if (action.type !== "refresh") return "";
+  const significant = action.updates
+    .filter((u) => u.col !== "updated_at" && u.col !== "google_resource_name")
+    .map((u) => `${u.col}=${u.to}`)
+    .sort();
+  return significant.join("|");
+}
+
+/**
+ * Returns true if the user has previously rejected/skipped a review for the
+ * same (kind, subjectId) — and, for refreshes, with the same fingerprint.
+ *
+ * - **Ambiguous**: a prior reject means "these matches don't belong together."
+ *   That's a permanent decision; don't re-queue regardless of what the new
+ *   match indices look like.
+ * - **Refresh**: a prior reject means "don't apply this exact change-set."
+ *   If Google later proposes a different change, that's a new review.
+ * - **Insert**: rejects on inserts are rare (inserts auto-apply now) but
+ *   semantically mean "don't add this contact"; honor that.
+ *
+ * Decisions made by cleanup/admin scripts (`decided_by` starting with
+ * `cleanup:`) are NOT treated as user decisions — those were bulk
+ * housekeeping, not a deliberate "no" on the content itself.
+ */
+async function hasPriorUserReject(
+  database: typeof defaultDb,
+  subjectKind: string,
+  subjectId: string,
+  proposed: ContactReviewAction,
+): Promise<boolean> {
+  const prior = await database
+    .select({
+      decidedBy: needsReview.decidedBy,
+      proposedAction: needsReview.proposedAction,
+      status: needsReview.status,
+    })
+    .from(needsReview)
+    .where(
+      and(
+        eq(needsReview.domain, CONTACT_DOMAIN),
+        eq(needsReview.subjectKind, subjectKind),
+        eq(needsReview.subjectId, subjectId),
+        inArray(needsReview.status, ["rejected", "skipped"]),
+      ),
+    )
+    .orderBy(desc(needsReview.decidedAt));
+  if (prior.length === 0) return false;
+  const userPrior = prior.filter(
+    (p) => !(p.decidedBy ?? "").startsWith("cleanup:"),
+  );
+  if (userPrior.length === 0) return false;
+  if (proposed.type === "refresh") {
+    const fp = refreshFingerprint(proposed);
+    return userPrior.some(
+      (p) => refreshFingerprint(p.proposedAction as ContactReviewAction) === fp,
+    );
+  }
+  // Ambiguous / insert: any prior user reject is permanent.
+  return true;
+}
+
+type UpsertResult = "inserted" | "updated" | "blocked_by_prior_reject";
+
 async function upsertReview(
   database: typeof defaultDb,
   subjectKind: string,
   subjectId: string,
   subject: Record<string, unknown>,
   proposed: ContactReviewAction,
-): Promise<"inserted" | "updated"> {
+): Promise<UpsertResult> {
+  if (await hasPriorUserReject(database, subjectKind, subjectId, proposed)) {
+    return "blocked_by_prior_reject";
+  }
   const existing = await findExistingPending(database, subjectKind, subjectId);
   if (existing) {
     await database
@@ -173,28 +251,34 @@ export async function enqueueSyncPlan(
   let qi = 0,
     qr = 0,
     qa = 0,
-    skipped = 0;
+    skipped = 0,
+    blocked = 0;
+
+  const tally = (r: UpsertResult): void => {
+    if (r === "blocked_by_prior_reject") blocked++;
+    else if (r === "updated") skipped++;
+  };
 
   for (const op of plan.inserts) {
     if (!op.person.resource_name) continue;
     const { subject, subjectId, action } = buildInsertReview(op, plan);
     const r = await upsertReview(database, CONTACT_INSERT_KIND, subjectId, subject, action);
     if (r === "inserted") qi++;
-    else skipped++;
+    else tally(r);
   }
   for (const op of plan.refreshes) {
     if (!op.person.resource_name) continue;
     const { subject, subjectId, action } = buildRefreshReview(op, plan);
     const r = await upsertReview(database, CONTACT_REFRESH_KIND, subjectId, subject, action);
     if (r === "inserted") qr++;
-    else skipped++;
+    else tally(r);
   }
   for (const op of plan.ambiguous) {
     if (!op.person.resource_name) continue;
     const { subject, subjectId, action } = buildAmbiguousReview(op, plan);
     const r = await upsertReview(database, CONTACT_AMBIGUOUS_KIND, subjectId, subject, action);
     if (r === "inserted") qa++;
-    else skipped++;
+    else tally(r);
   }
 
   return {
@@ -202,5 +286,6 @@ export async function enqueueSyncPlan(
     queued_refreshes: qr,
     queued_ambiguous: qa,
     skipped_duplicates: skipped,
+    blocked_by_prior_reject: blocked,
   };
 }

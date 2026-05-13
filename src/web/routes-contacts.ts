@@ -319,8 +319,12 @@ export function makeContactsUiRouter(): Router {
       const s = result.summary;
       const q = result.queued;
       if (q) {
+        const remembered = q.blocked_by_prior_reject;
+        const rememberedNote = remembered > 0
+          ? ` Skipped ${remembered} change${remembered === 1 ? '' : 's'} you previously rejected.`
+          : '';
         res.send(
-          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending). ${s.unchanged} unchanged.</div>`,
+          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending).${rememberedNote} ${s.unchanged} unchanged.</div>`,
         );
       } else {
         res.send(

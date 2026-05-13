@@ -244,6 +244,8 @@ export type EnqueueResult = {
   queued_refreshes: number;
   queued_ambiguous: number;
   skipped_duplicates: number;
+  /** Re-proposals blocked because the user previously rejected the same change. */
+  blocked_by_prior_reject: number;
   /** Trivial refreshes that auto-applied (binding resource_name on already-matched rows). */
   resource_name_backfills: number;
   /** Refreshes where every change was formatting-only (phone/whitespace/etc.) — auto-applied. */
