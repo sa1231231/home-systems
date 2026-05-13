@@ -453,6 +453,7 @@ export function makeContactsUiRouter(): Router {
         entry: updated,
         applyOutcome: { applied: true, apply_result: { merged: true, kept: plan.keeperRowIndex, deleted: plan.deleteRowIndices } },
         matchedRows: null,
+        includeBulkCheckbox: true,
       });
     } catch (err) {
       const msg = (err instanceof Error ? err.message : String(err))

@@ -94,6 +94,7 @@ export function makeReviewUiRouter(): Router {
       res.render(partialFor(result.entry.domain), {
         entry: result.entry,
         applyOutcome: result.apply,
+        includeBulkCheckbox: true,
       });
     } catch (err) {
       renderError(res, pending, err, id);
@@ -121,10 +122,93 @@ export function makeReviewUiRouter(): Router {
       res.render(partialFor(result.entry.domain), {
         entry: result.entry,
         applyOutcome: null,
+        includeBulkCheckbox: true,
       });
     } catch (err) {
       renderError(res, pending, err, id);
     }
+  });
+
+  // Bulk approve/skip. Takes ids[] from a multi-select form. Calls the same
+  // per-entry handlers; on success triggers HX-Refresh so the queue reloads.
+  // Already-decided entries are skipped silently (they don't block the batch).
+  const BulkBody = z.object({
+    ids: z.union([
+      z.array(z.coerce.number().int().positive()).max(500),
+      z.coerce.number().int().positive(),
+    ]),
+  });
+  function normalizeIds(parsed: z.infer<typeof BulkBody>): number[] {
+    return Array.isArray(parsed.ids) ? parsed.ids : [parsed.ids];
+  }
+
+  router.post("/bulk/approve", async (req, res) => {
+    let ids: number[];
+    try {
+      ids = normalizeIds(BulkBody.parse(req.body ?? {}));
+    } catch {
+      res.status(400).send(`<div class="flash err">Invalid request.</div>`);
+      return;
+    }
+    let approved = 0;
+    let skipped = 0;
+    const failures: Array<{ id: number; error: string }> = [];
+    for (const id of ids) {
+      const entry = await loadEntry(id);
+      if (!entry) {
+        failures.push({ id, error: "not found" });
+        continue;
+      }
+      try {
+        const cfg = getDomainConfig(entry.domain);
+        await approveEntry(id, {
+          promoteToRule:
+            cfg.promotesOnApprove === false
+              ? undefined
+              : { name: cfg.defaultRuleName(entry), match: cfg.defaultMatch(entry) },
+          sessionId: req.sessionId ?? newSessionId(),
+          caller: "ui:needs-review.bulk-approve",
+        });
+        approved++;
+      } catch (err) {
+        if (err instanceof AlreadyDecidedError) {
+          skipped++;
+        } else {
+          failures.push({ id, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    }
+    res.setHeader("HX-Refresh", "true");
+    const failNote = failures.length > 0 ? ` ${failures.length} failed.` : "";
+    res.send(
+      `<div class="flash ok">Bulk approve: ${approved} done, ${skipped} already-decided.${failNote}</div>`,
+    );
+  });
+
+  router.post("/bulk/reject", async (req, res) => {
+    let ids: number[];
+    try {
+      ids = normalizeIds(BulkBody.parse(req.body ?? {}));
+    } catch {
+      res.status(400).send(`<div class="flash err">Invalid request.</div>`);
+      return;
+    }
+    let rejected = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      const entry = await loadEntry(id);
+      if (!entry) continue;
+      try {
+        await rejectEntry(id, { reason: "bulk skip" });
+        rejected++;
+      } catch (err) {
+        if (err instanceof AlreadyDecidedError) skipped++;
+      }
+    }
+    res.setHeader("HX-Refresh", "true");
+    res.send(
+      `<div class="flash ok">Bulk skip: ${rejected} done, ${skipped} already-decided.</div>`,
+    );
   });
 
   // Correct = "AI picked the wrong category." User picks the right one (validated
@@ -168,6 +252,7 @@ export function makeReviewUiRouter(): Router {
       res.render(partialFor(result.entry.domain), {
         entry: result.entry,
         applyOutcome: result.apply,
+        includeBulkCheckbox: true,
       });
     } catch (err) {
       renderError(res, pending, err, id);

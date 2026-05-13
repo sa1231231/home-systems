@@ -106,14 +106,38 @@
 
   <% if (pending.length > 0) { %>
     <h4 style="margin: 18px 0 4px;">Queue (refresh / ambiguous)</h4>
-    <table>
+    <div id="bulk-toolbar" style="display: none; position: sticky; top: 0; z-index: 10; background: #fffbe6; border: 1px solid #b35a00; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; align-items: center; gap: 10px;">
+      <span><strong id="bulk-count">0</strong> selected</span>
+      <span class="spacer" style="flex: 1;"></span>
+      <button type="button" id="bulk-select-all" style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 12px;">Select all on page</button>
+      <button type="button" id="bulk-clear" style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 12px;">Clear</button>
+      <form id="bulk-approve-form" hx-post="/ui/needs-review/bulk/approve" hx-target="#bulk-flash" hx-swap="innerHTML" hx-confirm="Approve all selected reviews?" style="display: inline;">
+        <input type="hidden" name="ids" id="bulk-approve-ids" />
+        <button type="submit" style="padding: 4px 12px; background: #e3f5e9; border: 1px solid #128a3e; color: #128a3e; border-radius: 3px; cursor: pointer;">Approve selected</button>
+      </form>
+      <form id="bulk-reject-form" hx-post="/ui/needs-review/bulk/reject" hx-target="#bulk-flash" hx-swap="innerHTML" hx-confirm="Skip all selected reviews?" style="display: inline;">
+        <input type="hidden" name="ids" id="bulk-reject-ids" />
+        <button type="submit" style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;">Skip selected</button>
+      </form>
+    </div>
+    <div id="bulk-flash"></div>
+    <table style="table-layout: fixed; width: 100%;">
+      <colgroup>
+        <col style="width: 36px;" />
+        <col style="width: 110px;" />
+        <col style="width: 220px;" />
+        <col />
+        <col style="width: 90px;" />
+        <col style="width: 180px;" />
+      </colgroup>
       <thead>
         <tr>
-          <th style="width: 130px;">When (UTC)</th>
+          <th style="text-align: center;"><input type="checkbox" id="bulk-header-toggle" title="Select all on page" /></th>
+          <th>When (UTC)</th>
           <th>Contact</th>
-          <th style="width: 160px;">Change</th>
-          <th style="width: 140px;">Status</th>
-          <th style="width: 200px;">Decide</th>
+          <th>Change</th>
+          <th>Status</th>
+          <th>Decide</th>
         </tr>
       </thead>
       <tbody>
@@ -123,10 +147,77 @@
             applyOutcome: null,
             matchedRows: (locals.matchedRowsByEntryId && locals.matchedRowsByEntryId[entry.id]) || null,
             mergePreview: (locals.mergePreviewByEntryId && locals.mergePreviewByEntryId[entry.id]) || null,
+            includeBulkCheckbox: true,
           }) %>
         <% }); %>
       </tbody>
     </table>
+    <script>
+      (function () {
+        var checkboxes = function () { return document.querySelectorAll('input.bulk-select'); };
+        var toolbar = document.getElementById('bulk-toolbar');
+        var countEl = document.getElementById('bulk-count');
+        var lastChecked = null;
+        function selectedIds() {
+          var out = [];
+          checkboxes().forEach(function (cb) { if (cb.checked) out.push(cb.dataset.reviewId); });
+          return out;
+        }
+        function updateToolbar() {
+          var ids = selectedIds();
+          countEl.textContent = ids.length;
+          toolbar.style.display = ids.length > 0 ? 'flex' : 'none';
+          document.getElementById('bulk-approve-ids').value = ids.join(',');
+          document.getElementById('bulk-reject-ids').value = ids.join(',');
+        }
+        function onCheckboxClick(e, cb) {
+          if (e.shiftKey && lastChecked && lastChecked !== cb) {
+            var all = Array.prototype.slice.call(checkboxes());
+            var a = all.indexOf(lastChecked);
+            var b = all.indexOf(cb);
+            if (a > -1 && b > -1) {
+              var lo = Math.min(a, b), hi = Math.max(a, b);
+              for (var i = lo; i <= hi; i++) all[i].checked = cb.checked;
+            }
+          }
+          lastChecked = cb;
+          updateToolbar();
+        }
+        document.addEventListener('click', function (e) {
+          var t = e.target;
+          if (t && t.matches && t.matches('input.bulk-select')) onCheckboxClick(e, t);
+        });
+        // For both bulk forms, swap the hidden 'ids' input to multiple inputs
+        // so Express body-parser produces ids[] rather than "1,2,3".
+        function explodeIds(formId, hiddenId) {
+          var form = document.getElementById(formId);
+          var hidden = document.getElementById(hiddenId);
+          if (!form || !hidden) return;
+          form.addEventListener('htmx:configRequest', function (evt) {
+            delete evt.detail.parameters.ids;
+            var ids = (hidden.value || '').split(',').filter(Boolean);
+            evt.detail.parameters['ids'] = ids;
+          });
+        }
+        explodeIds('bulk-approve-form', 'bulk-approve-ids');
+        explodeIds('bulk-reject-form', 'bulk-reject-ids');
+        var headerToggle = document.getElementById('bulk-header-toggle');
+        headerToggle.addEventListener('change', function () {
+          checkboxes().forEach(function (cb) { cb.checked = headerToggle.checked; });
+          updateToolbar();
+        });
+        document.getElementById('bulk-select-all').addEventListener('click', function () {
+          checkboxes().forEach(function (cb) { cb.checked = true; });
+          headerToggle.checked = true;
+          updateToolbar();
+        });
+        document.getElementById('bulk-clear').addEventListener('click', function () {
+          checkboxes().forEach(function (cb) { cb.checked = false; });
+          headerToggle.checked = false;
+          updateToolbar();
+        });
+      })();
+    </script>
   <% } %>
 </section>
 

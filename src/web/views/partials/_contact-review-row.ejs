@@ -13,6 +13,13 @@
   }
 %>
 <tr id="review-row-<%= entry.id %>">
+  <% if (typeof includeBulkCheckbox !== "undefined" && includeBulkCheckbox && entry.status === "pending") { %>
+    <td style="text-align: center; vertical-align: top; padding-top: 10px;">
+      <input type="checkbox" class="bulk-select" data-review-id="<%= entry.id %>" aria-label="Select review <%= entry.id %>" />
+    </td>
+  <% } else if (typeof includeBulkCheckbox !== "undefined" && includeBulkCheckbox) { %>
+    <td></td>
+  <% } %>
   <td class="muted" style="white-space: nowrap; font-size: 12px;">
     <%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z
   </td>
@@ -34,24 +41,29 @@
       <% if (typeof subj.row_index === "number") { %>
         <div class="muted" style="font-size: 11px; margin-top: 4px;">row <%= subj.row_index %> · via <%= subj.via || '?' %></div>
       <% } %>
-      <table style="margin-top: 4px; font-size: 11px; background: #fafafa; border: 1px solid var(--border); width: 100%;">
+      <table style="margin-top: 4px; font-size: 11px; background: #fafafa; border: 1px solid var(--border); width: 100%; table-layout: fixed;">
+        <colgroup>
+          <col style="width: 110px;" />
+          <col />
+          <col />
+        </colgroup>
         <thead>
           <tr>
-            <th style="padding: 2px 6px; font-size: 10px; width: 95px;">Field</th>
-            <th style="padding: 2px 6px; font-size: 10px;">Sheet now</th>
-            <th style="padding: 2px 6px; font-size: 10px;">→ After</th>
+            <th style="padding: 3px 8px; font-size: 10px; text-align: left;">Field</th>
+            <th style="padding: 3px 8px; font-size: 10px; text-align: left;">Sheet now</th>
+            <th style="padding: 3px 8px; font-size: 10px; text-align: left;">→ After</th>
           </tr>
         </thead>
         <tbody>
           <% updates.slice(0, 8).forEach((u) => { %>
             <tr>
-              <td style="padding: 2px 6px; font-family: monospace; vertical-align: top;"><%= u.col %></td>
-              <td style="padding: 2px 6px; vertical-align: top; color: #666; max-width: 200px; word-break: break-word; white-space: pre-wrap;"><%= clip(u.from, 120) %></td>
-              <td style="padding: 2px 6px; vertical-align: top; color: #128a3e; max-width: 200px; word-break: break-word; white-space: pre-wrap;"><%= clip(u.to, 120) %></td>
+              <td style="padding: 3px 8px; font-family: monospace; vertical-align: top; word-break: break-word;"><%= u.col %></td>
+              <td style="padding: 3px 8px; vertical-align: top; color: #666; word-break: break-word; white-space: pre-wrap;"><%= clip(u.from, 240) %></td>
+              <td style="padding: 3px 8px; vertical-align: top; color: #128a3e; word-break: break-word; white-space: pre-wrap;"><%= clip(u.to, 240) %></td>
             </tr>
           <% }); %>
           <% if (updates.length > 8) { %>
-            <tr><td colspan="3" style="padding: 2px 6px; font-size: 10px;" class="muted">+ <%= updates.length - 8 %> more change<%= updates.length - 8 === 1 ? '' : 's' %></td></tr>
+            <tr><td colspan="3" style="padding: 3px 8px; font-size: 10px;" class="muted">+ <%= updates.length - 8 %> more change<%= updates.length - 8 === 1 ? '' : 's' %></td></tr>
           <% } %>
         </tbody>
       </table>
