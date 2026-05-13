@@ -36,16 +36,25 @@ type RefreshAction = {
 function stripWhitespace(s: string): string {
   return s.replace(/\s+/g, "");
 }
+function normalizeAddress(s: string): string {
+  return s.replace(/[\s,]+/g, " ").trim().toLowerCase();
+}
 function normalizePhoneCsv(s: string): string {
-  return s
-    .split(/[,;]/)
-    .map((p) => {
-      const digits = p.replace(/\D/g, "");
-      return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-    })
-    .filter((p) => p.length > 0)
-    .sort()
-    .join(",");
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const digits = piece.replace(/\D/g, "");
+    const trimmed = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    if (trimmed) set.add(trimmed);
+  }
+  return [...set].sort().join(",");
+}
+function normalizeEmailCsv(s: string): string {
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const e = piece.trim().toLowerCase();
+    if (e) set.add(e);
+  }
+  return [...set].sort().join(",");
 }
 function isFormattingOnlyChange(change: FieldChange): boolean {
   if (change.col === RESOURCE_NAME_COL) return change.from === "";
@@ -53,8 +62,14 @@ function isFormattingOnlyChange(change: FieldChange): boolean {
   if (change.col === "phone" || change.col === "phones") {
     return normalizePhoneCsv(change.from) === normalizePhoneCsv(change.to);
   }
+  if (change.col === "email" || change.col === "emails") {
+    return normalizeEmailCsv(change.from) === normalizeEmailCsv(change.to);
+  }
   if (change.col === "description") {
     return stripWhitespace(change.from) === stripWhitespace(change.to);
+  }
+  if (change.col === "address") {
+    return normalizeAddress(change.from) === normalizeAddress(change.to);
   }
   return false;
 }
@@ -184,7 +199,9 @@ async function main() {
   }
 
   if (cellUpdates.length === 0) {
-    console.log(`No live matches; ${skippedMissing} review(s) referenced rows that no longer exist.`);
+    console.log(`No live matches.`);
+    console.log(`  skipped missing: ${skippedMissing}`);
+    console.log(`  skipped drift:   ${skippedDrift}`);
     return;
   }
 

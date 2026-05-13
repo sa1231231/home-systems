@@ -276,9 +276,12 @@ function isResourceNameBackfill(op: RefreshOp): boolean {
  * - `google_resource_name`: binding Google's stable ID (only set when empty).
  * - `updated_at`: mechanical sync timestamp.
  * - `phone`, `phones`: same digits (after stripping non-digits + leading 1).
- * - `description`: same content after collapsing all whitespace (catches
- *   Dex import flattening newlines into nothing, e.g. "Vocal teacher24221
- *   cascades dr" vs Google's "Vocal teacher\n\n24221 cascades dr").
+ * - `description`: same content after collapsing all whitespace (catches Dex
+ *   import flattening newlines, e.g. "Vocal teacher24221 cascades dr" vs
+ *   "Vocal teacher\n\n24221 cascades dr").
+ * - `address`: same content after collapsing whitespace AND comma separators
+ *   (catches "Los Angeles, CA,US" vs "Los Angeles, CA\nUS" — Google uses
+ *   newlines between lines; Dex import joined them with commas).
  */
 function isFormattingOnlyChange(change: FieldChange): boolean {
   if (change.col === RESOURCE_NAME_COL) return change.from === "";
@@ -286,8 +289,14 @@ function isFormattingOnlyChange(change: FieldChange): boolean {
   if (change.col === "phone" || change.col === "phones") {
     return normalizePhoneCsv(change.from) === normalizePhoneCsv(change.to);
   }
+  if (change.col === "email" || change.col === "emails") {
+    return normalizeEmailCsv(change.from) === normalizeEmailCsv(change.to);
+  }
   if (change.col === "description") {
     return stripWhitespace(change.from) === stripWhitespace(change.to);
+  }
+  if (change.col === "address") {
+    return normalizeAddress(change.from) === normalizeAddress(change.to);
   }
   return false;
 }
@@ -296,16 +305,33 @@ function stripWhitespace(s: string): string {
   return s.replace(/\s+/g, "");
 }
 
+/** Collapse runs of whitespace + commas down to a single space — address
+ *  formatting from Google (newline-separated lines) vs Dex (comma-joined)
+ *  should compare equal. */
+function normalizeAddress(s: string): string {
+  return s.replace(/[\s,]+/g, " ").trim().toLowerCase();
+}
+
 function normalizePhoneCsv(s: string): string {
-  return s
-    .split(/[,;]/)
-    .map((p) => {
-      const digits = p.replace(/\D/g, "");
-      return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-    })
-    .filter((p) => p.length > 0)
-    .sort()
-    .join(",");
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const digits = piece.replace(/\D/g, "");
+    const trimmed = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    if (trimmed) set.add(trimmed);
+  }
+  return [...set].sort().join(",");
+}
+
+/** Normalize an email or CSV-of-emails: lowercase, trim, split on
+ *  comma/semicolon, dedupe, sort. Treats case + spacing + duplicate entries
+ *  as formatting only. */
+function normalizeEmailCsv(s: string): string {
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const e = piece.trim().toLowerCase();
+    if (e) set.add(e);
+  }
+  return [...set].sort().join(",");
 }
 
 /**
