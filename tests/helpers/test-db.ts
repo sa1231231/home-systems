@@ -31,6 +31,7 @@ const ALL_TABLES = [
   "processed_transactions",
   "daily_op_counters",
   "triage_runs",
+  "contact_groups",
   "_meta",
 ];
 

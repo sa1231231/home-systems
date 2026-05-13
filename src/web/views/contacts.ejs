@@ -187,20 +187,6 @@
           var t = e.target;
           if (t && t.matches && t.matches('input.bulk-select')) onCheckboxClick(e, t);
         });
-        // For both bulk forms, swap the hidden 'ids' input to multiple inputs
-        // so Express body-parser produces ids[] rather than "1,2,3".
-        function explodeIds(formId, hiddenId) {
-          var form = document.getElementById(formId);
-          var hidden = document.getElementById(hiddenId);
-          if (!form || !hidden) return;
-          form.addEventListener('htmx:configRequest', function (evt) {
-            delete evt.detail.parameters.ids;
-            var ids = (hidden.value || '').split(',').filter(Boolean);
-            evt.detail.parameters['ids'] = ids;
-          });
-        }
-        explodeIds('bulk-approve-form', 'bulk-approve-ids');
-        explodeIds('bulk-reject-form', 'bulk-reject-ids');
         var headerToggle = document.getElementById('bulk-header-toggle');
         headerToggle.addEventListener('change', function () {
           checkboxes().forEach(function (cb) { cb.checked = headerToggle.checked; });

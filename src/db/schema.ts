@@ -225,6 +225,29 @@ export const scraperDigests = pgTable(
   }),
 );
 
+/**
+ * The set of group names contacts can be filed under (e.g. "Real Estate",
+ * "Coaches", "LinkedIn Connections"). Seeded once from the distinct values
+ * already present in dex_contacts.groups; new groups can be added directly
+ * here without touching the sheet. Acts as the authoritative source for the
+ * UI dropdown — no more reading from a renameable Sheets tab.
+ */
+export const contactGroups = pgTable(
+  "contact_groups",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    name: text("name").notNull().unique(),
+    /** Optional sort weight (lower first). Defaults to 100 so manual
+     *  reordering is possible without touching every row. */
+    sortOrder: integer("sort_order").notNull().default(100),
+    archived: boolean("archived").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    nameIdx: index("contact_groups_name_idx").on(t.name),
+  }),
+);
+
 export const triageRuns = pgTable(
   "triage_runs",
   {

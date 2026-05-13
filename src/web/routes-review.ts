@@ -129,17 +129,26 @@ export function makeReviewUiRouter(): Router {
     }
   });
 
-  // Bulk approve/skip. Takes ids[] from a multi-select form. Calls the same
-  // per-entry handlers; on success triggers HX-Refresh so the queue reloads.
-  // Already-decided entries are skipped silently (they don't block the batch).
+  // Bulk approve/skip. Takes a CSV `ids` string from the form (set by JS
+  // from the toolbar's hidden input). Calls the per-entry handlers; on
+  // success triggers HX-Refresh so the queue reloads. Already-decided
+  // entries are skipped silently and don't block the batch.
   const BulkBody = z.object({
-    ids: z.union([
-      z.array(z.coerce.number().int().positive()).max(500),
-      z.coerce.number().int().positive(),
-    ]),
+    ids: z
+      .string()
+      .min(1, "no ids provided")
+      .transform((s) =>
+        s
+          .split(",")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0)
+          .map((p) => Number.parseInt(p, 10))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      )
+      .refine((arr) => arr.length > 0 && arr.length <= 500, "between 1 and 500 ids required"),
   });
   function normalizeIds(parsed: z.infer<typeof BulkBody>): number[] {
-    return Array.isArray(parsed.ids) ? parsed.ids : [parsed.ids];
+    return parsed.ids;
   }
 
   router.post("/bulk/approve", async (req, res) => {

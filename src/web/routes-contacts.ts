@@ -21,7 +21,6 @@ import {
 import { groupBySession } from "./session-groups.js";
 import {
   readContactsTab,
-  readGroupNames,
   getSheetIdByTitle,
   deleteDataRows,
   batchUpdateCells,
@@ -29,6 +28,7 @@ import {
   type CellUpdate,
 } from "../integrations/google/sheets.js";
 import { enforceConfiguredDailyLimit } from "../safety/limits.js";
+import { listGroups } from "../sync/contact-groups.js";
 import { withChangelog } from "../changelog/index.js";
 import { buildMergePlan, type MergePlan } from "../sync/contacts-merge.js";
 import { latestRunFor, withTriageRun } from "../sync/triage-runs.js";
@@ -133,26 +133,18 @@ export function makeContactsUiRouter(): Router {
     };
     let audit: AuditView | null = null;
     let sheetUrl: string | null = null;
-    let availableGroups: string[] = [];
+    // Group list lives in Postgres (contact_groups), not the sheet — sheet
+    // tab names are too easy to rename. Always loaded so the dropdown works
+    // even when sheet creds aren't configured.
+    const availableGroups: string[] = (await listGroups()).map((g) => g.name);
     const matchedRowsByEntryId: Record<number, RowPreview[]> = {};
     const mergePreviewByEntryId: Record<number, MergePreview | null> = {};
     if (hasGoogleCreds()) {
       try {
         const creds = requireGoogleCreds();
         sheetUrl = `https://docs.google.com/spreadsheets/d/${creds.sheetId}/edit`;
-        const cfg = getConfig();
-        const tabName = cfg.CONTACTS_TAB;
+        const tabName = getConfig().CONTACTS_TAB;
         const tab = await readContactsTab(getOAuthClient(), creds.sheetId, { tab: tabName });
-        try {
-          availableGroups = await readGroupNames(
-            getOAuthClient(),
-            creds.sheetId,
-            cfg.CONTACTS_GROUPS_LOOKUP_TAB,
-            cfg.CONTACTS_GROUPS_LOOKUP_COLUMN,
-          );
-        } catch {
-          availableGroups = [];
-        }
         const records = tab.rows.map((r) => r.record);
         const report = findAuditIssues(records);
         const rowView = (rowIndex: number): RowPreview => {
