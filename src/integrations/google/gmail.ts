@@ -12,15 +12,17 @@ const TRIAGE_QUERY_BASE =
   "in:inbox -category:promotions -category:social " +
   '-label:"Noise" -label:"Worth Reading" -label:"Needs Reply"';
 
-/** Triage looks back over the last 72 hours on every run. */
+/** Triage looks back over the last 72 hours (3 days) on every run. */
 export const TRIAGE_WINDOW_HOURS = 72;
 
-/** The triage search query, scoped to the last TRIAGE_WINDOW_HOURS. */
-export function triageQuery(now: Date = new Date()): string {
-  const afterEpoch = Math.floor(
-    (now.getTime() - TRIAGE_WINDOW_HOURS * 3600 * 1000) / 1000,
-  );
-  return `${TRIAGE_QUERY_BASE} after:${afterEpoch}`;
+/**
+ * The triage search query, scoped to the last 3 days. Uses Gmail's
+ * documented `newer_than:Nd` operator — `after:<epoch>` is silently
+ * ignored by the Gmail API, which returns the whole inbox unfiltered.
+ */
+export function triageQuery(): string {
+  const days = Math.round(TRIAGE_WINDOW_HOURS / 24);
+  return `${TRIAGE_QUERY_BASE} newer_than:${days}d`;
 }
 
 export type GmailMessageRef = { id: string; threadId: string };
