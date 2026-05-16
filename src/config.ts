@@ -44,7 +44,6 @@ export const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   EMAIL_TRIAGE_CRON_SCHEDULE: z.string().default("0 7 * * *"),
-  EMAIL_TRIAGE_CRON_LIMIT: z.coerce.number().int().positive().max(500).default(50),
   TRANSACTIONS_SHEET_ID: z.string().optional(),
   TRANSACTIONS_TAB: z.string().default("Transactions"),
   CATEGORIES_TAB: z.string().default("Categories"),

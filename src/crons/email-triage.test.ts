@@ -62,14 +62,14 @@ afterEach(() => {
 
 describe("startEmailTriageCron", () => {
   it("logs and returns when disabled", () => {
-    startEmailTriageCron({ enabled: false, schedule: "0 7 * * *", limit: 10 });
+    startEmailTriageCron({ enabled: false, schedule: "0 7 * * *" });
     expect(scheduleMock).not.toHaveBeenCalled();
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("disabled"));
   });
 
   it("logs an error and skips scheduling on invalid cron expression", () => {
     validateMock.mockReturnValue(false);
-    startEmailTriageCron({ enabled: true, schedule: "garbage", limit: 10 });
+    startEmailTriageCron({ enabled: true, schedule: "garbage" });
     expect(scheduleMock).not.toHaveBeenCalled();
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
@@ -78,7 +78,7 @@ describe("startEmailTriageCron", () => {
     validateMock.mockReturnValue(true);
     const stopFn = vi.fn();
     scheduleMock.mockReturnValue({ stop: stopFn } as never);
-    startEmailTriageCron({ enabled: true, schedule: "0 7 * * *", limit: 25 });
+    startEmailTriageCron({ enabled: true, schedule: "0 7 * * *" });
     expect(scheduleMock).toHaveBeenCalledOnce();
     const [scheduleStr, , options] = scheduleMock.mock.calls[0];
     expect(scheduleStr).toBe("0 7 * * *");
@@ -91,7 +91,6 @@ describe("startEmailTriageCron", () => {
     startEmailTriageCron({
       enabled: true,
       schedule: "0 7 * * *",
-      limit: 25,
       timezone: "America/New_York",
     });
     expect(scheduleMock.mock.calls[0][2]).toEqual({ timezone: "America/New_York" });
@@ -101,14 +100,14 @@ describe("startEmailTriageCron", () => {
     validateMock.mockReturnValue(true);
     const stopFn = vi.fn();
     scheduleMock.mockReturnValue({ stop: stopFn } as never);
-    startEmailTriageCron({ enabled: true, schedule: "0 7 * * *", limit: 10 });
+    startEmailTriageCron({ enabled: true, schedule: "0 7 * * *" });
     stopEmailTriageCron();
     expect(stopFn).toHaveBeenCalled();
   });
 });
 
 describe("runEmailTriageOnce", () => {
-  it("calls triageAllAccounts with the limit and a 'cron:' session id", async () => {
+  it("calls triageAllAccounts with a 'cron:' session id", async () => {
     requireCredsMock.mockReturnValue({
       clientId: "x",
       clientSecret: "y",
@@ -125,10 +124,9 @@ describe("runEmailTriageOnce", () => {
       items: [],
       accounts: [],
     });
-    await runEmailTriageOnce({ limit: 25 });
+    await runEmailTriageOnce();
     expect(triageMock).toHaveBeenCalledOnce();
     const [opts] = triageMock.mock.calls[0];
-    expect(opts.limit).toBe(25);
     expect(opts.sessionId.startsWith("cron:")).toBe(true);
     expect(opts.caller).toBe("cron:email-triage");
   });
@@ -137,7 +135,7 @@ describe("runEmailTriageOnce", () => {
     requireCredsMock.mockImplementation(() => {
       throw new MissingGoogleCredsError();
     });
-    await runEmailTriageOnce({ limit: 10 });
+    await runEmailTriageOnce();
     expect(triageMock).not.toHaveBeenCalled();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringMatching(/skipped: google credentials/),
@@ -153,7 +151,7 @@ describe("runEmailTriageOnce", () => {
     });
     oauthMock.mockReturnValue({} as never);
     triageMock.mockRejectedValueOnce(new Error("gmail 503"));
-    await runEmailTriageOnce({ limit: 10 }); // does not throw
+    await runEmailTriageOnce(); // does not throw
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringMatching(/FAILED/));
   });
 });

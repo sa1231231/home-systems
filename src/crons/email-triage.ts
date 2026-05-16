@@ -6,7 +6,6 @@ import { triageAllAccounts } from "../sync/email-triage.js";
 export type EmailTriageCronOptions = {
   enabled: boolean;
   schedule: string;
-  limit: number;
   timezone?: string;
 };
 
@@ -22,10 +21,8 @@ export function startEmailTriageCron(opts: EmailTriageCronOptions): void {
     return;
   }
   const tz = opts.timezone || "UTC";
-  console.log(
-    `[cron] email triage scheduled: "${opts.schedule}" (${tz}), limit=${opts.limit}`,
-  );
-  scheduledTask = cron.schedule(opts.schedule, () => runEmailTriageOnce({ limit: opts.limit }), {
+  console.log(`[cron] email triage scheduled: "${opts.schedule}" (${tz})`);
+  scheduledTask = cron.schedule(opts.schedule, () => runEmailTriageOnce(), {
     timezone: tz,
   });
 }
@@ -37,14 +34,13 @@ export function stopEmailTriageCron(): void {
   }
 }
 
-export async function runEmailTriageOnce(opts: { limit: number }): Promise<void> {
+export async function runEmailTriageOnce(): Promise<void> {
   const startedAt = new Date().toISOString();
   const sessionId = `cron:${randomUUID()}`;
   console.log(`[cron] email triage starting at ${startedAt} sessionId=${sessionId}`);
   try {
     requireGoogleCreds();
     const summary = await triageAllAccounts({
-      limit: opts.limit,
       sessionId,
       caller: "cron:email-triage",
     });

@@ -155,7 +155,6 @@ async function start() {
   startEmailTriageCron({
     enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
     schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
-    limit: config.EMAIL_TRIAGE_CRON_LIMIT,
     timezone: config.CRON_TZ,
   });
 

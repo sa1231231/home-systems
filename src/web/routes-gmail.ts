@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { and, asc, desc, eq, like, gte } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds } from "../integrations/google/oauth.js";
@@ -17,10 +16,6 @@ function fourteenDaysAgo(): Date {
 
 const DOMAIN = "email";
 const UNSCOPED = "(unscoped)";
-
-const TriageBody = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
 
 type RuleRow = typeof rules.$inferSelect;
 type ReviewRow = typeof needsReview.$inferSelect;
@@ -132,11 +127,9 @@ export function makeGmailUiRouter(): Router {
       return;
     }
     try {
-      const { limit } = TriageBody.parse(req.body ?? {});
       const sessionId = req.sessionId ?? newSessionId();
       const summary = await withTriageRun("email", sessionId, "ui:gmail.triage", () =>
         triageAllAccounts({
-          limit,
           sessionId,
           caller: "ui:gmail.triage",
         }),

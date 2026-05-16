@@ -90,7 +90,6 @@ export type EmailSubject = {
 };
 
 export type TriageOptions = {
-  limit: number;
   dryRun?: boolean;
   sessionId: string;
   caller?: string;
@@ -194,7 +193,7 @@ export async function triageEmails(
   const caller = options.caller ?? "api:emails.triage";
   const items: TriageItem[] = [];
 
-  const refs = await listTriageInbox(client, { limit: options.limit });
+  const refs = await listTriageInbox(client);
 
   for (const ref of refs) {
     try {

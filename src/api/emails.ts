@@ -9,7 +9,6 @@ import { MissingAnthropicKeyError } from "../ai/index.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
 
 const TriageQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(10),
   dry_run: z.coerce.boolean().default(false),
 });
 
@@ -36,10 +35,9 @@ export function makeEmailsRouter(): Router {
 
   router.post("/triage", async (req, res) => {
     try {
-      const { limit, dry_run } = TriageQuery.parse(req.query);
+      const { dry_run } = TriageQuery.parse(req.query);
       requireGoogleCreds();
       const summary = await triageAllAccounts({
-        limit,
         dryRun: dry_run,
         sessionId: req.sessionId,
         caller: dry_run ? "api:emails.triage:dry-run" : "api:emails.triage",

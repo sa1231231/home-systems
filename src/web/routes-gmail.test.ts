@@ -117,10 +117,7 @@ describe("routes-gmail", () => {
           { account: "me@gmail.com", total: 5, matched: 2, queued: 1, skipped: 2, errors: 0 },
         ],
       });
-      const res = await request(buildApp())
-        .post("/ui/gmail/triage")
-        .type("form")
-        .send({ limit: "5" });
+      const res = await request(buildApp()).post("/ui/gmail/triage");
       expect(res.status).toBe(200);
       expect(res.headers["hx-refresh"]).toBe("true");
       expect(res.text).toMatch(/matched=2/);
@@ -128,32 +125,13 @@ describe("routes-gmail", () => {
 
       expect(triageMock).toHaveBeenCalledOnce();
       const opts = triageMock.mock.calls[0][0];
-      expect(opts.limit).toBe(5);
       expect(opts.caller).toBe("ui:gmail.triage");
     });
 
-    it("defaults limit to 50 when not provided", async () => {
-      hasCredsMock.mockReturnValue(true);
-      triageMock.mockResolvedValueOnce({
-        total: 0,
-        matched: 0,
-        queued: 0,
-        skipped: 0,
-        errors: 0,
-        items: [],
-        accounts: [],
-      });
-      await request(buildApp()).post("/ui/gmail/triage");
-      expect(triageMock.mock.calls[0][0].limit).toBe(50);
-    });
-
-    it("clamps invalid limit and returns 500 banner on triageAllAccounts throwing", async () => {
+    it("returns a 500 banner when triageAllAccounts throws", async () => {
       hasCredsMock.mockReturnValue(true);
       triageMock.mockRejectedValueOnce(new Error("gmail 500"));
-      const res = await request(buildApp())
-        .post("/ui/gmail/triage")
-        .type("form")
-        .send({ limit: "5" });
+      const res = await request(buildApp()).post("/ui/gmail/triage");
       expect(res.status).toBe(500);
       expect(res.text).toMatch(/gmail 500/);
       expect(res.headers["hx-refresh"]).toBeUndefined();
@@ -162,10 +140,7 @@ describe("routes-gmail", () => {
     it("escapes < in the error banner to prevent HTML injection", async () => {
       hasCredsMock.mockReturnValue(true);
       triageMock.mockRejectedValueOnce(new Error("<script>alert(1)</script>"));
-      const res = await request(buildApp())
-        .post("/ui/gmail/triage")
-        .type("form")
-        .send({ limit: "5" });
+      const res = await request(buildApp()).post("/ui/gmail/triage");
       expect(res.status).toBe(500);
       expect(res.text).not.toContain("<script>alert");
       expect(res.text).toContain("&lt;script");
@@ -175,10 +150,7 @@ describe("routes-gmail", () => {
       hasCredsMock.mockReturnValue(true);
       const { MissingAnthropicKeyError } = await import("../ai/index.js");
       triageMock.mockRejectedValueOnce(new MissingAnthropicKeyError());
-      const res = await request(buildApp())
-        .post("/ui/gmail/triage")
-        .type("form")
-        .send({ limit: "5" });
+      const res = await request(buildApp()).post("/ui/gmail/triage");
       expect(res.status).toBe(503);
       expect(res.text).toMatch(/ANTHROPIC_API_KEY/);
     });

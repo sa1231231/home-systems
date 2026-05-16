@@ -2,16 +2,26 @@ import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 
 /**
- * Inbox emails that haven't yet been tagged with one of the three triage
- * labels. No time window: each run picks up where the last left off, so
- * the user can chew through a backlog by clicking multiple times.
- * Excludes Gmail's Promotions and Social tabs — Gmail already filters
- * those, no reason to spend AI calls re-classifying them. Updates is
- * intentionally kept (mixed content: Apps Script alerts, etc.).
+ * Inbox emails from the last TRIAGE_WINDOW_HOURS that haven't yet been
+ * tagged with one of the three triage labels. Excludes Gmail's Promotions
+ * and Social tabs — Gmail already filters those, no reason to spend AI calls
+ * re-classifying them. Updates is intentionally kept (mixed content: Apps
+ * Script alerts, etc.).
  */
-const TRIAGE_QUERY =
+const TRIAGE_QUERY_BASE =
   "in:inbox -category:promotions -category:social " +
   '-label:"Noise" -label:"Worth Reading" -label:"Needs Reply"';
+
+/** Triage looks back over the last 72 hours on every run. */
+export const TRIAGE_WINDOW_HOURS = 72;
+
+/** The triage search query, scoped to the last TRIAGE_WINDOW_HOURS. */
+export function triageQuery(now: Date = new Date()): string {
+  const afterEpoch = Math.floor(
+    (now.getTime() - TRIAGE_WINDOW_HOURS * 3600 * 1000) / 1000,
+  );
+  return `${TRIAGE_QUERY_BASE} after:${afterEpoch}`;
+}
 
 export type GmailMessageRef = { id: string; threadId: string };
 
@@ -44,20 +54,29 @@ export async function getProfileEmail(client: OAuth2Client): Promise<string> {
   return email;
 }
 
-export async function listTriageInbox(
-  client: OAuth2Client,
-  options: { limit: number },
-): Promise<GmailMessageRef[]> {
+/**
+ * Every triage-eligible message in the last 72h — fully paginated, no cap.
+ * Already-tagged mail is excluded by the query; already-reviewed mail is
+ * skipped later via the processed_emails ledger.
+ */
+export async function listTriageInbox(client: OAuth2Client): Promise<GmailMessageRef[]> {
   const gmail = google.gmail({ version: "v1", auth: client });
-  const res = await gmail.users.messages.list({
-    userId: "me",
-    q: TRIAGE_QUERY,
-    maxResults: options.limit,
-  });
-  const messages = res.data.messages ?? [];
-  return messages
-    .filter((m): m is { id: string; threadId: string } => Boolean(m.id) && Boolean(m.threadId))
-    .map((m) => ({ id: m.id, threadId: m.threadId }));
+  const q = triageQuery();
+  const out: GmailMessageRef[] = [];
+  let pageToken: string | undefined;
+  do {
+    const res = await gmail.users.messages.list({
+      userId: "me",
+      q,
+      maxResults: 500,
+      pageToken,
+    });
+    for (const m of res.data.messages ?? []) {
+      if (m.id && m.threadId) out.push({ id: m.id, threadId: m.threadId });
+    }
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+  return out;
 }
 
 export async function getMessageMetadata(

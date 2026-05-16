@@ -57,16 +57,11 @@ describe("api/emails", () => {
   });
 
   describe("POST /emails/triage", () => {
-    it("rejects out-of-range limit", async () => {
-      const res = await request(buildApp()).post("/emails/triage?limit=9999");
-      expect(res.status).toBe(400);
-    });
-
     it("returns 503 when google creds are missing", async () => {
       requireCredsMock.mockImplementation(() => {
         throw new MissingGoogleCredsError();
       });
-      const res = await request(buildApp()).post("/emails/triage?limit=5");
+      const res = await request(buildApp()).post("/emails/triage");
       expect(res.status).toBe(503);
     });
 
@@ -87,7 +82,7 @@ describe("api/emails", () => {
         items: [],
         accounts: [],
       });
-      const res = await request(buildApp()).post("/emails/triage?limit=5&dry_run=true");
+      const res = await request(buildApp()).post("/emails/triage?dry_run=true");
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         ok: true,

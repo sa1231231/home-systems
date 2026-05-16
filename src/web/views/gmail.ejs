@@ -10,15 +10,7 @@
     hx-disabled-elt="find button"
     hx-indicator="#triage-indicator"
   >
-    <label style="font-size: 12px; color: var(--muted);">
-      batch
-      <select name="limit" style="margin-left: 4px; padding: 4px 6px;">
-        <option value="10">10</option>
-        <option value="25">25</option>
-        <option value="50" selected>50</option>
-        <option value="100">100</option>
-      </select>
-    </label>
+    <span class="muted" style="font-size: 12px; margin-right: 8px;">scans the last 72h across all accounts</span>
     <button type="submit" style="padding: 6px 14px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
       Run triage now
     </button>
