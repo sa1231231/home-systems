@@ -9,7 +9,7 @@ vi.mock("../sync/email-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/email-triage.js")>(
     "../sync/email-triage.js",
   );
-  return { ...actual, triageEmails: vi.fn() };
+  return { ...actual, triageAllAccounts: vi.fn() };
 });
 vi.mock("../integrations/google/oauth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/oauth.js")>(
@@ -23,7 +23,7 @@ vi.mock("../integrations/google/oauth.js", async () => {
   };
 });
 
-import { triageEmails } from "../sync/email-triage.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
 import {
   getOAuthClient,
   MissingGoogleCredsError,
@@ -31,7 +31,7 @@ import {
 } from "../integrations/google/oauth.js";
 import { makeEmailsRouter } from "./emails.js";
 
-const triageMock = vi.mocked(triageEmails);
+const triageMock = vi.mocked(triageAllAccounts);
 const oauthMock = vi.mocked(getOAuthClient);
 const requireCredsMock = vi.mocked(requireGoogleCreds);
 
@@ -85,6 +85,7 @@ describe("api/emails", () => {
         skipped: 1,
         errors: 0,
         items: [],
+        accounts: [],
       });
       const res = await request(buildApp()).post("/emails/triage?limit=5&dry_run=true");
       expect(res.status).toBe(200);
@@ -95,7 +96,7 @@ describe("api/emails", () => {
         matched: 2,
         queued: 2,
       });
-      expect(triageMock.mock.calls[0][1].dryRun).toBe(true);
+      expect(triageMock.mock.calls[0][0].dryRun).toBe(true);
     });
   });
 

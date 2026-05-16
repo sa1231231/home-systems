@@ -124,7 +124,7 @@ describe("api/needs-review", () => {
         .send({
           promote_to_rule: {
             name: "rule-1",
-            match: { op: "present", field: "from" },
+            match: { op: "equals", field: "from", value: "sender@example.com" },
           },
         });
       expect(res.body.promoted_rule_id).toBeGreaterThan(0);
@@ -171,7 +171,10 @@ describe("api/needs-review", () => {
         .post(`/needs-review/${id}/correct`)
         .send({
           decision: { category: "needs_reply", reasoning: "wrong" },
-          promote_to_rule: { name: "corrected-rule", match: { op: "present", field: "from" } },
+          promote_to_rule: {
+            name: "corrected-rule",
+            match: { op: "equals", field: "from", value: "sender@example.com" },
+          },
         });
       expect(res.status).toBe(200);
       expect(res.body.promoted_rule_id).toBeGreaterThan(0);

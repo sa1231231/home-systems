@@ -7,6 +7,7 @@ import {
   modifyLabels,
   resolveLabelIds,
 } from "../integrations/google/gmail.js";
+import { getOAuthClient, resolveClientForAccount } from "../integrations/google/oauth.js";
 import { enforceConfiguredDailyLimit } from "../safety/limits.js";
 
 export const EMAIL_MODIFY_OP = "email.modify_labels";
@@ -21,6 +22,8 @@ export type ApplyMeta = {
   sessionId: string;
   caller: string;
   intent?: string;
+  /** Which Gmail account this message belongs to — recorded so Undo can pick the right client. */
+  account?: string;
 };
 
 export type ApplyResult = {
@@ -92,6 +95,9 @@ export async function applyEmailAction(
         add_label_names: action.add_labels,
         remove_label_names: action.remove_labels,
         reasoning: action.reasoning ?? null,
+        // Which account this message lives in — the reverser needs it to
+        // pick the right OAuth client.
+        account: meta.account ?? null,
       },
       after: { labels: plan.afterLabels },
       externalTarget: `gmail:message:${gmailId}`,
@@ -118,12 +124,16 @@ export function planEmailReversal(entry: ChangelogRow): {
   return { addLabelIds: removed, removeLabelIds: added };
 }
 
-export function registerEmailReverser(client: OAuth2Client): void {
+export function registerEmailReverser(): void {
   registry.register(EMAIL_MODIFY_OP, async (entry) => {
     const plan = planEmailReversal(entry);
     if (entry.targetKind !== "email" || !entry.targetId) {
       throw new Error(`unexpected target for ${EMAIL_MODIFY_OP}: ${entry.targetKind}/${entry.targetId}`);
     }
+    // Pick the OAuth client for the account this message lives in. Legacy
+    // entries (logged before multi-account) have no account → primary client.
+    const account = (entry.beforeState as { account?: string }).account;
+    const client = account ? await resolveClientForAccount(account) : getOAuthClient();
     await modifyLabels(client, entry.targetId, plan);
   });
 }

@@ -10,7 +10,7 @@ vi.mock("../sync/email-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/email-triage.js")>(
     "../sync/email-triage.js",
   );
-  return { ...actual, triageEmails: vi.fn() };
+  return { ...actual, triageAllAccounts: vi.fn() };
 });
 vi.mock("../integrations/google/oauth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/oauth.js")>(
@@ -24,7 +24,7 @@ vi.mock("../integrations/google/oauth.js", async () => {
 });
 
 import cron from "node-cron";
-import { triageEmails } from "../sync/email-triage.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
 import {
   getOAuthClient,
   MissingGoogleCredsError,
@@ -38,7 +38,7 @@ import {
 
 const validateMock = vi.mocked(cron.validate);
 const scheduleMock = vi.mocked(cron.schedule);
-const triageMock = vi.mocked(triageEmails);
+const triageMock = vi.mocked(triageAllAccounts);
 const requireCredsMock = vi.mocked(requireGoogleCreds);
 const oauthMock = vi.mocked(getOAuthClient);
 
@@ -108,7 +108,7 @@ describe("startEmailTriageCron", () => {
 });
 
 describe("runEmailTriageOnce", () => {
-  it("calls triageEmails with the limit and a 'cron:' session id", async () => {
+  it("calls triageAllAccounts with the limit and a 'cron:' session id", async () => {
     requireCredsMock.mockReturnValue({
       clientId: "x",
       clientSecret: "y",
@@ -123,10 +123,11 @@ describe("runEmailTriageOnce", () => {
       skipped: 0,
       errors: 0,
       items: [],
+      accounts: [],
     });
     await runEmailTriageOnce({ limit: 25 });
     expect(triageMock).toHaveBeenCalledOnce();
-    const [, opts] = triageMock.mock.calls[0];
+    const [opts] = triageMock.mock.calls[0];
     expect(opts.limit).toBe(25);
     expect(opts.sessionId.startsWith("cron:")).toBe(true);
     expect(opts.caller).toBe("cron:email-triage");

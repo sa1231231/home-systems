@@ -120,8 +120,8 @@ async function start() {
     const oauth = getOAuthClient();
     const sheetCreds = requireGoogleCreds();
     registerContactReversers(oauth);
-    registerEmailReverser(oauth);
-    registerEmailApplier(oauth);
+    registerEmailReverser();
+    registerEmailApplier();
     registerContactReviewAppliers(oauth, { spreadsheetId: sheetCreds.sheetId });
     console.log("contact + email reversers + email/contact appliers registered");
 

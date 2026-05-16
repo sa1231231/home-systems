@@ -21,19 +21,26 @@ const emailConfig: DomainConfig = {
   validateCorrection: (body) => EmailCorrectBody.parse(body),
   defaultRuleName: (entry) => {
     const subj = (entry.subject ?? {}) as Record<string, unknown>;
+    const account = typeof subj.account === "string" ? subj.account : "";
     const from = typeof subj.from === "string" ? subj.from : "";
-    if (from) return `auto: from=${from.slice(0, 80)}`;
+    if (from) return `auto: ${account ? account + " " : ""}from=${from.slice(0, 80)}`;
     return `auto: review #${entry.id}`;
   },
+  // Email rules are scoped per Gmail account: the match is a compound `all`
+  // condition with an `account` leaf plus the sender (or subject) leaf.
   defaultMatch: (entry) => {
     const subj = (entry.subject ?? {}) as Record<string, unknown>;
+    const account = typeof subj.account === "string" && subj.account ? subj.account : null;
+    const accountLeaf = account
+      ? [{ op: "equals", field: "account", value: account }]
+      : [];
     if (typeof subj.from === "string" && subj.from) {
-      return { op: "equals", field: "from", value: subj.from };
+      return { all: [...accountLeaf, { op: "equals", field: "from", value: subj.from }] };
     }
     if (typeof subj.subject === "string" && subj.subject) {
-      return { op: "equals", field: "subject", value: subj.subject };
+      return { all: [...accountLeaf, { op: "equals", field: "subject", value: subj.subject }] };
     }
-    return { op: "present", field: "from" };
+    return { all: [...accountLeaf, { op: "present", field: "from" }] };
   },
   buildCorrectedDecision: (category, previousCategory) => ({
     category,

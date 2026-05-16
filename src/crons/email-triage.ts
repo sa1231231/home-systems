@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { randomUUID } from "crypto";
-import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
-import { triageEmails } from "../sync/email-triage.js";
+import { MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
 
 export type EmailTriageCronOptions = {
   enabled: boolean;
@@ -43,14 +43,15 @@ export async function runEmailTriageOnce(opts: { limit: number }): Promise<void>
   console.log(`[cron] email triage starting at ${startedAt} sessionId=${sessionId}`);
   try {
     requireGoogleCreds();
-    const client = getOAuthClient();
-    const summary = await triageEmails(client, {
+    const summary = await triageAllAccounts({
       limit: opts.limit,
       sessionId,
       caller: "cron:email-triage",
     });
     console.log(
-      `[cron] email triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}`,
+      `[cron] email triage done across ${summary.accounts.length} account(s): ` +
+        `matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} ` +
+        `errors=${summary.errors} total=${summary.total}`,
     );
   } catch (err) {
     if (err instanceof MissingGoogleCredsError) {

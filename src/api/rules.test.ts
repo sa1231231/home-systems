@@ -13,13 +13,18 @@ function buildApp() {
   return app;
 }
 
+// Each rule gets a distinct match so the (domain, match) unique index never
+// rejects test fixtures. Callers can still override `match` explicitly.
+let ruleSeq = 0;
+
 async function insertRule(overrides: Partial<typeof rules.$inferInsert> = {}): Promise<number> {
+  ruleSeq += 1;
   const [row] = await db
     .insert(rules)
     .values({
       domain: "email",
       name: "r",
-      match: { op: "present", field: "from" } as never,
+      match: { op: "equals", field: "from", value: `sender-${ruleSeq}@example.com` } as never,
       action: { category: "noise" } as never,
       priority: 100,
       enabled: true,

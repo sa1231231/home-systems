@@ -9,22 +9,21 @@ vi.mock("../sync/email-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/email-triage.js")>(
     "../sync/email-triage.js",
   );
-  return { ...actual, triageEmails: vi.fn() };
+  return { ...actual, triageAllAccounts: vi.fn() };
 });
 vi.mock("../integrations/google/oauth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/oauth.js")>(
     "../integrations/google/oauth.js",
   );
-  return { ...actual, hasGoogleCreds: vi.fn(), getOAuthClient: vi.fn() };
+  return { ...actual, hasGoogleCreds: vi.fn() };
 });
 
-import { triageEmails } from "../sync/email-triage.js";
-import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
+import { hasGoogleCreds } from "../integrations/google/oauth.js";
 import { makeGmailUiRouter } from "./routes-gmail.js";
 
-const triageMock = vi.mocked(triageEmails);
+const triageMock = vi.mocked(triageAllAccounts);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
-const oauthMock = vi.mocked(getOAuthClient);
 
 function buildApp() {
   const app = makeTestApp();
@@ -45,7 +44,6 @@ describe("routes-gmail", () => {
     await handle.reset();
     triageMock.mockReset();
     hasCredsMock.mockReset();
-    oauthMock.mockReset();
   });
 
   describe("GET /ui/gmail", () => {
@@ -108,7 +106,6 @@ describe("routes-gmail", () => {
 
     it("runs triage and sets HX-Refresh + summary banner on success", async () => {
       hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
       triageMock.mockResolvedValueOnce({
         total: 5,
         matched: 2,
@@ -116,6 +113,9 @@ describe("routes-gmail", () => {
         skipped: 2,
         errors: 0,
         items: [],
+        accounts: [
+          { account: "me@gmail.com", total: 5, matched: 2, queued: 1, skipped: 2, errors: 0 },
+        ],
       });
       const res = await request(buildApp())
         .post("/ui/gmail/triage")
@@ -127,14 +127,13 @@ describe("routes-gmail", () => {
       expect(res.text).toMatch(/queued=1/);
 
       expect(triageMock).toHaveBeenCalledOnce();
-      const opts = triageMock.mock.calls[0][1];
+      const opts = triageMock.mock.calls[0][0];
       expect(opts.limit).toBe(5);
       expect(opts.caller).toBe("ui:gmail.triage");
     });
 
-    it("defaults limit to 10 when not provided", async () => {
+    it("defaults limit to 50 when not provided", async () => {
       hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
       triageMock.mockResolvedValueOnce({
         total: 0,
         matched: 0,
@@ -142,14 +141,14 @@ describe("routes-gmail", () => {
         skipped: 0,
         errors: 0,
         items: [],
+        accounts: [],
       });
       await request(buildApp()).post("/ui/gmail/triage");
-      expect(triageMock.mock.calls[0][1].limit).toBe(10);
+      expect(triageMock.mock.calls[0][0].limit).toBe(50);
     });
 
-    it("clamps invalid limit and returns 500 banner on triageEmails throwing", async () => {
+    it("clamps invalid limit and returns 500 banner on triageAllAccounts throwing", async () => {
       hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
       triageMock.mockRejectedValueOnce(new Error("gmail 500"));
       const res = await request(buildApp())
         .post("/ui/gmail/triage")
@@ -162,7 +161,6 @@ describe("routes-gmail", () => {
 
     it("escapes < in the error banner to prevent HTML injection", async () => {
       hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
       triageMock.mockRejectedValueOnce(new Error("<script>alert(1)</script>"));
       const res = await request(buildApp())
         .post("/ui/gmail/triage")
@@ -175,7 +173,6 @@ describe("routes-gmail", () => {
 
     it("returns 503 with an actionable banner when ANTHROPIC_API_KEY is missing", async () => {
       hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
       const { MissingAnthropicKeyError } = await import("../ai/index.js");
       triageMock.mockRejectedValueOnce(new MissingAnthropicKeyError());
       const res = await request(buildApp())

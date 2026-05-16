@@ -72,18 +72,24 @@ describe("getDomainConfig", () => {
 
     it("defaultMatch prefers from, then subject, then a presence sentinel", () => {
       expect(cfg.defaultMatch(makeEntry({ subject: { from: "a@b" } }))).toEqual({
-        op: "equals",
-        field: "from",
-        value: "a@b",
+        all: [{ op: "equals", field: "from", value: "a@b" }],
       });
       expect(cfg.defaultMatch(makeEntry({ subject: { subject: "hello" } }))).toEqual({
-        op: "equals",
-        field: "subject",
-        value: "hello",
+        all: [{ op: "equals", field: "subject", value: "hello" }],
       });
       expect(cfg.defaultMatch(makeEntry({ subject: {} }))).toEqual({
-        op: "present",
-        field: "from",
+        all: [{ op: "present", field: "from" }],
+      });
+    });
+
+    it("defaultMatch scopes the rule to the account when present", () => {
+      expect(
+        cfg.defaultMatch(makeEntry({ subject: { account: "me@gmail.com", from: "a@b" } })),
+      ).toEqual({
+        all: [
+          { op: "equals", field: "account", value: "me@gmail.com" },
+          { op: "equals", field: "from", value: "a@b" },
+        ],
       });
     });
 

@@ -3,8 +3,8 @@ import { and, asc, desc, eq, like, gte } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
-import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
-import { triageEmails } from "../sync/email-triage.js";
+import { hasGoogleCreds } from "../integrations/google/oauth.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
 import { newSessionId } from "../changelog/index.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { cronInfoForDomain } from "./cron-info.js";
@@ -80,15 +80,23 @@ export function makeGmailUiRouter(): Router {
       const { limit } = TriageBody.parse(req.body ?? {});
       const sessionId = req.sessionId ?? newSessionId();
       const summary = await withTriageRun("email", sessionId, "ui:gmail.triage", () =>
-        triageEmails(getOAuthClient(), {
+        triageAllAccounts({
           limit,
           sessionId,
           caller: "ui:gmail.triage",
         }),
       );
+      const perAccount = summary.accounts
+        .map(
+          (a) =>
+            `${a.account}: matched=${a.matched} queued=${a.queued} skipped=${a.skipped} errors=${a.errors}`,
+        )
+        .join(" · ");
       res.setHeader("HX-Refresh", "true");
       res.send(
-        `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,
+        `<div class="flash ok">Triage done across ${summary.accounts.length} account(s): ` +
+          `matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} ` +
+          `errors=${summary.errors} total=${summary.total}<br><span class="muted">${perAccount}</span></div>`,
       );
     } catch (err) {
       if (err instanceof MissingAnthropicKeyError) {

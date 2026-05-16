@@ -2,6 +2,8 @@ export type ApplyMeta = {
   sessionId: string;
   caller: string;
   intent?: string;
+  /** For email reviews: which Gmail account the subject belongs to. */
+  account?: string;
 };
 
 export type Applier = (

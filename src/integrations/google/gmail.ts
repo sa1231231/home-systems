@@ -26,6 +26,24 @@ export type GmailMetadata = {
   receivedAt: Date | null;
 };
 
+/**
+ * The authenticated account's own email address. This is the stable,
+ * human-readable identifier we use to scope triage state per account.
+ * Cached per client — the address never changes for a refresh token.
+ */
+const profileEmailCache = new WeakMap<OAuth2Client, string>();
+
+export async function getProfileEmail(client: OAuth2Client): Promise<string> {
+  const cached = profileEmailCache.get(client);
+  if (cached) return cached;
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const res = await gmail.users.getProfile({ userId: "me" });
+  const email = res.data.emailAddress;
+  if (!email) throw new Error("users.getProfile returned no emailAddress");
+  profileEmailCache.set(client, email);
+  return email;
+}
+
 export async function listTriageInbox(
   client: OAuth2Client,
   options: { limit: number },

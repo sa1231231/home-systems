@@ -8,6 +8,29 @@ export const ConfigSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REFRESH_TOKEN: z.string().optional(),
+  // JSON array of OAuth refresh tokens for additional Gmail accounts to triage.
+  // The primary GOOGLE_OAUTH_REFRESH_TOKEN is always included on top of these.
+  GMAIL_ACCOUNTS: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (!v || !v.trim()) return [] as string[];
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(v);
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GMAIL_ACCOUNTS must be valid JSON" });
+        return z.NEVER;
+      }
+      if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === "string" && x.length > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "GMAIL_ACCOUNTS must be a JSON array of non-empty strings",
+        });
+        return z.NEVER;
+      }
+      return parsed as string[];
+    }),
   CRM_SHEET_ID: z.string().optional(),
   CONTACTS_TAB: z.string().default("dex_contacts"),
   CONTACTS_SYNC_CRON_ENABLED: z

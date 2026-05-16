@@ -3,8 +3,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { processedEmails } from "../db/schema.js";
-import { getOAuthClient, MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
-import { triageEmails } from "../sync/email-triage.js";
+import { MissingGoogleCredsError, requireGoogleCreds } from "../integrations/google/oauth.js";
+import { triageAllAccounts } from "../sync/email-triage.js";
 import { MissingAnthropicKeyError } from "../ai/index.js";
 import { DailyLimitExceededError } from "../safety/limits.js";
 
@@ -21,6 +21,7 @@ const ListQuery = z.object({
 function processedRowToJson(row: typeof processedEmails.$inferSelect): Record<string, unknown> {
   return {
     id: row.id,
+    account: row.account,
     thread_id: row.threadId,
     first_seen_at: row.firstSeenAt,
     last_processed_at: row.lastProcessedAt,
@@ -37,8 +38,7 @@ export function makeEmailsRouter(): Router {
     try {
       const { limit, dry_run } = TriageQuery.parse(req.query);
       requireGoogleCreds();
-      const client = getOAuthClient();
-      const summary = await triageEmails(client, {
+      const summary = await triageAllAccounts({
         limit,
         dryRun: dry_run,
         sessionId: req.sessionId,

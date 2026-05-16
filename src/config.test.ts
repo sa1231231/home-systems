@@ -131,6 +131,31 @@ describe("ConfigSchema", () => {
     ).toThrow(/SESSION_SECRET/);
   });
 
+  it("defaults GMAIL_ACCOUNTS to an empty list when unset", () => {
+    const parsed = ConfigSchema.parse({ DATABASE_URL: "x" });
+    expect(parsed.GMAIL_ACCOUNTS).toEqual([]);
+  });
+
+  it("parses GMAIL_ACCOUNTS as a JSON array of refresh tokens", () => {
+    const parsed = ConfigSchema.parse({
+      DATABASE_URL: "x",
+      GMAIL_ACCOUNTS: '["1//token-a","1//token-b"]',
+    });
+    expect(parsed.GMAIL_ACCOUNTS).toEqual(["1//token-a", "1//token-b"]);
+  });
+
+  it("rejects GMAIL_ACCOUNTS that is not valid JSON", () => {
+    expect(() =>
+      ConfigSchema.parse({ DATABASE_URL: "x", GMAIL_ACCOUNTS: "not-json" }),
+    ).toThrow(/GMAIL_ACCOUNTS/);
+  });
+
+  it("rejects GMAIL_ACCOUNTS that is not an array of strings", () => {
+    expect(() =>
+      ConfigSchema.parse({ DATABASE_URL: "x", GMAIL_ACCOUNTS: '[1,2,3]' }),
+    ).toThrow(/GMAIL_ACCOUNTS/);
+  });
+
   it("preserves R2 credentials when present", () => {
     const parsed = ConfigSchema.parse({
       DATABASE_URL: "x",

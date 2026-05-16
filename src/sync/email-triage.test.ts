@@ -20,7 +20,8 @@ const SAMPLE: GmailMetadata = {
 
 describe("buildSubject", () => {
   it("flattens metadata into the rules-engine subject shape", () => {
-    expect(buildSubject(SAMPLE)).toEqual({
+    expect(buildSubject(SAMPLE, "me@home.com")).toEqual({
+      account: "me@home.com",
       from: "alice@example.com",
       to: "me@home.com",
       subject: "Welcome to Acme!",
@@ -41,7 +42,8 @@ describe("buildSubject", () => {
       labelIds: [],
       receivedAt: null,
     };
-    const s = buildSubject(partial);
+    const s = buildSubject(partial, "acct@home.com");
+    expect(s.account).toBe("acct@home.com");
     expect(s.from).toBeNull();
     expect(s.received_at).toBeNull();
     expect(s.labels).toEqual([]);

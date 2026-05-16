@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const meta = pgTable("_meta", {
@@ -93,6 +94,11 @@ export const rules = pgTable(
       t.priority,
     ),
     fromReviewIdx: index("rules_from_review_idx").on(t.createdFromReviewId),
+    // At most one enabled rule per (domain, match) — prevents duplicate
+    // identical rules. Disabled rules are excluded so soft-deletes don't block.
+    domainMatchUnique: uniqueIndex("rules_domain_match_unique")
+      .on(t.domain, t.match)
+      .where(sql`${t.enabled}`),
   }),
 );
 
@@ -129,7 +135,11 @@ export const needsReview = pgTable(
 export const processedEmails = pgTable(
   "processed_emails",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
+    // Which Gmail account this message belongs to. Message IDs are not
+    // guaranteed unique across accounts, so the dedup key is (account, id).
+    // Legacy rows (pre-multi-account) carry the empty string.
+    account: text("account").notNull().default(""),
     threadId: text("thread_id").notNull(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastProcessedAt: timestamp("last_processed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -138,6 +148,7 @@ export const processedEmails = pgTable(
     error: text("error"),
   },
   (t) => ({
+    pk: primaryKey({ columns: [t.account, t.id] }),
     outcomeIdx: index("processed_emails_outcome_idx").on(t.outcome, t.lastProcessedAt),
     threadIdx: index("processed_emails_thread_idx").on(t.threadId),
   }),

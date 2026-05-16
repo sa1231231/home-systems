@@ -86,6 +86,19 @@ describe("routes-review", () => {
       const res = await request(buildApp()).post(`/ui/needs-review/${id}/approve`);
       expect(res.status).toBe(409);
     });
+
+    it("approving two reviews from the same sender creates only one rule", async () => {
+      setApplier("email", async () => {});
+      const app = buildApp();
+      const id1 = await insertReview();
+      expect((await request(app).post(`/ui/needs-review/${id1}/approve`)).status).toBe(200);
+      // Second review for the same sender, inserted after the first is decided.
+      const id2 = await insertReview({ subjectId: "msg-2" });
+      expect((await request(app).post(`/ui/needs-review/${id2}/approve`)).status).toBe(200);
+
+      const ruleRows = await db.select().from(rules);
+      expect(ruleRows).toHaveLength(1);
+    });
   });
 
   describe("reject", () => {
