@@ -20,7 +20,7 @@ vi.mock("../integrations/google/oauth.js", async () => {
 
 import { triageAllAccounts } from "../sync/email-triage.js";
 import { hasGoogleCreds } from "../integrations/google/oauth.js";
-import { makeGmailUiRouter } from "./routes-gmail.js";
+import { groupByAccount, makeGmailUiRouter } from "./routes-gmail.js";
 
 const triageMock = vi.mocked(triageAllAccounts);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
@@ -210,6 +210,38 @@ describe("routes-gmail", () => {
       });
       const res = await request(buildApp()).get("/ui/gmail/triage-status?polling=1");
       expect(res.headers["hx-refresh"]).toBe("true");
+    });
+  });
+
+  describe("groupByAccount", () => {
+    const rule = (match: unknown) => ({ match }) as never;
+    const review = (account?: string) =>
+      ({ subject: account ? { account } : {} }) as never;
+
+    it("buckets rules and reviews by the account in their match/subject", () => {
+      const groups = groupByAccount(
+        [rule({ all: [{ field: "account", op: "equals", value: "b@gmail.com" }] }), rule({ all: [{ field: "account", op: "equals", value: "a@gmail.com" }] })],
+        [review("a@gmail.com"), review("a@gmail.com"), review("b@gmail.com")],
+      );
+      expect(groups.map((g) => g.account)).toEqual(["a@gmail.com", "b@gmail.com"]);
+      expect(groups[0].rules).toHaveLength(1);
+      expect(groups[0].pending).toHaveLength(2);
+      expect(groups[1].rules).toHaveLength(1);
+      expect(groups[1].pending).toHaveLength(1);
+    });
+
+    it("buckets account-less rules/reviews under (unscoped), sorted last", () => {
+      const groups = groupByAccount(
+        [rule({ op: "equals", field: "from", value: "x@y.com" })],
+        [review("a@gmail.com"), review()],
+      );
+      expect(groups.map((g) => g.account)).toEqual(["a@gmail.com", "(unscoped)"]);
+    });
+
+    it("returns a single placeholder group when there is nothing", () => {
+      const groups = groupByAccount([], []);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]).toMatchObject({ rules: [], pending: [] });
     });
   });
 });

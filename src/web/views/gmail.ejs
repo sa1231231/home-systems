@@ -30,37 +30,74 @@
 <%- include("partials/_triage-status", { run: locals.run, statusUrl: "/ui/gmail/triage-status" }) %>
 <div id="triage-result"></div>
 
-<%- include("partials/_rules-section", {
-  rules,
-  description: "Deterministic matches run first; emails matching a rule never call the AI.",
-  emptyText: "No rules yet. Approve a review below to create the first one.",
-  sectionId: "email-rules",
-}) %>
+<% const multi = accountGroups.length > 1; %>
 
-<section>
-  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
-  <p class="muted" style="margin: 0 0 8px;">AI classifications waiting for your decision. Approve applies the action to Gmail; <em>promote</em> also creates a deterministic rule so future matches skip the AI.</p>
-  <% if (pending.length === 0) { %>
-    <p class="muted">No emails currently waiting for review.</p>
-  <% } else { %>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 130px;">When (UTC)</th>
-          <th>Email</th>
-          <th style="width: 130px;">Category</th>
-          <th style="width: 140px;">Status</th>
-          <th style="width: 320px;">Decide</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% pending.forEach((entry) => { %>
-          <%- include("partials/_review-row", { entry, applyOutcome: null }) %>
-        <% }); %>
-      </tbody>
-    </table>
-  <% } %>
-</section>
+<% if (multi) { %>
+  <div class="acct-tabs" role="tablist" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; border-bottom: 1px solid var(--border);">
+    <% accountGroups.forEach((g, i) => { %>
+      <button
+        type="button"
+        data-acct-tab="<%= i %>"
+        onclick="selectAcctTab(<%= i %>)"
+        style="padding: 6px 12px; border: 1px solid var(--border); border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font: inherit; margin-bottom: -1px; background: <%= i === 0 ? '#fff' : '#f4f4f4' %>; font-weight: <%= i === 0 ? '600' : 'normal' %>;"
+      >
+        <%= g.account %>
+        <span class="muted" style="font-size: 11px; font-weight: normal;">(<%= g.rules.length %>r · <%= g.pending.length %>p)</span>
+      </button>
+    <% }); %>
+  </div>
+<% } %>
+
+<% accountGroups.forEach((g, i) => { %>
+  <div data-acct-panel="<%= i %>" <% if (multi && i !== 0) { %>style="display: none;"<% } %>>
+    <%- include("partials/_rules-section", {
+      rules: g.rules,
+      description: "Deterministic matches run first; emails matching a rule never call the AI.",
+      emptyText: "No rules yet. Approve a review below to create the first one.",
+      sectionId: "email-rules-" + i,
+    }) %>
+
+    <section>
+      <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= g.pending.length %>)</span></h3>
+      <p class="muted" style="margin: 0 0 8px;">AI classifications waiting for your decision. Approve applies the action to Gmail; <em>promote</em> also creates a deterministic rule so future matches skip the AI.</p>
+      <% if (g.pending.length === 0) { %>
+        <p class="muted">No emails currently waiting for review.</p>
+      <% } else { %>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 130px;">When (UTC)</th>
+              <th>Email</th>
+              <th style="width: 130px;">Category</th>
+              <th style="width: 140px;">Status</th>
+              <th style="width: 320px;">Decide</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% g.pending.forEach((entry) => { %>
+              <%- include("partials/_review-row", { entry, applyOutcome: null }) %>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </section>
+  </div>
+<% }); %>
+
+<% if (multi) { %>
+<script>
+function selectAcctTab(i) {
+  document.querySelectorAll('[data-acct-panel]').forEach(function (p) {
+    p.style.display = p.getAttribute('data-acct-panel') === String(i) ? '' : 'none';
+  });
+  document.querySelectorAll('[data-acct-tab]').forEach(function (t) {
+    var on = t.getAttribute('data-acct-tab') === String(i);
+    t.style.background = on ? '#fff' : '#f4f4f4';
+    t.style.fontWeight = on ? '600' : 'normal';
+  });
+}
+</script>
+<% } %>
 
 <%- include("partials/_activity-section", { sessionGroups, label: "Gmail" }) %>
 

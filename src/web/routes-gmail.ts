@@ -16,10 +16,66 @@ function fourteenDaysAgo(): Date {
 }
 
 const DOMAIN = "email";
+const UNSCOPED = "(unscoped)";
 
 const TriageBody = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
+
+type RuleRow = typeof rules.$inferSelect;
+type ReviewRow = typeof needsReview.$inferSelect;
+
+/** Pull the `account` value out of a rule's (possibly compound) match condition. */
+function accountOfRule(match: unknown): string | null {
+  if (!match || typeof match !== "object") return null;
+  const m = match as Record<string, unknown>;
+  const leaves = Array.isArray(m.all)
+    ? m.all
+    : Array.isArray(m.any)
+      ? m.any
+      : [m];
+  for (const leaf of leaves) {
+    if (
+      leaf &&
+      typeof leaf === "object" &&
+      (leaf as Record<string, unknown>).field === "account" &&
+      (leaf as Record<string, unknown>).op === "equals" &&
+      typeof (leaf as Record<string, unknown>).value === "string"
+    ) {
+      return (leaf as Record<string, unknown>).value as string;
+    }
+  }
+  return null;
+}
+
+function accountOfReview(row: ReviewRow): string | null {
+  const s = row.subject as Record<string, unknown> | null;
+  return s && typeof s.account === "string" && s.account ? s.account : null;
+}
+
+export type AccountGroup = { account: string; rules: RuleRow[]; pending: ReviewRow[] };
+
+/** Group rules + pending reviews by Gmail account so the UI can tab between them. */
+export function groupByAccount(rulesRows: RuleRow[], pendingRows: ReviewRow[]): AccountGroup[] {
+  const groups = new Map<string, AccountGroup>();
+  const bucket = (account: string | null): AccountGroup => {
+    const key = account ?? UNSCOPED;
+    let g = groups.get(key);
+    if (!g) {
+      g = { account: key, rules: [], pending: [] };
+      groups.set(key, g);
+    }
+    return g;
+  };
+  for (const r of rulesRows) bucket(accountOfRule(r.match)).rules.push(r);
+  for (const p of pendingRows) bucket(accountOfReview(p)).pending.push(p);
+  const ordered = [...groups.values()].sort((a, b) => {
+    if (a.account === UNSCOPED) return 1;
+    if (b.account === UNSCOPED) return -1;
+    return a.account.localeCompare(b.account);
+  });
+  return ordered.length > 0 ? ordered : [{ account: "All accounts", rules: [], pending: [] }];
+}
 
 export function makeGmailUiRouter(): Router {
   const router = Router();
@@ -48,8 +104,7 @@ export function makeGmailUiRouter(): Router {
     ]);
     const sessionGroups = groupBySession(activityRows).slice(0, 30);
     res.render("gmail", {
-      rules: rulesRows,
-      pending: pendingRows,
+      accountGroups: groupByAccount(rulesRows, pendingRows),
       flash: null,
       cron: cronInfoForDomain("email"),
       run,
