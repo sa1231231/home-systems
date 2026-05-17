@@ -1,0 +1,72 @@
+<%
+  // Situational merchants — marker rules ({situational:true}) whose
+  // transactions always go to AI review and never auto-create a category rule.
+  // Expected local: situationalRules — RuleRow[]
+  const sit = (typeof situationalRules !== "undefined" && Array.isArray(situationalRules))
+    ? situationalRules : [];
+  function sitToken(rule) {
+    const m = rule.match;
+    if (m && Array.isArray(m.any) && m.any[0] && typeof m.any[0].value === "string") {
+      return m.any[0].value;
+    }
+    return JSON.stringify(m);
+  }
+%>
+<section style="margin-bottom: 32px;">
+  <details <% if (sit.length > 0 && sit.length < 10) { %>open<% } %>>
+    <summary style="cursor: pointer; user-select: none; list-style: revert;">
+      <h3 style="display: inline-block; margin: 0 0 6px;">
+        Situational merchants <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= sit.length %>)</span>
+      </h3>
+    </summary>
+    <p class="muted" style="margin: 4px 0 8px;">
+      Transactions matching these always go to review and never auto-create a rule —
+      for merchants whose category varies per purchase (e.g. Amazon).
+    </p>
+    <form
+      hx-post="/ui/transactions/situational"
+      hx-target="#triage-result"
+      hx-swap="innerHTML"
+      style="margin-bottom: 10px;"
+    >
+      <input
+        type="text"
+        name="value"
+        required
+        placeholder="merchant token, e.g. amazon"
+        style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 3px; width: 260px; font: inherit;"
+      />
+      <button type="submit" style="padding: 4px 12px;">Add situational merchant</button>
+    </form>
+    <% if (sit.length === 0) { %>
+      <p class="muted">None yet.</p>
+    <% } else { %>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 200px;">Merchant token</th>
+            <th>Match</th>
+            <th style="width: 90px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% sit.forEach((rule) => { %>
+            <tr id="rule-row-<%= rule.id %>">
+              <td><%= sitToken(rule) %></td>
+              <td><code style="font-size: 11px;"><%= JSON.stringify(rule.match) %></code></td>
+              <td>
+                <button
+                  hx-post="/ui/rules/<%= rule.id %>/delete"
+                  hx-target="#rule-row-<%= rule.id %>"
+                  hx-swap="outerHTML"
+                  hx-confirm="Stop treating this merchant as situational?"
+                  style="padding: 4px 10px; background: #fff; border: 1px solid var(--danger); color: var(--danger); border-radius: 3px; cursor: pointer;"
+                >Remove</button>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </details>
+</section>

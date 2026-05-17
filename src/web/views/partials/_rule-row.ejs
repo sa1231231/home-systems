@@ -12,12 +12,23 @@
   </td>
   <td class="muted" style="font-size: 12px;"><%= new Date(rule.createdAt).toISOString().slice(0, 10) %></td>
   <td>
-    <button
-      hx-post="/ui/rules/<%= rule.id %>/delete"
-      hx-target="#rule-row-<%= rule.id %>"
-      hx-swap="outerHTML"
-      hx-confirm="Delete rule '<%= rule.name %>'? This can't be undone."
-      style="padding: 4px 10px; background: #fff; border: 1px solid var(--danger); color: var(--danger); border-radius: 3px; cursor: pointer;"
-    >Delete</button>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <% if (rule.domain === "transaction") { %>
+        <button
+          hx-post="/ui/transactions/rules/<%= rule.id %>/apply"
+          hx-target="#triage-result"
+          hx-swap="innerHTML"
+          hx-confirm="Apply rule '<%= rule.name %>' to all uncategorized matching transactions?"
+          style="padding: 4px 10px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
+        >Apply to all ↺</button>
+      <% } %>
+      <button
+        hx-post="/ui/rules/<%= rule.id %>/delete"
+        hx-target="#rule-row-<%= rule.id %>"
+        hx-swap="outerHTML"
+        hx-confirm="Delete rule '<%= rule.name %>'? This can't be undone."
+        style="padding: 4px 10px; background: #fff; border: 1px solid var(--danger); color: var(--danger); border-radius: 3px; cursor: pointer;"
+      >Delete</button>
+    </div>
   </td>
 </tr>

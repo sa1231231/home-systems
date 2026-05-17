@@ -3,7 +3,8 @@ import { z } from "zod/v4";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { needsReview, processedTransactions } from "../db/schema.js";
-import { evaluate } from "../rules/engine.js";
+import { evaluate, isSituational } from "../rules/engine.js";
+import { evaluateCondition, type Cond } from "../rules/dsl.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { reviewAppliers } from "../needs-review/appliers.js";
 import {
@@ -232,8 +233,11 @@ export async function triageTransactions(
         continue;
       }
 
+      // A situational rule (action `{situational:true}`) matches first by
+      // priority but is not a category rule — skip it so the row falls
+      // through to AI review every time.
       const match = await evaluate(TRIAGE_DOMAIN, subject);
-      if (match) {
+      if (match && !isSituational(match.action)) {
         const proposal = ProposedActionSchema.parse(match.action);
         if (options.dryRun) {
           items.push({
@@ -374,4 +378,59 @@ export async function triageTransactions(
     errors: items.filter((i) => i.outcome === "error").length,
     items,
   };
+}
+
+export type ApplyRuleResult = {
+  ruleId: number;
+  /** Uncategorized rows the rule matched and that were written. */
+  applied: number;
+  /** Rows that matched but failed to write. */
+  errors: number;
+  errorDetails: Array<{ transactionId: string; error: string }>;
+};
+
+/**
+ * Retroactively apply one rule to the transactions sheet. Only fills in rows
+ * that have no Category yet — it never overwrites a category set by hand.
+ * Situational rules carry no category, so they apply nothing. No AI call.
+ */
+export async function applyRuleToSheet(
+  client: OAuth2Client,
+  target: TransactionTarget,
+  rule: { id: number; match: unknown; action: unknown },
+  meta: { sessionId: string; caller: string },
+): Promise<ApplyRuleResult> {
+  const result: ApplyRuleResult = { ruleId: rule.id, applied: 0, errors: 0, errorDetails: [] };
+  const category = (rule.action as { category?: unknown } | null)?.category;
+  if (typeof category !== "string" || !category) return result;
+
+  const tab = await readTransactionsSheet(client, target.sheetId, target.transactionsTab);
+  const cond = rule.match as Cond;
+  for (const row of tab.rows) {
+    if (row.category && row.category.trim() !== "") continue; // uncategorized only
+    let matches = false;
+    try {
+      matches = evaluateCondition(cond, buildSubject(row));
+    } catch {
+      matches = false;
+    }
+    if (!matches) continue;
+    try {
+      await applyTransactionCategory(
+        client,
+        target,
+        { transactionId: row.transactionId, category, categorizedBy: `rule:${rule.id}` },
+        { sessionId: meta.sessionId, caller: meta.caller, intent: `rule:${rule.id}` },
+      );
+      await recordOutcome({ id: row.transactionId, outcome: "matched_rule", outcomeId: rule.id });
+      result.applied++;
+    } catch (err) {
+      result.errors++;
+      result.errorDetails.push({
+        transactionId: row.transactionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return result;
 }

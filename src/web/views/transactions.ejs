@@ -40,6 +40,10 @@
   sectionId: "transaction-rules",
 }) %>
 
+<%- include("partials/_situational-section", { situationalRules }) %>
+
+<%- include("partials/_cleanup-section", { consolidations }) %>
+
 <section>
   <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
   <p class="muted" style="margin: 0 0 8px;">

@@ -9,7 +9,7 @@ vi.mock("../sync/transaction-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/transaction-triage.js")>(
     "../sync/transaction-triage.js",
   );
-  return { ...actual, triageTransactions: vi.fn() };
+  return { ...actual, triageTransactions: vi.fn(), applyRuleToSheet: vi.fn() };
 });
 vi.mock("../integrations/google/oauth.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/oauth.js")>(
@@ -24,12 +24,14 @@ vi.mock("../integrations/google/sheets-transactions.js", async () => {
   return { ...actual, readCategoriesEnum: vi.fn() };
 });
 
-import { triageTransactions } from "../sync/transaction-triage.js";
+import { applyRuleToSheet, triageTransactions } from "../sync/transaction-triage.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
+import { containsMerchantMatch } from "../sync/transaction-rules.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
 
 const triageMock = vi.mocked(triageTransactions);
+const applyRuleMock = vi.mocked(applyRuleToSheet);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
 const oauthMock = vi.mocked(getOAuthClient);
 const readEnumMock = vi.mocked(readCategoriesEnum);
@@ -59,6 +61,7 @@ describe("routes-transactions", () => {
   beforeEach(async () => {
     await handle.reset();
     triageMock.mockReset();
+    applyRuleMock.mockReset();
     hasCredsMock.mockReset();
     oauthMock.mockReset();
     readEnumMock.mockReset();
@@ -263,6 +266,173 @@ describe("routes-transactions", () => {
         "/ui/transactions/triage-status",
       );
       expect(res.text).not.toMatch(/Triage running/);
+    });
+  });
+
+  async function insertTransactionReview(category = "Shopping") {
+    const [row] = await db
+      .insert(needsReview)
+      .values({
+        domain: "transaction",
+        subject: { description: "Amazon Order", full_description: "AMZN MKTP*1A2B" } as never,
+        subjectKind: "transaction",
+        subjectId: `tx-${Math.random().toString(36).slice(2, 8)}`,
+        proposedAction: { category, reasoning: "ai" } as never,
+        status: "pending",
+      })
+      .returning();
+    return row;
+  }
+
+  describe("POST /ui/transactions/review/:id/decide", () => {
+    it("promotes an exact rule for rule_scope=exact", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "exact" });
+      expect(res.status).toBe(200);
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].match).toEqual({
+        op: "equals",
+        field: "full_description",
+        value: "AMZN MKTP*1A2B",
+      });
+    });
+
+    it("promotes one contains rule for rule_scope=contains", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "contains", rule_value: "amazon" });
+      expect(res.status).toBe(200);
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].match).toEqual(containsMerchantMatch("amazon"));
+    });
+
+    it("saves no rule for rule_scope=once", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "once" });
+      expect(res.status).toBe(200);
+      expect(await db.select().from(rules)).toHaveLength(0);
+    });
+
+    it("registers a situational merchant for rule_scope=situational", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "situational", rule_value: "amazon" });
+      expect(res.status).toBe(200);
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].action).toEqual({ situational: true });
+    });
+
+    it("rejects contains without a merchant token", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "contains" });
+      expect(res.status).toBe(400);
+      expect(await db.select().from(rules)).toHaveLength(0);
+    });
+  });
+
+  describe("POST /ui/transactions/situational", () => {
+    it("adds a situational merchant rule and signals a refresh", async () => {
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post("/ui/transactions/situational")
+        .type("form")
+        .send({ value: "amazon" });
+      expect(res.status).toBe(200);
+      expect(res.headers["hx-refresh"]).toBe("true");
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].action).toEqual({ situational: true });
+    });
+  });
+
+  describe("POST /ui/transactions/rules/:id/apply", () => {
+    it("applies a rule to the sheet and returns a banner", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      const [rule] = await db
+        .insert(rules)
+        .values({
+          domain: "transaction",
+          name: "r",
+          match: { op: "equals", field: "full_description", value: "X" } as never,
+          action: { category: "Y" } as never,
+          createdBy: "manual",
+        })
+        .returning();
+      applyRuleMock.mockResolvedValueOnce({
+        ruleId: rule.id,
+        applied: 4,
+        errors: 0,
+        errorDetails: [],
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        `/ui/transactions/rules/${rule.id}/apply`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).toMatch(/categorized 4/);
+      expect(applyRuleMock).toHaveBeenCalledOnce();
+    });
+
+    it("returns 404 for an unknown rule", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/rules/99999/apply",
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("POST /ui/transactions/cleanup/consolidate", () => {
+    it("consolidates exact rules into one contains rule", async () => {
+      hasCredsMock.mockReturnValue(false); // skip the retroactive-apply step
+      const inserted = await db
+        .insert(rules)
+        .values([
+          {
+            domain: "transaction",
+            name: "auto: AMZN 1",
+            match: { op: "equals", field: "full_description", value: "AMZN 1" } as never,
+            action: { category: "Shopping" } as never,
+            createdBy: "bootstrap",
+          },
+          {
+            domain: "transaction",
+            name: "auto: AMZN 2",
+            match: { op: "equals", field: "full_description", value: "AMZN 2" } as never,
+            action: { category: "Shopping" } as never,
+            createdBy: "bootstrap",
+          },
+        ])
+        .returning();
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post("/ui/transactions/cleanup/consolidate")
+        .type("form")
+        .send({
+          token: "amzn",
+          category: "Shopping",
+          ruleIds: inserted.map((r) => r.id).join(","),
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers["hx-refresh"]).toBe("true");
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].match).toEqual(containsMerchantMatch("amzn"));
     });
   });
 });

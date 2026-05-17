@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db as defaultDb } from "../db/client.js";
 import { needsReview, rules } from "../db/schema.js";
 import { evaluateCondition, validateCondition, type Cond } from "../rules/dsl.js";
+import { isSituational } from "../rules/engine.js";
 import { reviewAppliers as defaultAppliers, type ApplierRegistry } from "./appliers.js";
 
 export type NeedsReviewRow = typeof needsReview.$inferSelect;
@@ -242,6 +243,32 @@ async function autoResolveMatching(
   }
 }
 
+/**
+ * True if an enabled situational rule (`action.situational === true`) in the
+ * domain matches this subject. Such merchants have a genuinely variable
+ * category, so we apply the chosen category once but never promote a rule —
+ * this guards every approve/correct path (quick, bulk, and the decide form).
+ */
+async function blockedBySituationalRule(
+  database: typeof defaultDb,
+  domain: string,
+  subject: unknown,
+): Promise<boolean> {
+  const candidates = await database
+    .select({ match: rules.match, action: rules.action })
+    .from(rules)
+    .where(and(eq(rules.domain, domain), eq(rules.enabled, true)));
+  for (const r of candidates) {
+    if (!isSituational(r.action)) continue;
+    try {
+      if (evaluateCondition(r.match as Cond, subject)) return true;
+    } catch {
+      /* a rule we can't evaluate simply doesn't block */
+    }
+  }
+  return false;
+}
+
 export async function approveEntry(
   id: number,
   input: ApproveInput,
@@ -252,7 +279,10 @@ export async function approveEntry(
   const pending = await loadPending(id, database);
 
   let promotedRuleId: number | null = null;
-  if (input.promoteToRule) {
+  if (
+    input.promoteToRule &&
+    !(await blockedBySituationalRule(database, pending.domain, pending.subject))
+  ) {
     promotedRuleId = await promoteRule(database, {
       domain: pending.domain,
       name: input.promoteToRule.name,
@@ -328,7 +358,10 @@ export async function correctEntry(
   const pending = await loadPending(id, database);
 
   let promotedRuleId: number | null = null;
-  if (input.promoteToRule) {
+  if (
+    input.promoteToRule &&
+    !(await blockedBySituationalRule(database, pending.domain, pending.subject))
+  ) {
     promotedRuleId = await promoteRule(database, {
       domain: pending.domain,
       name: input.promoteToRule.name,

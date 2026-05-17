@@ -234,3 +234,91 @@ describe("rule promotion (approve/correct)", () => {
     expect(await db.select().from(rules)).toHaveLength(1);
   });
 });
+
+describe("situational merchant guard", () => {
+  let handle: TestDbHandle;
+  beforeAll(async () => {
+    handle = await createTestDb();
+  });
+  afterAll(async () => {
+    await handle.close();
+  });
+  beforeEach(async () => {
+    await handle.reset();
+  });
+
+  const situationalMatch = {
+    any: [
+      { op: "contains", field: "description", value: "amazon" },
+      { op: "contains", field: "full_description", value: "amazon" },
+    ],
+  };
+
+  async function insertTransactionReview(subject: Record<string, unknown>): Promise<number> {
+    const [row] = await db
+      .insert(needsReview)
+      .values({
+        domain: "transaction",
+        subject: subject as never,
+        subjectKind: "transaction",
+        subjectId: `tx-${Math.random().toString(36).slice(2, 8)}`,
+        proposedAction: { category: "Shopping", reasoning: "ai" } as never,
+        status: "pending",
+      })
+      .returning({ id: needsReview.id });
+    return row.id;
+  }
+
+  it("does not promote a rule when a situational rule matches the subject", async () => {
+    await db.insert(rules).values({
+      domain: "transaction",
+      name: "situational: amazon",
+      match: situationalMatch as never,
+      action: { situational: true } as never,
+      priority: 10,
+      createdBy: "situational",
+    });
+    const id = await insertTransactionReview({
+      description: "Amazon Order",
+      full_description: "AMZN MKTP",
+    });
+    const result = await approveEntry(
+      id,
+      {
+        promoteToRule: {
+          name: "auto",
+          match: { op: "equals", field: "full_description", value: "AMZN MKTP" },
+        },
+        sessionId: "s",
+        caller: "test",
+      },
+      { registry: new ApplierRegistry() },
+    );
+    expect(result.promotedRuleId).toBeNull();
+    expect(result.entry.status).toBe("approved");
+    // Only the situational marker rule — no category rule was created.
+    const rs = await db.select().from(rules);
+    expect(rs).toHaveLength(1);
+    expect(rs[0].action).toEqual({ situational: true });
+  });
+
+  it("promotes a rule normally when no situational rule matches", async () => {
+    const id = await insertTransactionReview({
+      description: "Costco",
+      full_description: "COSTCO #11",
+    });
+    const result = await approveEntry(
+      id,
+      {
+        promoteToRule: {
+          name: "auto",
+          match: { op: "equals", field: "full_description", value: "COSTCO #11" },
+        },
+        sessionId: "s",
+        caller: "test",
+      },
+      { registry: new ApplierRegistry() },
+    );
+    expect(result.promotedRuleId).not.toBeNull();
+  });
+});

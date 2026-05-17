@@ -1,0 +1,44 @@
+<%
+  // Rule cleanup — suggestions to replace near-duplicate exact rules with one
+  // "merchant contains" rule. Expected local: consolidations — ConsolidationSuggestion[]
+  const sugg = (typeof consolidations !== "undefined" && Array.isArray(consolidations))
+    ? consolidations : [];
+%>
+<% if (sugg.length > 0) { %>
+<section style="margin-bottom: 32px;">
+  <details>
+    <summary style="cursor: pointer; user-select: none; list-style: revert;">
+      <h3 style="display: inline-block; margin: 0 0 6px;">
+        Rule cleanup <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= sugg.length %>)</span>
+      </h3>
+    </summary>
+    <p class="muted" style="margin: 4px 0 8px;">
+      Groups of exact-match rules sharing a category and a merchant token. Consolidating
+      replaces them with one broader "merchant contains" rule.
+    </p>
+    <% sugg.forEach((s) => { %>
+      <div style="border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 8px;">
+        <div>
+          <code style="font-size: 12px;"><%= s.token %></code>
+          → <span class="pill"><%= s.category %></span>
+          <span class="muted" style="font-size: 12px;">(<%= s.rules.length %> exact rules)</span>
+        </div>
+        <ul class="muted" style="margin: 6px 0; font-size: 12px;">
+          <% s.rules.forEach((r) => { %><li>#<%= r.id %> — <%= r.value %></li><% }); %>
+        </ul>
+        <form
+          hx-post="/ui/transactions/cleanup/consolidate"
+          hx-target="#triage-result"
+          hx-swap="innerHTML"
+          hx-confirm="Replace these <%= s.rules.length %> exact rules with one 'contains &quot;<%= s.token %>&quot;' rule?"
+        >
+          <input type="hidden" name="token" value="<%= s.token %>" />
+          <input type="hidden" name="category" value="<%= s.category %>" />
+          <input type="hidden" name="ruleIds" value="<%= s.rules.map((r) => r.id).join(',') %>" />
+          <button type="submit" style="padding: 4px 12px;">Consolidate into one rule</button>
+        </form>
+      </div>
+    <% }); %>
+  </details>
+</section>
+<% } %>

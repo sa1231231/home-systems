@@ -33,6 +33,7 @@ import {
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { applyTransactionCategory } from "./transaction-actions.js";
 import {
+  applyRuleToSheet,
   registerTransactionApplier,
   triageTransactions,
   TRIAGE_DOMAIN,
@@ -430,5 +431,109 @@ describe("registerTransactionApplier", () => {
       categorizedBy: "ai:approved",
     });
     expect(meta).toMatchObject({ sessionId: "s", caller: "c", intent: "i" });
+  });
+});
+
+const SITUATIONAL_MATCH = {
+  any: [
+    { op: "contains", field: "description", value: "amazon" },
+    { op: "contains", field: "full_description", value: "amazon" },
+  ],
+};
+
+describe("triageTransactions — situational merchants", () => {
+  let handle: TestDbHandle;
+  beforeAll(async () => {
+    handle = await createTestDb();
+  });
+  afterAll(async () => {
+    await handle.close();
+  });
+  beforeEach(async () => {
+    await handle.reset();
+    clearAppliers();
+    readSheet.mockReset();
+    readEnum.mockReset();
+    classifyMock.mockReset();
+    applyMock.mockReset();
+  });
+
+  it("sends a situational-merchant transaction to AI review instead of matching a rule", async () => {
+    await db.insert(rules).values({
+      domain: TRIAGE_DOMAIN,
+      name: "situational: amazon",
+      match: SITUATIONAL_MATCH as never,
+      action: { situational: true } as never,
+      priority: 10,
+      enabled: true,
+      createdBy: "situational",
+    });
+    readSheet.mockResolvedValueOnce(
+      makeTab([makeRow({ transactionId: "tx-sit", description: "Amazon Order" })]),
+    );
+    readEnum.mockResolvedValueOnce(["Groceries", "Shopping"]);
+    classifyMock.mockResolvedValueOnce({
+      output: { category: "Shopping", reasoning: "amazon" },
+      callId: 7,
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    } as never);
+
+    const summary = await triageTransactions({} as never, {
+      limit: 10,
+      sessionId: "t",
+      target: TARGET,
+    });
+
+    expect(summary.queued).toBe(1);
+    expect(summary.matched).toBe(0);
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(classifyMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("applyRuleToSheet", () => {
+  let handle: TestDbHandle;
+  beforeAll(async () => {
+    handle = await createTestDb();
+  });
+  afterAll(async () => {
+    await handle.close();
+  });
+  beforeEach(async () => {
+    await handle.reset();
+    readSheet.mockReset();
+    applyMock.mockReset();
+  });
+
+  it("categorizes uncategorized matching rows and leaves the rest untouched", async () => {
+    readSheet.mockResolvedValueOnce(
+      makeTab([
+        makeRow({ transactionId: "u1", description: "Amazon", category: "" }),
+        makeRow({ transactionId: "u2", description: "Amazon Mktp", category: "" }),
+        makeRow({ transactionId: "c1", description: "Amazon", category: "Shopping" }),
+        makeRow({ transactionId: "x1", description: "Costco", category: "" }),
+      ]),
+    );
+    const rule = { id: 42, match: SITUATIONAL_MATCH, action: { category: "Shopping" } };
+    const res = await applyRuleToSheet({} as never, TARGET, rule, {
+      sessionId: "s",
+      caller: "test",
+    });
+    expect(res.applied).toBe(2);
+    expect(res.errors).toBe(0);
+    expect(applyMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies nothing for a situational marker rule (no category)", async () => {
+    readSheet.mockResolvedValueOnce(
+      makeTab([makeRow({ transactionId: "u1", description: "Amazon", category: "" })]),
+    );
+    const res = await applyRuleToSheet({} as never, TARGET, {
+      id: 1,
+      match: SITUATIONAL_MATCH,
+      action: { situational: true },
+    }, { sessionId: "s", caller: "test" });
+    expect(res.applied).toBe(0);
+    expect(applyMock).not.toHaveBeenCalled();
   });
 });
