@@ -33,6 +33,20 @@ export async function loadSnapshots(
   return out;
 }
 
+/** Drop snapshots for the given resource_names (contacts deleted in Google). */
+export async function deleteSnapshots(
+  resourceNames: string[],
+  database: typeof defaultDb = defaultDb,
+): Promise<void> {
+  const valid = [...new Set(resourceNames.filter(Boolean))];
+  if (valid.length === 0) return;
+  for (let i = 0; i < valid.length; i += 5000) {
+    await database
+      .delete(contactSnapshots)
+      .where(inArray(contactSnapshots.resourceName, valid.slice(i, i + 5000)));
+  }
+}
+
 /** Upsert snapshots — one batched statement. */
 export async function writeSnapshots(
   entries: SnapshotEntry[],

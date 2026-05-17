@@ -113,22 +113,74 @@ export async function listConnections(
   return (res.data.connections ?? []).map(toGooglePerson);
 }
 
-export async function listAllConnections(client: OAuth2Client): Promise<GooglePerson[]> {
-  const people = google.people({ version: "v1", auth: client });
-  const out: GooglePerson[] = [];
-  let pageToken: string | undefined;
-  do {
-    const res = await people.people.connections.list({
-      resourceName: "people/me",
-      personFields: PERSON_FIELDS,
-      pageSize: 1000,
-      sortOrder: "LAST_NAME_ASCENDING",
-      pageToken,
-    });
-    for (const conn of res.data.connections ?? []) {
-      out.push(toGooglePerson(conn));
+export type ConnectionsDelta = {
+  /** Created/changed contacts. */
+  persons: GooglePerson[];
+  /** resource_names of contacts deleted from Google since the sync token. */
+  deleted: string[];
+  /** Token to pass on the next run to fetch only what changed. */
+  nextSyncToken: string | null;
+  /** True when this was a full fetch (no token, or the token had expired). */
+  fullSync: boolean;
+};
+
+/** A People API sync token has expired/become invalid → HTTP 410. */
+function isExpiredSyncToken(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown } };
+  return e.code === 410 || e.status === 410 || e.response?.status === 410;
+}
+
+/**
+ * Fetch connections incrementally. With a `syncToken`, the People API returns
+ * only contacts changed/deleted since that token; without one (or when the
+ * token has expired) it does a full paginated fetch. Either way it requests a
+ * fresh `nextSyncToken` to roll forward.
+ */
+export async function listConnectionsDelta(
+  client: OAuth2Client,
+  opts: { syncToken?: string | null } = {},
+): Promise<ConnectionsDelta> {
+  const api = google.people({ version: "v1", auth: client });
+  const persons: GooglePerson[] = [];
+  const deleted: string[] = [];
+
+  const fetchAll = async (syncToken: string | undefined): Promise<string | null> => {
+    persons.length = 0;
+    deleted.length = 0;
+    let pageToken: string | undefined;
+    let nextSyncToken: string | null = null;
+    do {
+      const res = await api.people.connections.list({
+        resourceName: "people/me",
+        personFields: PERSON_FIELDS,
+        pageSize: 1000,
+        requestSyncToken: true,
+        ...(syncToken ? { syncToken } : {}),
+        pageToken,
+      });
+      for (const conn of res.data.connections ?? []) {
+        if (conn.metadata?.deleted) {
+          if (conn.resourceName) deleted.push(conn.resourceName);
+        } else {
+          persons.push(toGooglePerson(conn));
+        }
+      }
+      pageToken = res.data.nextPageToken ?? undefined;
+      if (res.data.nextSyncToken) nextSyncToken = res.data.nextSyncToken;
+    } while (pageToken);
+    return nextSyncToken;
+  };
+
+  if (opts.syncToken) {
+    try {
+      const nextSyncToken = await fetchAll(opts.syncToken);
+      return { persons, deleted, nextSyncToken, fullSync: false };
+    } catch (err) {
+      if (!isExpiredSyncToken(err)) throw err;
+      // Token expired — fall through to a full sync that mints a new one.
     }
-    pageToken = res.data.nextPageToken ?? undefined;
-  } while (pageToken);
-  return out;
+  }
+  const nextSyncToken = await fetchAll(undefined);
+  return { persons, deleted, nextSyncToken, fullSync: true };
 }

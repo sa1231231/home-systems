@@ -1,5 +1,6 @@
 import type { OAuth2Client } from "google-auth-library";
-import { listAllConnections, type GooglePerson } from "../integrations/google/people.js";
+import { listConnectionsDelta, type GooglePerson } from "../integrations/google/people.js";
+import { getMeta, setMeta } from "../db/meta.js";
 import {
   appendRows,
   batchUpdateCells,
@@ -10,9 +11,17 @@ import {
   type ContactsTab,
 } from "../integrations/google/sheets.js";
 import { buildSheetIndex, findMatch } from "./match.js";
-import { loadSnapshots, writeSnapshots, type SnapshotFields } from "./contact-snapshots.js";
+import {
+  deleteSnapshots,
+  loadSnapshots,
+  writeSnapshots,
+  type SnapshotFields,
+} from "./contact-snapshots.js";
 
 const RESOURCE_NAME_COL = "google_resource_name";
+
+/** `_meta` key holding the People API sync token for incremental fetches. */
+const SYNC_TOKEN_KEY = "contacts.sync_token";
 
 /**
  * Identity columns sync refreshes from Google. Stripped down post-2026-05-12
@@ -351,10 +360,15 @@ export async function runSync(
 ): Promise<RunSyncResult> {
   const nowIso = opts.nowIso ?? new Date().toISOString();
   const mode: RunSyncMode = opts.mode ?? "queue";
-  const [people, contactsTab] = await Promise.all([
-    listAllConnections(client),
+  // Incremental fetch: with a stored sync token the People API returns only
+  // contacts changed/deleted since last run. The sheet is still read whole —
+  // matching needs the full index.
+  const storedToken = await getMeta(SYNC_TOKEN_KEY);
+  const [delta, contactsTab] = await Promise.all([
+    listConnectionsDelta(client, { syncToken: storedToken }),
     readContactsTab(client, spreadsheetId, { tab: opts.tab }),
   ]);
+  const people = delta.persons;
   const snapshots = await loadSnapshots(people.map((p) => p.resource_name).filter(Boolean));
   const plan = planSync(spreadsheetId, contactsTab, people, nowIso, snapshots);
   const summary = summarize(plan);
@@ -436,11 +450,25 @@ export async function runSync(
   }
   await writeSnapshots(snapshotWrites);
 
+  // A contact deleted from Google: leave the sheet row alone (it may be a
+  // real CRM contact the user still wants) — just drop its stale baseline.
+  if (delta.deleted.length > 0) {
+    await deleteSnapshots(delta.deleted);
+    console.log(`[contacts-sync] ${delta.deleted.length} contact(s) deleted in Google — snapshots dropped`);
+  }
+
   // Only field-diff refreshes + ambiguous go to the review queue. Drop the
   // inserts since we just applied them above.
   const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes, inserts: [] };
   const { enqueueSyncPlan } = await import("./contacts-review.js");
   const queued = await enqueueSyncPlan(planForQueue);
+  // Persist the sync token only now — after the whole plan applied/enqueued
+  // without throwing. On any earlier failure the old token is kept, so the
+  // next run safely re-fetches the same delta (inserts dedupe by
+  // resource_name, enqueue upserts).
+  if (delta.nextSyncToken) {
+    await setMeta(SYNC_TOKEN_KEY, delta.nextSyncToken);
+  }
   return {
     plan,
     summary,
