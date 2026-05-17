@@ -77,10 +77,20 @@ export async function withTriageRun<T>(
   }
 }
 
+/** A run still "running" past this is treated as dead (its process vanished). */
+const STUCK_RUN_TIMEOUT_MS = 15 * 60 * 1000;
+
+const STUCK_RUN_MESSAGE = "run did not finish — process restarted or timed out";
+
 /**
  * Latest run for a domain within the lookback window. Used to drive the
  * "currently running / just finished" banner on each tab. Default lookback
  * is 1 hour — runs older than that aren't surfaced.
+ *
+ * Self-heals a stuck run: if the latest run is still "running" well past the
+ * point a real run would finish, its process died without writing a terminal
+ * status (e.g. a redeploy restarted the container mid-run). Mark it errored
+ * so the "running" banner doesn't hang forever.
  */
 export async function latestRunFor(
   domain: TriageRunDomain,
@@ -95,7 +105,15 @@ export async function latestRunFor(
     .where(and(eq(triageRuns.domain, domain), gte(triageRuns.startedAt, since)))
     .orderBy(desc(triageRuns.id))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  if (
+    row.status === "running" &&
+    Date.now() - new Date(row.startedAt).getTime() > STUCK_RUN_TIMEOUT_MS
+  ) {
+    await failRun(row.id, new Error(STUCK_RUN_MESSAGE), database);
+    return { ...row, status: "error", error: STUCK_RUN_MESSAGE, completedAt: new Date() };
+  }
+  return row;
 }
 
 /** True if the most-recent run for `domain` is still `status='running'`. */

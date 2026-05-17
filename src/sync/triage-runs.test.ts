@@ -131,5 +131,25 @@ describe("triage-runs", () => {
       expect(await latestRunFor("email")).toBeNull();
       expect(await latestRunFor("email", { lookbackMs: 4 * 60 * 60 * 1000 })).not.toBeNull();
     });
+
+    it("self-heals a run stuck 'running' past the timeout to 'error'", async () => {
+      const id = await startRun("contact", "s", "ui:contacts.sync");
+      // Backdate 20 min — past the 15-min stuck threshold, inside the 1h window.
+      await db
+        .update(triageRuns)
+        .set({ startedAt: new Date(Date.now() - 20 * 60 * 1000) })
+        .where(eq(triageRuns.id, id));
+      const latest = await latestRunFor("contact");
+      expect(latest?.status).toBe("error");
+      const [row] = await db.select().from(triageRuns).where(eq(triageRuns.id, id));
+      expect(row.status).toBe("error");
+      expect(row.completedAt).toBeInstanceOf(Date);
+    });
+
+    it("leaves a recent 'running' run untouched", async () => {
+      await startRun("contact", "s", "ui:contacts.sync");
+      const latest = await latestRunFor("contact");
+      expect(latest?.status).toBe("running");
+    });
   });
 });

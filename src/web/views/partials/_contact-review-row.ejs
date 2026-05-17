@@ -6,10 +6,30 @@
   const changedFields = Array.isArray(subj.changed_fields) ? subj.changed_fields : [];
   const matches = Array.isArray(subj.matches) ? subj.matches : [];
   const updates = (kind === "refresh" && Array.isArray(proposed.updates)) ? proposed.updates : [];
-  function clip(s, n) {
-    if (s == null) return "(empty)";
-    const str = String(s);
-    return str.length > n ? str.slice(0, n) + "…" : str || "(empty)";
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  // Render the full "Sheet now" value, flagging each line that does NOT carry
+  // into the proposed "After" — i.e. content approving this change would drop.
+  function renderLossDiff(from, to, col) {
+    const fromStr = from == null ? "" : String(from);
+    if (fromStr === "") return { html: '<span class="muted">(empty)</span>', lost: 0 };
+    // updated_at/created_at are mechanical bumps — a plain replace, not "loss".
+    if (col === "updated_at" || col === "created_at") {
+      return { html: escapeHtml(fromStr), lost: 0 };
+    }
+    const toStr = to == null ? "" : String(to);
+    let lost = 0;
+    const html = fromStr.split("\n").map((line) => {
+      const t = line.trim();
+      if (t !== "" && !toStr.includes(t)) {
+        lost += 1;
+        return '<span style="background: #ffd4d4;">' + escapeHtml(line) + "</span>";
+      }
+      return escapeHtml(line);
+    }).join("\n");
+    return { html, lost };
   }
 %>
 <tr id="review-row-<%= entry.id %>">
@@ -55,16 +75,16 @@
           </tr>
         </thead>
         <tbody>
-          <% updates.slice(0, 8).forEach((u) => { %>
+          <% updates.forEach((u) => { %>
+            <% const diff = renderLossDiff(u.from, u.to, u.col); %>
             <tr>
-              <td style="padding: 3px 8px; font-family: monospace; vertical-align: top; word-break: break-word;"><%= u.col %></td>
-              <td style="padding: 3px 8px; vertical-align: top; color: #666; word-break: break-word; white-space: pre-wrap;"><%= clip(u.from, 240) %></td>
-              <td style="padding: 3px 8px; vertical-align: top; color: #128a3e; word-break: break-word; white-space: pre-wrap;"><%= clip(u.to, 240) %></td>
+              <td style="padding: 3px 8px; font-family: monospace; vertical-align: top; word-break: break-word;">
+                <%= u.col %><% if (diff.lost > 0) { %> <span title="<%= diff.lost %> line(s) present in the sheet would be dropped" style="color: #c00;">⚠</span><% } %>
+              </td>
+              <td style="padding: 3px 8px; vertical-align: top; color: #666; word-break: break-word; white-space: pre-wrap;"><%- diff.html %></td>
+              <td style="padding: 3px 8px; vertical-align: top; color: #128a3e; word-break: break-word; white-space: pre-wrap;"><%= (u.to == null || u.to === "") ? "(empty)" : u.to %></td>
             </tr>
           <% }); %>
-          <% if (updates.length > 8) { %>
-            <tr><td colspan="3" style="padding: 3px 8px; font-size: 10px;" class="muted">+ <%= updates.length - 8 %> more change<%= updates.length - 8 === 1 ? '' : 's' %></td></tr>
-          <% } %>
         </tbody>
       </table>
     <% } %>
