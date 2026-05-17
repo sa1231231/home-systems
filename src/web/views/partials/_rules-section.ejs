@@ -7,9 +7,12 @@
   //   sectionId     — unique DOM id prefix for this section (so multiple don't collide)
   //
   // The "open" attribute defaults to expanded when there are 1-9 rules, collapsed
-  // for 10+ (skim-friendly). Search box filters rows client-side by textContent.
+  // for 10+ (skim-friendly). Callers can force it with an explicit `open` local.
+  // Search box filters rows client-side by textContent.
   const id = sectionId;
-  const isOpen = rules.length > 0 && rules.length < 10;
+  const isOpen = locals.open !== undefined
+    ? locals.open
+    : (rules.length > 0 && rules.length < 10);
 %>
 <section style="margin-bottom: 32px;">
   <details id="<%= id %>" <% if (isOpen) { %>open<% } %>>

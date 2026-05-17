@@ -42,14 +42,7 @@
 
 <% accountGroups.forEach((g, i) => { %>
   <div data-acct-panel="<%= i %>" <% if (multi && i !== 0) { %>style="display: none;"<% } %>>
-    <%- include("partials/_rules-section", {
-      rules: g.rules,
-      description: "Deterministic matches run first; emails matching a rule never call the AI.",
-      emptyText: "No rules yet. Approve a review below to create the first one.",
-      sectionId: "email-rules-" + i,
-    }) %>
-
-    <section>
+    <section style="margin-bottom: 32px;">
       <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= g.pending.length %>)</span></h3>
       <p class="muted" style="margin: 0 0 8px;">AI classifications waiting for your decision. Approve applies the action to Gmail; <em>promote</em> also creates a deterministic rule so future matches skip the AI.</p>
       <% if (g.pending.length === 0) { %>
@@ -73,6 +66,14 @@
         </table>
       <% } %>
     </section>
+
+    <%- include("partials/_rules-section", {
+      rules: g.rules,
+      description: "Deterministic matches run first; emails matching a rule never call the AI.",
+      emptyText: "No rules yet. Approve a review above to create the first one.",
+      sectionId: "email-rules-" + i,
+      open: false,
+    }) %>
   </div>
 <% }); %>
 
