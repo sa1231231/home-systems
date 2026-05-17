@@ -344,6 +344,44 @@ describe("routes-transactions", () => {
       expect(res.status).toBe(400);
       expect(await db.select().from(rules)).toHaveLength(0);
     });
+
+    it("promotes a card-wide account rule for rule_scope=account", async () => {
+      const [entry] = await db
+        .insert(needsReview)
+        .values({
+          domain: "transaction",
+          subject: {
+            description: "Some Shop",
+            full_description: "SOME SHOP",
+            account: "Chase Sapphire",
+          } as never,
+          subjectKind: "transaction",
+          subjectId: "tx-acct",
+          proposedAction: { category: "Shopping", reasoning: "ai" } as never,
+          status: "pending",
+        })
+        .returning();
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "account" });
+      expect(res.status).toBe(200);
+      const rs = await db.select().from(rules);
+      expect(rs).toHaveLength(1);
+      expect(rs[0].match).toEqual({ op: "equals", field: "account", value: "Chase Sapphire" });
+      // Catch-all rules sit below merchant rules in priority.
+      expect(rs[0].priority).toBe(200);
+    });
+
+    it("rejects rule_scope=account when the transaction has no account", async () => {
+      const entry = await insertTransactionReview("Shopping");
+      const res = await request(buildApp({ sheetId: "sheet" }))
+        .post(`/ui/transactions/review/${entry.id}/decide`)
+        .type("form")
+        .send({ category: "Shopping", rule_scope: "account" });
+      expect(res.status).toBe(400);
+      expect(await db.select().from(rules)).toHaveLength(0);
+    });
   });
 
   describe("POST /ui/transactions/situational", () => {

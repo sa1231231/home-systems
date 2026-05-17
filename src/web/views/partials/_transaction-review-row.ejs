@@ -103,6 +103,9 @@
         >
           <option value="exact" selected>Exact merchant — rule for this exact description</option>
           <option value="contains">Merchant contains… — one rule covers name variants</option>
+          <% if (subj.account) { %>
+            <option value="account">All transactions on <%= subj.account %> → this category</option>
+          <% } %>
           <option value="once">Just this once — apply now, save no rule</option>
           <option value="situational">Situational merchant — always send to review, no rule</option>
         </select>

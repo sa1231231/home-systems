@@ -32,9 +32,13 @@ const IdParam = z.coerce.number().int().positive();
 
 const DecideBody = z.object({
   category: z.string().min(1).max(200),
-  rule_scope: z.enum(["exact", "contains", "once", "situational"]),
+  rule_scope: z.enum(["exact", "contains", "once", "situational", "account"]),
   rule_value: z.string().max(200).optional(),
 });
+
+// Account/card-wide rules are deliberate catch-alls — give them a higher
+// priority number so specific merchant rules (default 100) still win first.
+const ACCOUNT_RULE_PRIORITY = 200;
 
 const SituationalBody = z.object({
   value: z.string().min(1).max(200),
@@ -218,6 +222,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
   //   contains    — promote one "merchant contains <token>" rule
   //   once        — apply the category to this row only, no rule
   //   situational — apply once + register a situational merchant (never auto-ruled)
+  //   account     — promote a card/account-wide rule (every txn on this account)
   router.post("/review/:id/decide", async (req, res) => {
     let id: number;
     try {
@@ -250,17 +255,33 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
         return;
       }
 
+      const subject = (pending.subject ?? {}) as Record<string, unknown>;
+      const account = typeof subject.account === "string" ? subject.account.trim() : "";
+      if (body.rule_scope === "account" && !account) {
+        res.status(400).render("partials/_review-row-error", {
+          entry: pending,
+          error: "This transaction has no account/card recorded, so a card-wide rule can't be made.",
+        });
+        return;
+      }
+
       const cfg = getDomainConfig(pending.domain);
       const aiCategory = (pending.proposedAction as { category?: string } | null)?.category ?? null;
       const sessionId = req.sessionId ?? newSessionId();
 
-      let promoteToRule: { name: string; match: unknown } | undefined;
+      let promoteToRule: { name: string; match: unknown; priority?: number } | undefined;
       if (body.rule_scope === "exact") {
         promoteToRule = { name: cfg.defaultRuleName(pending), match: cfg.defaultMatch(pending) };
       } else if (body.rule_scope === "contains") {
         promoteToRule = {
           name: `auto: contains "${token}"`,
           match: containsMerchantMatch(token),
+        };
+      } else if (body.rule_scope === "account") {
+        promoteToRule = {
+          name: `card: ${account}`,
+          match: { op: "equals", field: "account", value: account },
+          priority: ACCOUNT_RULE_PRIORITY,
         };
       }
       // "once" and "situational" promote no category rule.

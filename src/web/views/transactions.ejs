@@ -33,17 +33,6 @@
   <div class="flash err" style="margin-bottom: 16px;"><%= warning %></div>
 <% } %>
 
-<%- include("partials/_rules-section", {
-  rules,
-  description: "Deterministic matches run first; transactions matching a rule never call the AI.",
-  emptyText: "No rules yet. Approve a review below to create the first one.",
-  sectionId: "transaction-rules",
-}) %>
-
-<%- include("partials/_situational-section", { situationalRules }) %>
-
-<%- include("partials/_cleanup-section", { consolidations }) %>
-
 <section>
   <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
   <p class="muted" style="margin: 0 0 8px;">
@@ -75,6 +64,17 @@
     </table>
   <% } %>
 </section>
+
+<%- include("partials/_rules-section", {
+  rules,
+  description: "Deterministic matches run first; transactions matching a rule never call the AI.",
+  emptyText: "No rules yet. Approve a review below to create the first one.",
+  sectionId: "transaction-rules",
+}) %>
+
+<%- include("partials/_situational-section", { situationalRules }) %>
+
+<%- include("partials/_cleanup-section", { consolidations }) %>
 
 <%- include("partials/_activity-section", { sessionGroups, label: "Transactions" }) %>
 
