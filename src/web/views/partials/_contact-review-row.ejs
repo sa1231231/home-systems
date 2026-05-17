@@ -61,6 +61,9 @@
       <% if (typeof subj.row_index === "number") { %>
         <div class="muted" style="font-size: 11px; margin-top: 4px;">row <%= subj.row_index %> · via <%= subj.via || '?' %></div>
       <% } %>
+      <% if (subj.via === "name_weak") { %>
+        <div style="font-size: 11px; margin-top: 2px; color: #b35a00;">⚠ matched only by name — verify this is the same person before approving.</div>
+      <% } %>
       <table style="margin-top: 4px; font-size: 11px; background: #fafafa; border: 1px solid var(--border); width: 100%; table-layout: fixed;">
         <colgroup>
           <col style="width: 110px;" />

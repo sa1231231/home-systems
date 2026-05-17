@@ -128,17 +128,41 @@ describe("findMatch", () => {
     expect(result).toEqual({ kind: "ambiguous", matches: [1, 5], via: "name" });
   });
 
-  it("name-fallback is NOT used for contacts that have email or phone", () => {
-    // Even if the name happens to match a sheet row, contacts with their own
-    // email/phone must go through the email/phone path so an unrelated
-    // "Smith" doesn't get coalesced into the wrong row.
+  it("returns name_weak when a contact WITH an unmatched handle matches a name-only row", () => {
+    // The contact has a phone that hit nothing; a name-only sheet row exists.
+    // Pre-fix this returned "none" and the sync inserted a duplicate. Now it
+    // matches as name_weak — lower confidence, routed through review.
     const idx = buildSheetIndex([
-      { rowIndex: 1, record: { first_name: "Jane", last_name: "Smith" } },
+      { rowIndex: 1, record: { full_name: "Jane Smith" } },
     ]);
     const result = findMatch(
-      person({ given_name: "Jane", family_name: "Smith", emails: ["jane@elsewhere.com"] }),
+      person({ display_name: "Jane Smith", phones: ["5551234567"] }),
       idx,
     );
-    expect(result).toEqual({ kind: "none" });
+    expect(result).toEqual({ kind: "name_weak", rowIndex: 1 });
+  });
+
+  it("a matched phone still wins over a name_weak fallback", () => {
+    const idx = buildSheetIndex([
+      { rowIndex: 1, record: { full_name: "Jane Smith" } },
+      { rowIndex: 2, record: { full_name: "Jane Smith", dex_phone: "(555) 123-4567" } },
+    ]);
+    const result = findMatch(
+      person({ display_name: "Jane Smith", phones: ["5551234567"] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "phone", rowIndex: 2 });
+  });
+
+  it("a contact with a handle still goes ambiguous when its name hits multiple rows", () => {
+    const idx = buildSheetIndex([
+      { rowIndex: 1, record: { full_name: "Jane Smith" } },
+      { rowIndex: 4, record: { full_name: "Jane Smith" } },
+    ]);
+    const result = findMatch(
+      person({ display_name: "Jane Smith", phones: ["5559999999"] }),
+      idx,
+    );
+    expect(result).toEqual({ kind: "ambiguous", matches: [1, 4], via: "name" });
   });
 });

@@ -11,6 +11,38 @@ function row(rowIndex: number, record: Record<string, string>): SheetRowAt {
   return { rowIndex, record };
 }
 
+describe("buildMergePlan keeper selection", () => {
+  it("defaults the keeper to the lowest row index", () => {
+    const plan = buildMergePlan(
+      [row(7, { full_name: "X" }), row(2, { full_name: "X" })],
+      ["full_name"],
+    );
+    expect(plan.keeperRowIndex).toBe(2);
+    expect(plan.deleteRowIndices).toEqual([7]);
+  });
+
+  it("honors an explicit keeperRowIndex even when it is not the lowest", () => {
+    const plan = buildMergePlan(
+      [
+        row(2, { full_name: "Haven AQ", phone: "", google_resource_name: "" }),
+        row(7, { full_name: "Haven AQ", phone: "555-1234", google_resource_name: "people/c1" }),
+      ],
+      ["full_name", "phone", "google_resource_name"],
+      { keeperRowIndex: 7 },
+    );
+    expect(plan.keeperRowIndex).toBe(7);
+    expect(plan.deleteRowIndices).toEqual([2]);
+  });
+
+  it("throws if keeperRowIndex is not among the rows", () => {
+    expect(() =>
+      buildMergePlan([row(2, { full_name: "X" }), row(7, { full_name: "X" })], ["full_name"], {
+        keeperRowIndex: 99,
+      }),
+    ).toThrow();
+  });
+});
+
 describe("applyMergeStrategy", () => {
   it("union_csv dedupes case-insensitively and trims", () => {
     expect(applyMergeStrategy("union_csv", ["a@b, c@d", "A@B,  e@f"])).toBe("a@b, c@d, e@f");

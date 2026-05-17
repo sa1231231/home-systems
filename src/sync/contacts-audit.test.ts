@@ -1,9 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { findAuditIssues, findNoGroupRows, type SheetRow } from "./contacts-audit.js";
+import {
+  findAuditIssues,
+  findDuplicateNameGroups,
+  findNoGroupRows,
+  type SheetRow,
+} from "./contacts-audit.js";
 
 function row(over: Partial<SheetRow>): SheetRow {
   return { google_resource_name: "", full_name: "", email: "", phone: "", ...over };
 }
+
+describe("findDuplicateNameGroups", () => {
+  it("pairs a name-only row with its resource-name twin; keeper = resource-name row", () => {
+    const rows = [
+      { rowIndex: 4, record: row({ full_name: "Haven AQ" }) },
+      {
+        rowIndex: 2712,
+        record: row({ full_name: "Haven AQ", google_resource_name: "people/c8353", phone: "323" }),
+      },
+    ];
+    expect(findDuplicateNameGroups(rows)).toEqual([
+      { name: "haven aq", keeperRowIndex: 2712, duplicateRowIndices: [4] },
+    ]);
+  });
+
+  it("skips a group with no resource-name row", () => {
+    const rows = [
+      { rowIndex: 0, record: row({ full_name: "Twin Hector" }) },
+      { rowIndex: 1, record: row({ full_name: "Twin Hector" }) },
+    ];
+    expect(findDuplicateNameGroups(rows)).toEqual([]);
+  });
+
+  it("skips a group with two resource-name rows (needs human judgment)", () => {
+    const rows = [
+      { rowIndex: 0, record: row({ full_name: "Cigna", google_resource_name: "people/a" }) },
+      { rowIndex: 1, record: row({ full_name: "Cigna", google_resource_name: "people/b" }) },
+    ];
+    expect(findDuplicateNameGroups(rows)).toEqual([]);
+  });
+
+  it("ignores unique names", () => {
+    const rows = [
+      { rowIndex: 0, record: row({ full_name: "Solo", google_resource_name: "people/x" }) },
+    ];
+    expect(findDuplicateNameGroups(rows)).toEqual([]);
+  });
+});
 
 describe("findAuditIssues", () => {
   it("flags an orphan row whose full_name matches a canonical row", () => {

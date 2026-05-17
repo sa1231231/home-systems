@@ -32,7 +32,7 @@ export type RefreshReviewAction = {
   type: "refresh";
   tab: string;
   row_index: number;
-  via: "resource_name" | "email" | "phone" | "name";
+  via: "resource_name" | "email" | "phone" | "name" | "name_weak";
   updates: FieldChange[];
 };
 

@@ -38,7 +38,7 @@ export type FieldChange = { col: string; from: string; to: string };
 export type RefreshOp = {
   rowIndex: number;
   person: GooglePerson;
-  via: "resource_name" | "email" | "phone" | "name";
+  via: "resource_name" | "email" | "phone" | "name" | "name_weak";
   updates: FieldChange[];
 };
 
@@ -409,7 +409,10 @@ export async function runSync(
   const formattingRefreshes: RefreshOp[] = [];
   const realRefreshes: RefreshOp[] = [];
   for (const op of plan.refreshes) {
-    if (isResourceNameBackfill(op)) trivialBackfills.push(op);
+    // A weak name match must never auto-apply — auto-binding its
+    // resource_name would silently merge a possible namesake. Always queue.
+    if (op.via === "name_weak") realRefreshes.push(op);
+    else if (isResourceNameBackfill(op)) trivialBackfills.push(op);
     else if (isFormattingOnlyRefresh(op)) formattingRefreshes.push(op);
     else realRefreshes.push(op);
   }

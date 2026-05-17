@@ -149,6 +149,51 @@ function nameKey(row: SheetRow): string {
   return get(row, "full_name");
 }
 
+export type RowWithIndex = { rowIndex: number; record: SheetRow };
+
+export type DuplicateNameGroup = {
+  /** Normalized (lowercased) full_name shared by every row in the group. */
+  name: string;
+  /** The row that has a google_resource_name — the synced row, kept. */
+  keeperRowIndex: number;
+  /** Name-only duplicate rows to fold into the keeper. */
+  duplicateRowIndices: number[];
+};
+
+/**
+ * Duplicate-row groups safe to auto-consolidate: ≥2 rows share a normalized
+ * full_name and exactly one of them has a google_resource_name. That
+ * resource-name row is the keeper (the synced one); the rest are pre-existing
+ * name-only rows to fold in. Groups with zero or ≥2 resource-name rows are
+ * excluded — those need human judgment.
+ */
+export function findDuplicateNameGroups(rows: RowWithIndex[]): DuplicateNameGroup[] {
+  const byName = new Map<string, RowWithIndex[]>();
+  for (const r of rows) {
+    const name = get(r.record, "full_name").toLowerCase();
+    if (!name) continue;
+    const arr = byName.get(name);
+    if (arr) arr.push(r);
+    else byName.set(name, [r]);
+  }
+  const out: DuplicateNameGroup[] = [];
+  for (const [name, group] of byName) {
+    if (group.length < 2) continue;
+    const withResource = group.filter((r) => get(r.record, "google_resource_name"));
+    if (withResource.length !== 1) continue;
+    const keeperRowIndex = withResource[0].rowIndex;
+    out.push({
+      name,
+      keeperRowIndex,
+      duplicateRowIndices: group
+        .filter((r) => r.rowIndex !== keeperRowIndex)
+        .map((r) => r.rowIndex),
+    });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
 /**
  * Categorize the sheet:
  *

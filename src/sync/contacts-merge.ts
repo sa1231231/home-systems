@@ -218,14 +218,33 @@ export type MergePlan = {
  * Pure planner: given the matching rows (in any order) and the sheet's
  * current headers, produce the keeper + updates + delete list. Does not
  * touch the sheet — the caller wraps in changelog + applies.
+ *
+ * By default the keeper is the lowest row index. Pass `opts.keeperRowIndex`
+ * to force a specific row to survive (used by duplicate consolidation, where
+ * the keeper must be the row carrying the google_resource_name).
  */
-export function buildMergePlan(rows: SheetRowAt[], headers: string[]): MergePlan {
+export function buildMergePlan(
+  rows: SheetRowAt[],
+  headers: string[],
+  opts: { keeperRowIndex?: number } = {},
+): MergePlan {
   if (rows.length < 2) {
     throw new Error(`buildMergePlan needs ≥ 2 rows, got ${rows.length}`);
   }
   const sorted = [...rows].sort((a, b) => a.rowIndex - b.rowIndex);
-  const keeper = sorted[0];
-  const others = sorted.slice(1);
+  let keeper: SheetRowAt;
+  let others: SheetRowAt[];
+  if (opts.keeperRowIndex !== undefined) {
+    const found = sorted.find((r) => r.rowIndex === opts.keeperRowIndex);
+    if (!found) {
+      throw new Error(`buildMergePlan: keeperRowIndex ${opts.keeperRowIndex} not among rows`);
+    }
+    keeper = found;
+    others = sorted.filter((r) => r.rowIndex !== opts.keeperRowIndex);
+  } else {
+    keeper = sorted[0];
+    others = sorted.slice(1);
+  }
 
   const updates: MergeUpdate[] = [];
   for (const col of headers) {

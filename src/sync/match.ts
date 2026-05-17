@@ -16,6 +16,9 @@ export type MatchResult =
   | { kind: "email"; rowIndex: number }
   | { kind: "phone"; rowIndex: number }
   | { kind: "name"; rowIndex: number }
+  /** Name hit for a contact that HAS an unmatched email/phone — lower
+   *  confidence (possible namesake). Always reviewed, never auto-applied. */
+  | { kind: "name_weak"; rowIndex: number }
   | { kind: "ambiguous"; matches: number[]; via: "email" | "phone" | "name" }
   | { kind: "none" };
 
@@ -136,20 +139,23 @@ export function findMatch(person: GooglePerson, idx: SheetIndex): MatchResult {
     return { kind: "ambiguous", matches: [...ambiguousRows].sort((a, b) => a - b), via: ambiguousVia };
   }
 
-  // Last-resort fallback: match by name. Only triggered for Google contacts
-  // that have NO email and NO phone — those can't be matched any other way,
-  // and without this fallback every sync would propose a fresh insert
-  // forever, even after the user approved one. Limited to no-handle contacts
-  // so it can't accidentally collide two different "Smith"s who both have
-  // their own email/phone.
-  if (person.emails.length === 0 && person.phones.length === 0) {
-    const key = personNameKey(person);
-    if (key) {
-      const m = idx.byNameKey.get(key);
-      if (m && m.length === 1) return { kind: "name", rowIndex: m[0] };
-      if (m && m.length > 1) {
-        return { kind: "ambiguous", matches: [...m].sort((a, b) => a - b), via: "name" };
-      }
+  // Fallback: match by name. `byNameKey` only contains rows with no
+  // resource_name, so this never collides with an already-bound row.
+  //   - Contact with NO email/phone: name is its only possible handle, and
+  //     without this every sync would re-propose an insert forever → "name"
+  //     (strong; the matched row is itself handle-less).
+  //   - Contact that HAS an email/phone that matched nothing: a name hit is
+  //     lower-confidence (could be a different person with the same name) →
+  //     "name_weak". Routed through review, never auto-applied — see runSync.
+  const key = personNameKey(person);
+  if (key) {
+    const m = idx.byNameKey.get(key);
+    if (m && m.length === 1) {
+      const handleless = person.emails.length === 0 && person.phones.length === 0;
+      return { kind: handleless ? "name" : "name_weak", rowIndex: m[0] };
+    }
+    if (m && m.length > 1) {
+      return { kind: "ambiguous", matches: [...m].sort((a, b) => a - b), via: "name" };
     }
   }
 

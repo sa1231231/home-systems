@@ -53,6 +53,38 @@ describe("planSync", () => {
     expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0 });
   });
 
+  it("matches a name-only sheet row as a name_weak refresh when the contact has a phone", () => {
+    // Pre-fix: a contact with a phone skipped name-matching, found nothing,
+    // and the sync inserted a duplicate. Now it matches the name-only row as
+    // name_weak — queued for review, carrying the resource_name binding.
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "phone", "updated_at", "google_resource_name", "groups"],
+      rows: [
+        {
+          rowIndex: 0,
+          record: {
+            full_name: "Haven AQ",
+            phone: "",
+            updated_at: "",
+            google_resource_name: "",
+            groups: "",
+          },
+        },
+      ],
+    };
+    const p = person({
+      resource_name: "people/c8353",
+      display_name: "Haven AQ",
+      phones: ["(323) 620-7906"],
+    });
+    const plan = planSync("sheet-123", tab, [p], NOW);
+    expect(plan.inserts).toHaveLength(0);
+    expect(plan.refreshes).toHaveLength(1);
+    expect(plan.refreshes[0].via).toBe("name_weak");
+    expect(plan.refreshes[0].updates.some((u) => u.col === "google_resource_name")).toBe(true);
+  });
+
   it("refreshes a row matched by email, binding google_resource_name", () => {
     const tab: ContactsTab = {
       tab: "dex_contacts",
