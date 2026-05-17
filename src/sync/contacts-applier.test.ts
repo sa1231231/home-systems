@@ -139,6 +139,27 @@ describe("contacts-applier", () => {
       expect(row.afterState).toEqual({ email: "new@x" });
     });
 
+    it("advances the contact snapshot when a refresh is approved", async () => {
+      const { loadSnapshots } = await import("./contact-snapshots.js");
+      const action: RefreshReviewAction = {
+        type: "refresh",
+        tab: "Contacts",
+        row_index: 0,
+        via: "resource_name",
+        updates: [{ col: "full_name", from: "Old", to: "New", tier: "conflict" }],
+        google_identity: { full_name: "New", company: "Acme" },
+      };
+      readMock.mockResolvedValueOnce(
+        tabWith([
+          { rowIndex: 0, record: { google_resource_name: "people/c1", full_name: "Old" } },
+        ]) as never,
+      );
+      writeMock.mockResolvedValueOnce(undefined);
+      await reviewAppliers.apply(CONTACT_REFRESH_KIND, "people/c1", action, META);
+      const snaps = await loadSnapshots(["people/c1"]);
+      expect(snaps.get("people/c1")).toEqual({ full_name: "New", company: "Acme" });
+    });
+
     it("skips updates for columns no longer in the headers", async () => {
       const action: RefreshReviewAction = {
         type: "refresh",

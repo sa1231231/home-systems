@@ -2,7 +2,14 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db as defaultDb } from "../db/client.js";
 import { needsReview } from "../db/schema.js";
 import type { GooglePerson } from "../integrations/google/people.js";
-import type { AmbiguousOp, FieldChange, InsertOp, RefreshOp, SyncPlan } from "./contacts.js";
+import {
+  personToIdentity,
+  type AmbiguousOp,
+  type FieldChange,
+  type InsertOp,
+  type RefreshOp,
+  type SyncPlan,
+} from "./contacts.js";
 
 export const CONTACT_DOMAIN = "contact";
 export const CONTACT_INSERT_KIND = "google_contact_insert";
@@ -34,6 +41,9 @@ export type RefreshReviewAction = {
   row_index: number;
   via: "resource_name" | "email" | "phone" | "name" | "name_weak";
   updates: FieldChange[];
+  /** Google identity captured at queue time — written as the new snapshot
+   *  baseline when this refresh is approved. */
+  google_identity: Record<string, string>;
 };
 
 export type AmbiguousReviewAction = {
@@ -93,6 +103,7 @@ export function buildRefreshReview(op: RefreshOp, plan: SyncPlan): {
       row_index: op.rowIndex,
       via: op.via,
       updates: op.updates,
+      google_identity: personToIdentity(op.person),
     },
   };
 }

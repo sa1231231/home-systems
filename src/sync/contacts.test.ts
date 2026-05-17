@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { planSync, summarize } from "./contacts.js";
+import { personToIdentity, planSync, summarize } from "./contacts.js";
 import type { GooglePerson } from "../integrations/google/people.js";
 import type { ContactsTab } from "../integrations/google/sheets.js";
+import type { SnapshotFields } from "./contact-snapshots.js";
 
 function person(overrides: Partial<GooglePerson> = {}): GooglePerson {
   return {
@@ -210,5 +211,83 @@ describe("planSync", () => {
     const plan = planSync("sheet-123", tab, [p], NOW);
     expect(plan.inserts).toHaveLength(0);
     expect(plan.refreshes).toHaveLength(0);
+  });
+});
+
+describe("planSync — 3-way snapshot compare", () => {
+  function tabWith(record: Record<string, string>): ContactsTab {
+    return {
+      tab: "dex_contacts",
+      headers: ["full_name", "company", "updated_at", "google_resource_name", "groups"],
+      rows: [
+        {
+          rowIndex: 0,
+          record: {
+            full_name: "",
+            company: "",
+            updated_at: "",
+            google_resource_name: "people/c1",
+            groups: "",
+            ...record,
+          },
+        },
+      ],
+    };
+  }
+  function snapshotOf(over: Partial<GooglePerson> = {}): Map<string, SnapshotFields> {
+    return new Map([
+      ["people/c1", personToIdentity(person({ display_name: "Jane", company: "Acme", ...over }))],
+    ]);
+  }
+
+  it("emits no change when Google matches the snapshot — a hand-edited sheet is preserved", () => {
+    const tab = tabWith({ full_name: "Jane", company: "HAND EDIT" });
+    const g = person({ resource_name: "people/c1", display_name: "Jane", company: "Acme" });
+    const plan = planSync("s", tab, [g], NOW, snapshotOf());
+    expect(plan.refreshes).toHaveLength(0);
+    expect(plan.unchanged).toBe(1);
+  });
+
+  it("tiers a change `auto` when Google moved and the sheet is untouched", () => {
+    const tab = tabWith({ full_name: "Jane", company: "Acme" });
+    const g = person({ resource_name: "people/c1", display_name: "Jane", company: "NewCo" });
+    const plan = planSync("s", tab, [g], NOW, snapshotOf());
+    expect(plan.refreshes[0].updates.find((u) => u.col === "company")).toMatchObject({
+      from: "Acme",
+      to: "NewCo",
+      base: "Acme",
+      tier: "auto",
+    });
+  });
+
+  it("tiers a change `conflict` when Google AND the sheet both moved", () => {
+    const tab = tabWith({ full_name: "Jane", company: "HAND EDIT" });
+    const g = person({ resource_name: "people/c1", display_name: "Jane", company: "NewCo" });
+    const plan = planSync("s", tab, [g], NOW, snapshotOf());
+    expect(plan.refreshes[0].updates.find((u) => u.col === "company")).toMatchObject({
+      from: "HAND EDIT",
+      to: "NewCo",
+      base: "Acme",
+      tier: "conflict",
+    });
+  });
+
+  it("tiers `first_run` when there is no snapshot for the contact", () => {
+    const tab = tabWith({ full_name: "Jane", company: "Old" });
+    const g = person({ resource_name: "people/c1", display_name: "Jane", company: "NewCo" });
+    const plan = planSync("s", tab, [g], NOW);
+    expect(plan.refreshes[0].updates.find((u) => u.col === "company")).toMatchObject({
+      tier: "first_run",
+    });
+  });
+
+  it("never overwrites a populated sheet field with an empty Google value", () => {
+    const tab = tabWith({ full_name: "Jane", company: "Manual" });
+    const g = person({ resource_name: "people/c1", display_name: "Jane" }); // company → ""
+    const plan = planSync("s", tab, [g], NOW, snapshotOf());
+    const companyChange = plan.refreshes
+      .flatMap((r) => r.updates)
+      .find((u) => u.col === "company");
+    expect(companyChange).toBeUndefined();
   });
 });

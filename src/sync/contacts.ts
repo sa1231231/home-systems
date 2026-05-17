@@ -10,6 +10,7 @@ import {
   type ContactsTab,
 } from "../integrations/google/sheets.js";
 import { buildSheetIndex, findMatch } from "./match.js";
+import { loadSnapshots, writeSnapshots, type SnapshotFields } from "./contact-snapshots.js";
 
 const RESOURCE_NAME_COL = "google_resource_name";
 
@@ -18,7 +19,7 @@ const RESOURCE_NAME_COL = "google_resource_name";
  * to just the fields the dex_contacts CRM actually keeps. Enrichment columns
  * (groups, tags) are never written by sync — they're the user's domain.
  */
-const IDENTITY_COLUMNS = [
+export const IDENTITY_COLUMNS = [
   "full_name",
   "description",
   "job_title",
@@ -33,7 +34,25 @@ const IDENTITY_COLUMNS = [
 
 type IdentityCol = (typeof IDENTITY_COLUMNS)[number];
 
-export type FieldChange = { col: string; from: string; to: string };
+/**
+ * - `auto`: Google changed, the sheet field is untouched since last sync —
+ *   safe to apply without review.
+ * - `conflict`: both Google and the sheet changed since last sync — must be
+ *   reviewed (applying would overwrite a hand edit).
+ * - `first_run`: no baseline snapshot for this contact yet — review to be safe.
+ */
+export type ChangeTier = "auto" | "conflict" | "first_run";
+
+export type FieldChange = {
+  col: string;
+  /** Current sheet value. */
+  from: string;
+  /** Proposed (current Google) value. */
+  to: string;
+  /** Last-synced Google value (snapshot baseline), when known. */
+  base?: string;
+  tier: ChangeTier;
+};
 
 export type RefreshOp = {
   rowIndex: number;
@@ -65,6 +84,8 @@ export type SyncPlan = {
   refreshes: RefreshOp[];
   ambiguous: AmbiguousOp[];
   unchanged: number;
+  /** Matched contacts with no proposed changes — used to seed missing snapshots. */
+  unchangedPersons: GooglePerson[];
 };
 
 export type SyncSummary = {
@@ -74,7 +95,7 @@ export type SyncSummary = {
   ambiguous: number;
 };
 
-function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
+export function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
   const primaryEmail = p.emails[0] ?? "";
   const allEmails = p.emails.join(", ");
   const primaryPhone = p.phones[0] ?? "";
@@ -94,38 +115,57 @@ function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
 }
 
 /**
- * Compute changes for a matched row. Empty Google values do NOT overwrite
- * non-empty Sheet values — preserves manually-added Sheet data when Google
- * has no value for that field. Always sets google_resource_name and
- * updated_at when they differ from current. Only proposes updates for
- * columns actually present in the Sheet's headers.
+ * Compute changes for a matched row via a 3-way compare — Google-now vs
+ * Sheet-now vs the last-synced snapshot (`base`). Empty Google values never
+ * overwrite the Sheet. A field is only emitted as a change when Google
+ * actually moved since last sync; each change is tiered:
+ *   - Google moved, sheet still == base  → `auto`  (safe to apply)
+ *   - Google moved, sheet also moved     → `conflict` (must be reviewed)
+ *   - no snapshot for this contact yet   → `first_run` (review to be safe)
+ * When Google has NOT moved (`google == base`) the field is left entirely
+ * alone, preserving any hand edit in the sheet. `google_resource_name` and
+ * `updated_at` are mechanical and always tiered `auto`.
  */
 function computeRefreshChanges(
   current: Record<string, string>,
   person: GooglePerson,
   nowIso: string,
   headerSet: Set<string>,
+  snapshot: SnapshotFields | undefined,
 ): FieldChange[] {
   const changes: FieldChange[] = [];
   const identity = personToIdentity(person);
   for (const col of IDENTITY_COLUMNS) {
     if (!headerSet.has(col)) continue;
-    const newVal = identity[col];
-    const oldVal = current[col] ?? "";
-    if (newVal !== "" && newVal !== oldVal) {
-      changes.push({ col, from: oldVal, to: newVal });
+    const googleNow = identity[col];
+    const sheetNow = current[col] ?? "";
+    // Empty Google value never overwrites the sheet; identical → nothing to do.
+    if (googleNow === "" || googleNow === sheetNow) continue;
+    const base = snapshot?.[col];
+    let tier: ChangeTier;
+    if (base === undefined) {
+      tier = "first_run";
+    } else if (googleNow === base) {
+      // Google hasn't moved since last sync — leave the sheet (incl. any
+      // hand edit) untouched.
+      continue;
+    } else if (sheetNow === base) {
+      tier = "auto";
+    } else {
+      tier = "conflict";
     }
+    changes.push({ col, from: sheetNow, to: googleNow, base, tier });
   }
   if (headerSet.has(RESOURCE_NAME_COL)) {
     const oldResource = current[RESOURCE_NAME_COL] ?? "";
     if (person.resource_name && oldResource !== person.resource_name) {
-      changes.push({ col: RESOURCE_NAME_COL, from: oldResource, to: person.resource_name });
+      changes.push({ col: RESOURCE_NAME_COL, from: oldResource, to: person.resource_name, tier: "auto" });
     }
   }
   if (changes.length > 0 && headerSet.has("updated_at")) {
     const oldUpdated = current.updated_at ?? "";
     if (oldUpdated !== nowIso) {
-      changes.push({ col: "updated_at", from: oldUpdated, to: nowIso });
+      changes.push({ col: "updated_at", from: oldUpdated, to: nowIso, tier: "auto" });
     }
   }
   return changes;
@@ -146,6 +186,7 @@ export function planSync(
   contactsTab: ContactsTab,
   people: GooglePerson[],
   nowIso: string,
+  snapshots: Map<string, SnapshotFields> = new Map(),
 ): SyncPlan {
   const headers = [...contactsTab.headers];
   // Auto-add the google_resource_name column when missing. It's the stable
@@ -165,7 +206,7 @@ export function planSync(
   const inserts: InsertOp[] = [];
   const refreshes: RefreshOp[] = [];
   const ambiguous: AmbiguousOp[] = [];
-  let unchanged = 0;
+  const unchangedPersons: GooglePerson[] = [];
 
   for (const person of people) {
     if (!person.resource_name) continue;
@@ -180,9 +221,15 @@ export function planSync(
     }
     const row = contactsTab.rows.find((r) => r.rowIndex === match.rowIndex);
     if (!row) continue;
-    const updates = computeRefreshChanges(row.record, person, nowIso, headerSet);
+    const updates = computeRefreshChanges(
+      row.record,
+      person,
+      nowIso,
+      headerSet,
+      snapshots.get(person.resource_name),
+    );
     if (updates.length === 0) {
-      unchanged++;
+      unchangedPersons.push(person);
     } else {
       refreshes.push({ rowIndex: match.rowIndex, person, via: match.kind, updates });
     }
@@ -197,7 +244,8 @@ export function planSync(
     inserts,
     refreshes,
     ambiguous,
-    unchanged,
+    unchanged: unchangedPersons.length,
+    unchangedPersons,
   };
 }
 
@@ -271,77 +319,9 @@ function isResourceNameBackfill(op: RefreshOp): boolean {
   return op.updates.length === 1 && op.updates[0].col === RESOURCE_NAME_COL;
 }
 
-/**
- * True iff a single FieldChange is "formatting-only" — same information,
- * different representation. Safe to auto-apply.
- *
- * - `google_resource_name`: binding Google's stable ID (only set when empty).
- * - `updated_at`: mechanical sync timestamp.
- * - `phone`, `phones`: same digits (after stripping non-digits + leading 1).
- * - `description`: same content after collapsing all whitespace (catches Dex
- *   import flattening newlines, e.g. "Vocal teacher24221 cascades dr" vs
- *   "Vocal teacher\n\n24221 cascades dr").
- * - `address`: same content after collapsing whitespace AND comma separators
- *   (catches "Los Angeles, CA,US" vs "Los Angeles, CA\nUS" — Google uses
- *   newlines between lines; Dex import joined them with commas).
- */
-function isFormattingOnlyChange(change: FieldChange): boolean {
-  if (change.col === RESOURCE_NAME_COL) return change.from === "";
-  if (change.col === "updated_at") return true;
-  if (change.col === "phone" || change.col === "phones") {
-    return normalizePhoneCsv(change.from) === normalizePhoneCsv(change.to);
-  }
-  if (change.col === "email" || change.col === "emails") {
-    return normalizeEmailCsv(change.from) === normalizeEmailCsv(change.to);
-  }
-  if (change.col === "description") {
-    return stripWhitespace(change.from) === stripWhitespace(change.to);
-  }
-  if (change.col === "address") {
-    return normalizeAddress(change.from) === normalizeAddress(change.to);
-  }
-  return false;
-}
-
-function stripWhitespace(s: string): string {
-  return s.replace(/\s+/g, "");
-}
-
-/** Collapse runs of whitespace + commas down to a single space — address
- *  formatting from Google (newline-separated lines) vs Dex (comma-joined)
- *  should compare equal. */
-function normalizeAddress(s: string): string {
-  return s.replace(/[\s,]+/g, " ").trim().toLowerCase();
-}
-
-function normalizePhoneCsv(s: string): string {
-  const set = new Set<string>();
-  for (const piece of s.split(/[,;]/)) {
-    const digits = piece.replace(/\D/g, "");
-    const trimmed = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-    if (trimmed) set.add(trimmed);
-  }
-  return [...set].sort().join(",");
-}
-
-/** Normalize an email or CSV-of-emails: lowercase, trim, split on
- *  comma/semicolon, dedupe, sort. Treats case + spacing + duplicate entries
- *  as formatting only. */
-function normalizeEmailCsv(s: string): string {
-  const set = new Set<string>();
-  for (const piece of s.split(/[,;]/)) {
-    const e = piece.trim().toLowerCase();
-    if (e) set.add(e);
-  }
-  return [...set].sort().join(",");
-}
-
-/**
- * A refresh op where EVERY change is formatting-only. Whole op auto-applies
- * as a Tier-A benign write — single changelog entry per row.
- */
-function isFormattingOnlyRefresh(op: RefreshOp): boolean {
-  return op.updates.length > 0 && op.updates.every(isFormattingOnlyChange);
+/** True iff every change in the op is `auto` tier (or a mechanical one). */
+function isAutoApplicable(op: RefreshOp): boolean {
+  return op.updates.every((u) => u.tier === "auto");
 }
 
 /**
@@ -375,7 +355,8 @@ export async function runSync(
     listAllConnections(client),
     readContactsTab(client, spreadsheetId, { tab: opts.tab }),
   ]);
-  const plan = planSync(spreadsheetId, contactsTab, people, nowIso);
+  const snapshots = await loadSnapshots(people.map((p) => p.resource_name).filter(Boolean));
+  const plan = planSync(spreadsheetId, contactsTab, people, nowIso, snapshots);
   const summary = summarize(plan);
   if (opts.dryRun) {
     return { plan, summary, applied: false };
@@ -394,36 +375,67 @@ export async function runSync(
       RESOURCE_NAME_COL,
     );
   }
+  // Snapshots to advance once their Google values are reflected in the sheet.
+  const snapshotWrites: Array<{ resourceName: string; fields: SnapshotFields }> = [];
+
   // Inserts auto-apply: a fresh row with no groups IS the pending-review
-  // state in the new model.
+  // state in the new model. The inserted row IS the Google identity.
   let auto_inserts = 0;
   if (plan.inserts.length > 0) {
     const { applyInsertsTierA } = await import("./contacts-backfill.js");
     await applyInsertsTierA(client, plan);
     auto_inserts = plan.inserts.length;
+    for (const ins of plan.inserts) {
+      snapshotWrites.push({
+        resourceName: ins.person.resource_name,
+        fields: personToIdentity(ins.person),
+      });
+    }
   }
-  // Backfills auto-apply (binding google_resource_name on already-matched rows).
-  // Formatting-only refreshes (phone reformat, description whitespace, etc.)
-  // also auto-apply — same information, different representation.
+  // Route refreshes: a weak name match, or any change tiered conflict/first_run
+  // (Google AND the sheet diverged from the baseline, or no baseline yet) goes
+  // to the review queue. An op whose every change is `auto` (the sheet field is
+  // untouched since last sync) auto-applies.
   const trivialBackfills: RefreshOp[] = [];
-  const formattingRefreshes: RefreshOp[] = [];
+  const autoRefreshes: RefreshOp[] = [];
   const realRefreshes: RefreshOp[] = [];
   for (const op of plan.refreshes) {
-    // A weak name match must never auto-apply — auto-binding its
-    // resource_name would silently merge a possible namesake. Always queue.
-    if (op.via === "name_weak") realRefreshes.push(op);
-    else if (isResourceNameBackfill(op)) trivialBackfills.push(op);
-    else if (isFormattingOnlyRefresh(op)) formattingRefreshes.push(op);
-    else realRefreshes.push(op);
+    if (op.via === "name_weak" || !isAutoApplicable(op)) {
+      realRefreshes.push(op);
+    } else if (isResourceNameBackfill(op)) {
+      trivialBackfills.push(op);
+    } else {
+      autoRefreshes.push(op);
+    }
   }
   if (trivialBackfills.length > 0) {
     const { applyResourceNameBackfills } = await import("./contacts-backfill.js");
     await applyResourceNameBackfills(client, plan, trivialBackfills);
   }
-  if (formattingRefreshes.length > 0) {
+  if (autoRefreshes.length > 0) {
     const { applyFormattingRefreshes } = await import("./contacts-backfill.js");
-    await applyFormattingRefreshes(client, plan, formattingRefreshes);
+    await applyFormattingRefreshes(client, plan, autoRefreshes);
   }
+  // Auto-applied rows now reflect Google → advance their snapshots.
+  for (const op of [...trivialBackfills, ...autoRefreshes]) {
+    snapshotWrites.push({
+      resourceName: op.person.resource_name,
+      fields: personToIdentity(op.person),
+    });
+  }
+  // Seed a baseline for matched-but-unchanged contacts that lack one — their
+  // sheet row already reflects Google, so the current Google identity is a
+  // safe baseline.
+  for (const person of plan.unchangedPersons) {
+    if (!snapshots.has(person.resource_name)) {
+      snapshotWrites.push({
+        resourceName: person.resource_name,
+        fields: personToIdentity(person),
+      });
+    }
+  }
+  await writeSnapshots(snapshotWrites);
+
   // Only field-diff refreshes + ambiguous go to the review queue. Drop the
   // inserts since we just applied them above.
   const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes, inserts: [] };
@@ -438,7 +450,7 @@ export async function runSync(
       queued_inserts: 0,
       auto_inserts,
       resource_name_backfills: trivialBackfills.length,
-      formatting_refreshes: formattingRefreshes.length,
+      formatting_refreshes: autoRefreshes.length,
     },
   };
 }

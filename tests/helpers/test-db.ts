@@ -32,6 +32,7 @@ const ALL_TABLES = [
   "daily_op_counters",
   "triage_runs",
   "contact_groups",
+  "contact_snapshots",
   "_meta",
 ];
 

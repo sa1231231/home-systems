@@ -14,6 +14,7 @@ import {
   CONTACT_REFRESH_KIND,
   type ContactReviewAction,
 } from "./contacts-review.js";
+import { writeSnapshots } from "./contact-snapshots.js";
 
 export const CONTACT_INSERT_OP = "contacts.review.insert";
 export const CONTACT_REFRESH_OP = "contacts.review.refresh";
@@ -107,6 +108,11 @@ export function registerContactReviewAppliers(
         await batchUpdateCells(client, opts.spreadsheetId, cellUpdates);
       },
     );
+    // The sheet now reflects Google for the approved cells — advance the
+    // snapshot baseline so the next sync treats this as the last-synced state.
+    if (action.google_identity) {
+      await writeSnapshots([{ resourceName: subjectId, fields: action.google_identity }]);
+    }
     return {
       refreshed: cellUpdates.length,
       tab: action.tab,

@@ -169,6 +169,19 @@ export const processedTransactions = pgTable(
   }),
 );
 
+/**
+ * Per-contact baseline: the Google identity fields as of the last sync.
+ * Lets contacts sync do a 3-way compare (Google-now / Sheet-now / snapshot)
+ * so it can tell "Google changed" from "the user hand-edited the sheet" and
+ * never silently overwrites a sheet edit. Keyed by Google's stable
+ * resource_name. `fields` holds the IDENTITY_COLUMNS shape.
+ */
+export const contactSnapshots = pgTable("contact_snapshots", {
+  resourceName: text("resource_name").primaryKey(),
+  fields: jsonb("fields").notNull(),
+  syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const dailyOpCounters = pgTable(
   "daily_op_counters",
   {

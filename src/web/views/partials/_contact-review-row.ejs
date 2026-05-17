@@ -69,10 +69,12 @@
           <col style="width: 110px;" />
           <col />
           <col />
+          <col />
         </colgroup>
         <thead>
           <tr>
             <th style="padding: 3px 8px; font-size: 10px; text-align: left;">Field</th>
+            <th style="padding: 3px 8px; font-size: 10px; text-align: left;">Last synced</th>
             <th style="padding: 3px 8px; font-size: 10px; text-align: left;">Sheet now</th>
             <th style="padding: 3px 8px; font-size: 10px; text-align: left;">→ After</th>
           </tr>
@@ -83,7 +85,9 @@
             <tr>
               <td style="padding: 3px 8px; font-family: monospace; vertical-align: top; word-break: break-word;">
                 <%= u.col %><% if (diff.lost > 0) { %> <span title="<%= diff.lost %> line(s) present in the sheet would be dropped" style="color: #c00;">⚠</span><% } %>
+                <% if (u.tier === "conflict") { %><div style="margin-top: 2px;"><span class="pill rejected" style="font-size: 9px;">both changed</span></div><% } %>
               </td>
+              <td style="padding: 3px 8px; vertical-align: top; color: #999; word-break: break-word; white-space: pre-wrap;"><%= u.base === undefined ? "(no baseline)" : (u.base === "" ? "(empty)" : u.base) %></td>
               <td style="padding: 3px 8px; vertical-align: top; color: #666; word-break: break-word; white-space: pre-wrap;"><%- diff.html %></td>
               <td style="padding: 3px 8px; vertical-align: top; color: #128a3e; word-break: break-word; white-space: pre-wrap;"><%= (u.to == null || u.to === "") ? "(empty)" : u.to %></td>
             </tr>
