@@ -291,3 +291,93 @@ describe("planSync — 3-way snapshot compare", () => {
     expect(companyChange).toBeUndefined();
   });
 });
+
+describe("planSync — formatting-only differences are ignored", () => {
+  function rowTab(record: Record<string, string>): ContactsTab {
+    return {
+      tab: "dex_contacts",
+      headers: [
+        "full_name",
+        "description",
+        "email",
+        "emails",
+        "phone",
+        "phones",
+        "address",
+        "updated_at",
+        "google_resource_name",
+        "groups",
+      ],
+      rows: [
+        {
+          rowIndex: 0,
+          record: {
+            full_name: "Y",
+            description: "",
+            email: "",
+            emails: "",
+            phone: "",
+            phones: "",
+            address: "",
+            updated_at: "",
+            google_resource_name: "people/c1",
+            groups: "",
+            ...record,
+          },
+        },
+      ],
+    };
+  }
+  const g = (over: Partial<GooglePerson>) =>
+    person({ resource_name: "people/c1", display_name: "Y", ...over });
+
+  it("a phone Google lists twice is not a change", () => {
+    const plan = planSync(
+      "s",
+      rowTab({ phone: "+15714382840", phones: "+15714382840" }),
+      [g({ phones: ["+15714382840", "+15714382840"] })],
+      NOW,
+    );
+    expect(plan.refreshes).toHaveLength(0);
+  });
+
+  it("a reformatted phone (+1 vs bare digits) is not a change", () => {
+    const plan = planSync(
+      "s",
+      rowTab({ phone: "+19498384588", phones: "+19498384588" }),
+      [g({ phones: ["9498384588"] })],
+      NOW,
+    );
+    expect(plan.refreshes).toHaveLength(0);
+  });
+
+  it("email spacing/order is not a change", () => {
+    const plan = planSync(
+      "s",
+      rowTab({ email: "a@x.com", emails: "a@x.com,b@y.com" }),
+      [g({ emails: ["a@x.com", "b@y.com"] })],
+      NOW,
+    );
+    expect(plan.refreshes).toHaveLength(0);
+  });
+
+  it("description whitespace is not a change", () => {
+    const plan = planSync(
+      "s",
+      rowTab({ description: "7 Ericson AisleIrvine 92620" }),
+      [g({ biography: "7 Ericson Aisle\nIrvine 92620" })],
+      NOW,
+    );
+    expect(plan.refreshes).toHaveLength(0);
+  });
+
+  it("a genuinely different address still surfaces", () => {
+    const plan = planSync(
+      "s",
+      rowTab({ address: "74 Wonderland,Irvine,CA,92620" }),
+      [g({ address: "7 Ericson Aisle\nIrvine\nCA\n92620" })],
+      NOW,
+    );
+    expect(plan.refreshes[0].updates.some((u) => u.col === "address")).toBe(true);
+  });
+});

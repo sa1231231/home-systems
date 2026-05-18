@@ -123,10 +123,60 @@ export function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
   };
 }
 
+function stripWhitespace(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+/** Collapse whitespace + comma separators — Google (newline-separated) vs
+ *  Dex (comma-joined) address formatting should compare equal. */
+function normalizeAddress(s: string): string {
+  return s.replace(/[\s,]+/g, " ").trim().toLowerCase();
+}
+
+/** Phone or CSV-of-phones reduced to a sorted, deduped set of bare digit
+ *  strings (leading US "1" dropped) — `+1 555-1234`, `5551234`, and a
+ *  list with the same number twice all compare equal. */
+function normalizePhoneCsv(s: string): string {
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const digits = piece.replace(/\D/g, "");
+    const trimmed = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    if (trimmed) set.add(trimmed);
+  }
+  return [...set].sort().join(",");
+}
+
+/** Email or CSV-of-emails reduced to a sorted, deduped, lowercased set —
+ *  treats case, spacing, ordering and duplicate entries as formatting. */
+function normalizeEmailCsv(s: string): string {
+  const set = new Set<string>();
+  for (const piece of s.split(/[,;]/)) {
+    const e = piece.trim().toLowerCase();
+    if (e) set.add(e);
+  }
+  return [...set].sort().join(",");
+}
+
+/**
+ * True when two values for a column carry the same information and differ
+ * only in formatting — phone format/order/duplicates, email spacing/case/
+ * duplicates, whitespace, address punctuation. Such a difference is not a
+ * real content change and should never surface as a sync change.
+ */
+export function fieldEquiv(col: string, a: string, b: string): boolean {
+  if (a === b) return true;
+  if (col === "phone" || col === "phones") return normalizePhoneCsv(a) === normalizePhoneCsv(b);
+  if (col === "email" || col === "emails") return normalizeEmailCsv(a) === normalizeEmailCsv(b);
+  if (col === "description") return stripWhitespace(a) === stripWhitespace(b);
+  if (col === "address") return normalizeAddress(a) === normalizeAddress(b);
+  return a.trim() === b.trim();
+}
+
 /**
  * Compute changes for a matched row via a 3-way compare — Google-now vs
  * Sheet-now vs the last-synced snapshot (`base`). Empty Google values never
- * overwrite the Sheet. A field is only emitted as a change when Google
+ * overwrite the Sheet, and formatting-only differences (see `fieldEquiv`)
+ * are ignored. A field is only emitted as a change when Google
  * actually moved since last sync; each change is tiered:
  *   - Google moved, sheet still == base  → `auto`  (safe to apply)
  *   - Google moved, sheet also moved     → `conflict` (must be reviewed)
@@ -148,17 +198,19 @@ function computeRefreshChanges(
     if (!headerSet.has(col)) continue;
     const googleNow = identity[col];
     const sheetNow = current[col] ?? "";
-    // Empty Google value never overwrites the sheet; identical → nothing to do.
-    if (googleNow === "" || googleNow === sheetNow) continue;
+    // Empty Google never overwrites the sheet; formatting-only differences
+    // (reformatted phone, deduped list, whitespace) are not real changes.
+    if (googleNow === "") continue;
+    if (fieldEquiv(col, googleNow, sheetNow)) continue;
     const base = snapshot?.[col];
     let tier: ChangeTier;
     if (base === undefined) {
       tier = "first_run";
-    } else if (googleNow === base) {
-      // Google hasn't moved since last sync — leave the sheet (incl. any
-      // hand edit) untouched.
+    } else if (fieldEquiv(col, googleNow, base)) {
+      // Google hasn't substantively moved since last sync — leave the sheet
+      // (incl. any hand edit) untouched.
       continue;
-    } else if (sheetNow === base) {
+    } else if (fieldEquiv(col, sheetNow, base)) {
       tier = "auto";
     } else {
       tier = "conflict";
