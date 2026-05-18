@@ -60,7 +60,18 @@ export function registerContactReviewAppliers(
     // and may be stale if the user has inserted/deleted/sorted rows since.
     const { readContactsTab } = await import("../integrations/google/sheets.js");
     const tab = await readContactsTab(client, opts.spreadsheetId, { tab: action.tab });
-    const live = tab.rows.find((r) => (r.record["google_resource_name"] ?? "") === subjectId);
+    let live = tab.rows.find((r) => (r.record["google_resource_name"] ?? "") === subjectId);
+    if (!live) {
+      // The row may not carry the resource_name yet — it was matched by
+      // email/phone/name and binding the resource_name is part of THIS
+      // refresh. Fall back to the captured row index, but only if that row
+      // isn't already bound to a different contact (rows shifted under us).
+      const byIndex = tab.rows.find((r) => r.rowIndex === action.row_index);
+      const boundTo = byIndex ? (byIndex.record["google_resource_name"] ?? "") : "";
+      if (byIndex && (boundTo === "" || boundTo === subjectId)) {
+        live = byIndex;
+      }
+    }
     if (!live) {
       throw new Error(
         `contact "${subjectId}" not found in tab "${action.tab}" (row deleted or moved between queue and apply)`,

@@ -139,6 +139,45 @@ describe("contacts-applier", () => {
       expect(row.afterState).toEqual({ email: "new@x" });
     });
 
+    it("falls back to the captured row index when the row has no resource_name yet", async () => {
+      // Email-matched refresh — the row doesn't carry the resource_name until
+      // this very refresh binds it, so resource_name lookup must fall back.
+      const action: RefreshReviewAction = {
+        type: "refresh",
+        tab: "Contacts",
+        row_index: 1,
+        via: "email",
+        updates: [{ col: "google_resource_name", from: "", to: "people/c1" }],
+        google_identity: { full_name: "X" },
+      };
+      readMock.mockResolvedValueOnce(
+        tabWith([
+          { rowIndex: 0, record: { google_resource_name: "people/other" } },
+          { rowIndex: 1, record: { google_resource_name: "", email: "x@y.com" } },
+        ]) as never,
+      );
+      writeMock.mockResolvedValueOnce(undefined);
+      const result = await reviewAppliers.apply(CONTACT_REFRESH_KIND, "people/c1", action, META);
+      expect(result).toMatchObject({ refreshed: 1, row_index: 1 });
+    });
+
+    it("does not use the captured index if that row is bound to a different contact", async () => {
+      const action: RefreshReviewAction = {
+        type: "refresh",
+        tab: "Contacts",
+        row_index: 1,
+        via: "email",
+        updates: [{ col: "google_resource_name", from: "", to: "people/c1" }],
+        google_identity: {},
+      };
+      readMock.mockResolvedValueOnce(
+        tabWith([{ rowIndex: 1, record: { google_resource_name: "people/somebody-else" } }]) as never,
+      );
+      await expect(
+        reviewAppliers.apply(CONTACT_REFRESH_KIND, "people/c1", action, META),
+      ).rejects.toThrow(/not found/);
+    });
+
     it("advances the contact snapshot when a refresh is approved", async () => {
       const { loadSnapshots } = await import("./contact-snapshots.js");
       const action: RefreshReviewAction = {
