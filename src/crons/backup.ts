@@ -2,7 +2,6 @@ import cron from "node-cron";
 import { runBackup, type R2Config } from "../backup/pg_dump.js";
 
 export type BackupCronOptions = {
-  enabled: boolean;
   schedule: string;
   databaseUrl: string;
   r2: R2Config;
@@ -11,10 +10,6 @@ export type BackupCronOptions = {
 let scheduledTask: cron.ScheduledTask | undefined;
 
 export function startBackupCron(opts: BackupCronOptions): void {
-  if (!opts.enabled) {
-    console.log("[cron] r2 backup disabled (set BACKUP_CRON_ENABLED=true to enable)");
-    return;
-  }
   if (!cron.validate(opts.schedule)) {
     console.error(`[cron] invalid BACKUP_CRON_SCHEDULE: ${opts.schedule}`);
     return;

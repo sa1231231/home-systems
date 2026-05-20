@@ -91,9 +91,8 @@ describe("ConfigSchema", () => {
     ).toBe(false);
   });
 
-  it("defaults the backup cron to disabled with a 3:15am UTC schedule", () => {
+  it("defaults the backup cron schedule to 3:15am UTC with R2 vars optional", () => {
     const parsed = ConfigSchema.parse({ DATABASE_URL: "postgresql://u:p@host:5432/db" });
-    expect(parsed.BACKUP_CRON_ENABLED).toBe(false);
     expect(parsed.BACKUP_CRON_SCHEDULE).toBe("15 3 * * *");
     expect(parsed.R2_ACCOUNT_ID).toBeUndefined();
     expect(parsed.R2_BUCKET).toBeUndefined();
@@ -163,12 +162,10 @@ describe("ConfigSchema", () => {
       R2_ACCESS_KEY_ID: "ak",
       R2_SECRET_ACCESS_KEY: "sk",
       R2_BUCKET: "home-systems-backups",
-      BACKUP_CRON_ENABLED: "true",
     });
     expect(parsed.R2_ACCOUNT_ID).toBe("acct");
     expect(parsed.R2_ACCESS_KEY_ID).toBe("ak");
     expect(parsed.R2_SECRET_ACCESS_KEY).toBe("sk");
     expect(parsed.R2_BUCKET).toBe("home-systems-backups");
-    expect(parsed.BACKUP_CRON_ENABLED).toBe(true);
   });
 });

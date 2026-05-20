@@ -22,7 +22,6 @@ const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
 const OPTS = {
-  enabled: true,
   schedule: "15 3 * * *",
   databaseUrl: "postgres://test",
   r2: {
@@ -46,11 +45,6 @@ afterEach(() => {
 });
 
 describe("startBackupCron", () => {
-  it("disabled → no schedule", () => {
-    startBackupCron({ ...OPTS, enabled: false });
-    expect(scheduleMock).not.toHaveBeenCalled();
-  });
-
   it("invalid schedule → error log", () => {
     validateMock.mockReturnValue(false);
     startBackupCron({ ...OPTS, schedule: "bad" });

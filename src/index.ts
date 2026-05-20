@@ -178,29 +178,24 @@ async function start() {
     timezone: config.CRON_TZ,
   });
 
-  if (config.BACKUP_CRON_ENABLED) {
-    if (
-      !config.R2_ACCOUNT_ID ||
-      !config.R2_ACCESS_KEY_ID ||
-      !config.R2_SECRET_ACCESS_KEY ||
-      !config.R2_BUCKET
-    ) {
-      console.error("[cron] r2 backup enabled but R2_* env vars are missing; not scheduling");
-    } else {
-      startBackupCron({
-        enabled: true,
-        schedule: config.BACKUP_CRON_SCHEDULE,
-        databaseUrl: config.DATABASE_URL,
-        r2: {
-          accountId: config.R2_ACCOUNT_ID,
-          accessKeyId: config.R2_ACCESS_KEY_ID,
-          secretAccessKey: config.R2_SECRET_ACCESS_KEY,
-          bucket: config.R2_BUCKET,
-        },
-      });
-    }
+  if (
+    !config.R2_ACCOUNT_ID ||
+    !config.R2_ACCESS_KEY_ID ||
+    !config.R2_SECRET_ACCESS_KEY ||
+    !config.R2_BUCKET
+  ) {
+    console.error("[cron] r2 backup NOT scheduled: R2_* env vars are missing");
   } else {
-    console.log("[cron] r2 backup disabled (set BACKUP_CRON_ENABLED=true to enable)");
+    startBackupCron({
+      schedule: config.BACKUP_CRON_SCHEDULE,
+      databaseUrl: config.DATABASE_URL,
+      r2: {
+        accountId: config.R2_ACCOUNT_ID,
+        accessKeyId: config.R2_ACCESS_KEY_ID,
+        secretAccessKey: config.R2_SECRET_ACCESS_KEY,
+        bucket: config.R2_BUCKET,
+      },
+    });
   }
 
   const shutdown = async (signal: string) => {

@@ -57,10 +57,6 @@ export const ConfigSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
-  BACKUP_CRON_ENABLED: z
-    .string()
-    .optional()
-    .transform((v) => v === "true" || v === "1"),
   BACKUP_CRON_SCHEDULE: z.string().default("15 3 * * *"),
   UI_AUTH_ENABLED: z
     .string()
