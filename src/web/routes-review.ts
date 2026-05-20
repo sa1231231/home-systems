@@ -249,12 +249,12 @@ export function makeReviewUiRouter(): Router {
       const previousCategory =
         (pending.proposedAction as { category?: string } | null)?.category ?? "unknown";
       const decision = cfg.buildCorrectedDecision(body.category, previousCategory);
+      const promoteToRule = cfg.buildPromoteFromCorrection
+        ? cfg.buildPromoteFromCorrection(pending, body)
+        : { name: cfg.defaultRuleName(pending), match: cfg.defaultMatch(pending) };
       const result = await correctEntry(id, {
         decision,
-        promoteToRule: {
-          name: cfg.defaultRuleName(pending),
-          match: cfg.defaultMatch(pending),
-        },
+        promoteToRule,
         sessionId: req.sessionId ?? newSessionId(),
         caller: "ui:needs-review.correct",
       });

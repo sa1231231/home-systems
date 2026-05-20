@@ -98,6 +98,157 @@ describe("getDomainConfig", () => {
       expect(dec.category).toBe("noise");
       expect(dec.reasoning).toContain("needs_reply");
     });
+
+    describe("validateCorrection with rule scope", () => {
+      it("accepts a body with rule_scope and rule_value", () => {
+        expect(
+          cfg.validateCorrection({
+            category: "noise",
+            rule_scope: "from_domain",
+            rule_value: "@txt.voice.google.com",
+          }),
+        ).toEqual({
+          category: "noise",
+          rule_scope: "from_domain",
+          rule_value: "@txt.voice.google.com",
+        });
+      });
+      it("rejects an unknown rule_scope", () => {
+        expect(() =>
+          cfg.validateCorrection({ category: "noise", rule_scope: "from_subdomain" }),
+        ).toThrow();
+      });
+    });
+
+    describe("buildPromoteFromCorrection", () => {
+      const entryFor = (subject: Record<string, unknown>) => makeEntry({ subject });
+
+      it("falls back to defaults when rule_scope is omitted", () => {
+        const e = entryFor({ account: "me@gmail.com", from: "alice@x.com" });
+        const promo = cfg.buildPromoteFromCorrection!(e, { category: "noise" } as never);
+        expect(promo).toEqual({
+          name: "auto: me@gmail.com from=alice@x.com",
+          match: {
+            all: [
+              { op: "equals", field: "account", value: "me@gmail.com" },
+              { op: "equals", field: "from", value: "alice@x.com" },
+            ],
+          },
+        });
+      });
+
+      it("rule_scope=once returns undefined (no rule promoted)", () => {
+        const e = entryFor({ from: "alice@x.com" });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          { category: "noise", rule_scope: "once" } as never,
+        );
+        expect(promo).toBeUndefined();
+      });
+
+      it("rule_scope=exact still returns the default rule", () => {
+        const e = entryFor({ from: "alice@x.com" });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          { category: "noise", rule_scope: "exact" } as never,
+        );
+        expect(promo).toEqual({
+          name: "auto: from=alice@x.com",
+          match: { all: [{ op: "equals", field: "from", value: "alice@x.com" }] },
+        });
+      });
+
+      it("rule_scope=from_domain builds a `from contains @domain` rule", () => {
+        const e = entryFor({
+          account: "me@gmail.com",
+          from: '"(804) 214-6360" <15715778596.18042146360.x5sj71RFqL@txt.voice.google.com>',
+        });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          {
+            category: "needs_reply",
+            rule_scope: "from_domain",
+            rule_value: "@txt.voice.google.com",
+          } as never,
+        );
+        expect(promo).toEqual({
+          name: "auto: me@gmail.com from contains @txt.voice.google.com",
+          match: {
+            all: [
+              { op: "equals", field: "account", value: "me@gmail.com" },
+              { op: "contains", field: "from", value: "@txt.voice.google.com" },
+            ],
+          },
+        });
+      });
+
+      it("from_domain prepends @ if the user omits it", () => {
+        const e = entryFor({ from: "x@y.com" });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          {
+            category: "noise",
+            rule_scope: "from_domain",
+            rule_value: "txt.voice.google.com",
+          } as never,
+        );
+        expect((promo!.match as { all: Array<{ value: string }> }).all[0].value).toBe(
+          "@txt.voice.google.com",
+        );
+      });
+
+      it("rule_scope=from_contains builds a `from contains <value>` rule", () => {
+        const e = entryFor({ account: "me@gmail.com", from: "anyone" });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          {
+            category: "needs_reply",
+            rule_scope: "from_contains",
+            rule_value: "(804) 214-6360",
+          } as never,
+        );
+        expect(promo).toEqual({
+          name: "auto: me@gmail.com from contains (804) 214-6360",
+          match: {
+            all: [
+              { op: "equals", field: "account", value: "me@gmail.com" },
+              { op: "contains", field: "from", value: "(804) 214-6360" },
+            ],
+          },
+        });
+      });
+
+      it("rule_scope=subject_contains builds a `subject contains <value>` rule", () => {
+        const e = entryFor({ subject: "weekly digest", account: "me@gmail.com" });
+        const promo = cfg.buildPromoteFromCorrection!(
+          e,
+          {
+            category: "noise",
+            rule_scope: "subject_contains",
+            rule_value: "digest",
+          } as never,
+        );
+        expect(promo).toEqual({
+          name: "auto: me@gmail.com subject contains digest",
+          match: {
+            all: [
+              { op: "equals", field: "account", value: "me@gmail.com" },
+              { op: "contains", field: "subject", value: "digest" },
+            ],
+          },
+        });
+      });
+
+      it("throws when a contains/domain scope is missing rule_value", () => {
+        const e = entryFor({ from: "x@y.com" });
+        expect(() =>
+          cfg.buildPromoteFromCorrection!(
+            e,
+            { category: "noise", rule_scope: "from_contains" } as never,
+          ),
+        ).toThrow(/rule_value is required/);
+      });
+    });
   });
 
   describe("transaction config", () => {

@@ -30,6 +30,9 @@
       <button
         type="button"
         data-acct-tab="<%= i %>"
+        data-acct-name="<%= g.account %>"
+        draggable="true"
+        title="Click to switch, drag to reorder"
         onclick="selectAcctTab(<%= i %>)"
         style="flex: 0 0 auto; white-space: nowrap; padding: 6px 12px; border: 1px solid var(--border); border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font: inherit; margin-bottom: -1px; background: <%= i === 0 ? '#fff' : '#f4f4f4' %>; font-weight: <%= i === 0 ? '600' : 'normal' %>;"
       >
@@ -89,6 +92,58 @@ function selectAcctTab(i) {
     t.style.fontWeight = on ? '600' : 'normal';
   });
 }
+
+(function () {
+  var KEY = 'home-systems:gmail-account-order';
+  var container = document.querySelector('.acct-tabs');
+  if (!container) return;
+
+  function getTabs() {
+    return Array.prototype.slice.call(container.querySelectorAll('[data-acct-tab]'));
+  }
+  function saveOrder() {
+    var order = getTabs().map(function (el) { return el.getAttribute('data-acct-name'); });
+    try { localStorage.setItem(KEY, JSON.stringify(order)); } catch (e) {}
+  }
+  function applySavedOrder() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { saved = []; }
+    if (!saved || !saved.length) return;
+    var byName = {};
+    getTabs().forEach(function (el) { byName[el.getAttribute('data-acct-name')] = el; });
+    saved.forEach(function (name) {
+      var el = byName[name];
+      if (el) { container.appendChild(el); delete byName[name]; }
+    });
+  }
+
+  applySavedOrder();
+
+  var dragged = null;
+  getTabs().forEach(function (tab) {
+    tab.addEventListener('dragstart', function (e) {
+      dragged = tab;
+      tab.style.opacity = '0.4';
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', tab.getAttribute('data-acct-name') || ''); } catch (err) {}
+      }
+    });
+    tab.addEventListener('dragend', function () {
+      if (dragged) { dragged.style.opacity = ''; dragged = null; }
+      saveOrder();
+    });
+    tab.addEventListener('dragover', function (e) {
+      if (!dragged || dragged === tab) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      var rect = tab.getBoundingClientRect();
+      var after = e.clientX > rect.left + rect.width / 2;
+      container.insertBefore(dragged, after ? tab.nextSibling : tab);
+    });
+    tab.addEventListener('drop', function (e) { e.preventDefault(); });
+  });
+})();
 </script>
 <% } %>
 

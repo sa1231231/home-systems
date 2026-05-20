@@ -10,6 +10,22 @@
     needs_reply: "star",
   };
   const categoryPill = (cat) => '<span class="pill ' + (cat === 'needs_reply' ? 'success' : cat === 'noise' ? 'rejected' : 'pending') + '">' + cat + '</span>';
+  // Smart defaults for the rule-scope value input, derived from the email itself
+  // so the user rarely needs to type anything when picking a broader scope.
+  const fromRaw = String(subj.from || "");
+  const domMatch = fromRaw.match(/@([\w.-]+\.[\w.-]+)/);
+  const defaultDomain = domMatch ? "@" + domMatch[1].replace(/[^\w.-]+$/, "") : "";
+  const phoneMatch = fromRaw.match(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+  let defaultFromContains = phoneMatch ? phoneMatch[0] : "";
+  if (!defaultFromContains) {
+    const angle = fromRaw.match(/<([^>]+)>/);
+    const addr = angle ? angle[1] : fromRaw.trim();
+    const localPart = addr.split("@")[0] || "";
+    if (localPart && !/^\d+$/.test(localPart)) defaultFromContains = localPart;
+  }
+  const subjectRaw = String(subj.subject || "");
+  const subjectTokenMatch = subjectRaw.match(/[A-Za-z]{4,}/);
+  const defaultSubjectContains = subjectTokenMatch ? subjectTokenMatch[0].toLowerCase() : "";
 %>
 <tr id="review-row-<%= entry.id %>">
   <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= new Date(entry.createdAt).toISOString().slice(0, 16).replace("T", " ") %>Z</td>
@@ -58,9 +74,9 @@
         >Approve</button>
         <button
           type="button"
-          onclick="(function(el){var f=document.getElementById('correct-form-<%= entry.id %>'); var open=f.style.display!=='none'&&f.style.display!==''; f.style.display=open?'none':'block'; el.textContent=open?'Correct ▾':'Cancel'})(this)"
+          onclick="(function(el){var f=document.getElementById('correct-form-<%= entry.id %>'); var open=f.style.display!=='none'&&f.style.display!==''; f.style.display=open?'none':'block'; el.textContent=open?'Edit ▾':'Cancel'})(this)"
           style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer;"
-        >Correct ▾</button>
+        >Edit ▾</button>
         <button
           hx-post="/ui/needs-review/<%= entry.id %>/reject"
           hx-target="#review-row-<%= entry.id %>"
@@ -75,15 +91,47 @@
         hx-swap="outerHTML"
         style="display: none; margin-top: 10px; padding: 10px; background: #fafafa; border: 1px solid var(--border); border-radius: 4px;"
       >
-        <div class="muted" style="font-size: 11px; margin-bottom: 6px;">Pick the right category:</div>
+        <div class="muted" style="font-size: 11px; margin-bottom: 6px;">Category:</div>
         <% ["noise", "worth_reading", "needs_reply"].forEach((cat) => { %>
           <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; cursor: pointer;">
-            <input type="radio" name="category" value="<%= cat %>" <%= cat === aiCategory ? "" : "" %> required />
+            <input type="radio" name="category" value="<%= cat %>" <%= cat === aiCategory ? "checked" : "" %> required />
             <%- categoryPill(cat) %>
             <span class="muted" style="font-size: 11px;">→ <%= actionLabels[cat] %></span>
           </label>
         <% }); %>
-        <button type="submit" style="padding: 4px 12px; margin-top: 8px;">Save correction</button>
+        <label class="muted" style="display: block; font-size: 11px; margin: 10px 0 4px;">Rule scope:</label>
+        <select
+          name="rule_scope"
+          data-default-from-domain="<%= defaultDomain %>"
+          data-default-from-contains="<%= defaultFromContains %>"
+          data-default-subject-contains="<%= defaultSubjectContains %>"
+          onchange="(function(s){
+            var v=document.getElementById('rule-value-<%= entry.id %>');
+            var needs = s.value === 'from_domain' || s.value === 'from_contains' || s.value === 'subject_contains';
+            v.style.display = needs ? 'block' : 'none';
+            v.required = needs;
+            if (needs) {
+              var def = s.getAttribute('data-default-' + s.value.replace(/_/g, '-')) || '';
+              if (!v.value || v.dataset.autofilled === '1') { v.value = def; v.dataset.autofilled = '1'; }
+            }
+          })(this)"
+          style="width: 100%; padding: 4px 6px; font: inherit;"
+        >
+          <option value="exact" selected>Exact sender — only this exact From: header</option>
+          <option value="from_domain">Sender domain — any email containing this domain</option>
+          <option value="from_contains">Sender contains… — token anywhere in From</option>
+          <option value="subject_contains">Subject contains… — token anywhere in Subject</option>
+          <option value="once">Just this once — apply now, save no rule</option>
+        </select>
+        <input
+          id="rule-value-<%= entry.id %>"
+          type="text"
+          name="rule_value"
+          placeholder="value (e.g. @txt.voice.google.com or (804) 214-6360)"
+          oninput="this.dataset.autofilled='0'"
+          style="display: none; width: 100%; margin-top: 6px; padding: 4px 6px; font: inherit;"
+        />
+        <button type="submit" style="padding: 4px 12px; margin-top: 8px;">Save</button>
       </form>
     <% } else { %>
       <span class="muted" style="font-size: 12px;"><%= entry.decidedBy || "—" %></span>

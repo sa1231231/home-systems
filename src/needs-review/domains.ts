@@ -3,11 +3,22 @@ import { needsReview } from "../db/schema.js";
 
 export type NeedsReviewRow = typeof needsReview.$inferSelect;
 
+export type PromoteToRule = { name: string; match: unknown };
+
 export type DomainConfig = {
   validateCorrection: (body: unknown) => { category: string };
   defaultRuleName: (entry: NeedsReviewRow) => string;
   defaultMatch: (entry: NeedsReviewRow) => unknown;
   buildCorrectedDecision: (category: string, previousCategory: string) => unknown;
+  /**
+   * Translate a validated correction body into the rule to promote.
+   * Returning `undefined` skips rule promotion (the "just this once" case).
+   * If omitted, the route falls back to `{ name: defaultRuleName, match: defaultMatch }`.
+   */
+  buildPromoteFromCorrection?: (
+    entry: NeedsReviewRow,
+    body: ReturnType<DomainConfig["validateCorrection"]>,
+  ) => PromoteToRule | undefined;
   /** If false, the UI Approve button skips rule promotion (apply once). */
   promotesOnApprove?: boolean;
   /** If false, the Correct flow is disabled for this domain. */
@@ -15,7 +26,18 @@ export type DomainConfig = {
 };
 
 const EmailCategoryEnum = z.enum(["noise", "worth_reading", "needs_reply"]);
-const EmailCorrectBody = z.object({ category: EmailCategoryEnum });
+const EmailRuleScopeEnum = z.enum([
+  "exact",
+  "from_domain",
+  "from_contains",
+  "subject_contains",
+  "once",
+]);
+const EmailCorrectBody = z.object({
+  category: EmailCategoryEnum,
+  rule_scope: EmailRuleScopeEnum.optional(),
+  rule_value: z.string().trim().max(200).optional(),
+});
 
 const emailConfig: DomainConfig = {
   validateCorrection: (body) => EmailCorrectBody.parse(body),
@@ -46,6 +68,42 @@ const emailConfig: DomainConfig = {
     category,
     reasoning: `user-corrected (was ${previousCategory})`,
   }),
+  buildPromoteFromCorrection: (entry, body) => {
+    const b = body as { rule_scope?: string; rule_value?: string };
+    const scope = b.rule_scope ?? "exact";
+    if (scope === "once") return undefined;
+    if (scope === "exact") {
+      return { name: emailConfig.defaultRuleName(entry), match: emailConfig.defaultMatch(entry) };
+    }
+    const value = (b.rule_value ?? "").trim();
+    if (!value) {
+      throw new Error(`rule_value is required for rule_scope=${scope}`);
+    }
+    const subj = (entry.subject ?? {}) as Record<string, unknown>;
+    const account = typeof subj.account === "string" && subj.account ? subj.account : "";
+    const accountLeaf = account ? [{ op: "equals", field: "account", value: account }] : [];
+    const acctPrefix = account ? account + " " : "";
+    if (scope === "from_domain") {
+      const dom = value.startsWith("@") ? value : `@${value}`;
+      return {
+        name: `auto: ${acctPrefix}from contains ${dom}`,
+        match: { all: [...accountLeaf, { op: "contains", field: "from", value: dom }] },
+      };
+    }
+    if (scope === "from_contains") {
+      return {
+        name: `auto: ${acctPrefix}from contains ${value.slice(0, 80)}`,
+        match: { all: [...accountLeaf, { op: "contains", field: "from", value }] },
+      };
+    }
+    if (scope === "subject_contains") {
+      return {
+        name: `auto: ${acctPrefix}subject contains ${value.slice(0, 80)}`,
+        match: { all: [...accountLeaf, { op: "contains", field: "subject", value }] },
+      };
+    }
+    throw new Error(`unknown rule_scope: ${scope}`);
+  },
 };
 
 const TransactionCorrectBody = z.object({ category: z.string().min(1).max(200) });

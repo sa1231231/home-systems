@@ -140,6 +140,74 @@ describe("routes-review", () => {
       expect(ruleRows[0]).toMatchObject({ domain: "email", createdBy: "correction" });
       expect(ruleRows[0].action).toMatchObject({ category: "needs_reply" });
     });
+
+    it("rule_scope=from_domain promotes a `from contains @<domain>` rule (Google Voice case)", async () => {
+      setApplier("email", async () => {});
+      const id = await insertReview({
+        subject: {
+          account: "samasra93@gmail.com",
+          from: '"(804) 214-6360" <15715778596.18042146360.x5sj71RFqL@txt.voice.google.com>',
+          subject: "Text from (804) 214-6360",
+        } as never,
+      });
+      const res = await request(buildApp())
+        .post(`/ui/needs-review/${id}/correct`)
+        .type("form")
+        .send({
+          category: "needs_reply",
+          rule_scope: "from_domain",
+          rule_value: "@txt.voice.google.com",
+        });
+      expect(res.status).toBe(200);
+      const ruleRows = await db.select().from(rules);
+      expect(ruleRows).toHaveLength(1);
+      expect(ruleRows[0].name).toBe(
+        "auto: samasra93@gmail.com from contains @txt.voice.google.com",
+      );
+      expect(ruleRows[0].match).toEqual({
+        all: [
+          { op: "equals", field: "account", value: "samasra93@gmail.com" },
+          { op: "contains", field: "from", value: "@txt.voice.google.com" },
+        ],
+      });
+    });
+
+    it("rule_scope=once corrects the entry but promotes no rule", async () => {
+      setApplier("email", async () => {});
+      const id = await insertReview();
+      const res = await request(buildApp())
+        .post(`/ui/needs-review/${id}/correct`)
+        .type("form")
+        .send({ category: "needs_reply", rule_scope: "once" });
+      expect(res.status).toBe(200);
+      const ruleRows = await db.select().from(rules);
+      expect(ruleRows).toEqual([]);
+      const [entry] = await db.select().from(needsReview).where(eq(needsReview.id, id));
+      expect(entry.status).toBe("corrected");
+    });
+
+    it("rule_scope=subject_contains promotes a `subject contains <token>` rule", async () => {
+      setApplier("email", async () => {});
+      const id = await insertReview({
+        subject: { account: "me@gmail.com", from: "newsletter@x.com", subject: "Weekly digest" } as never,
+      });
+      const res = await request(buildApp())
+        .post(`/ui/needs-review/${id}/correct`)
+        .type("form")
+        .send({
+          category: "noise",
+          rule_scope: "subject_contains",
+          rule_value: "digest",
+        });
+      expect(res.status).toBe(200);
+      const ruleRows = await db.select().from(rules);
+      expect(ruleRows[0].match).toEqual({
+        all: [
+          { op: "equals", field: "account", value: "me@gmail.com" },
+          { op: "contains", field: "subject", value: "digest" },
+        ],
+      });
+    });
   });
 
   describe("transaction domain", () => {
