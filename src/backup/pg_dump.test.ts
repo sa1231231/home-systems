@@ -76,18 +76,24 @@ describe("r2EndpointForAccount", () => {
 });
 
 describe("pgDumpToBuffer", () => {
+  // Realistic-looking dump payload above the MIN_GZIP_BYTES floor.
+  const REAL_DUMP =
+    "-- PostgreSQL database dump\n" +
+    "SET statement_timeout = 0;\nSET lock_timeout = 0;\nSET client_encoding = 'UTF8';\n" +
+    "CREATE TABLE foo (id int PRIMARY KEY, label text);\n" +
+    "INSERT INTO foo VALUES (1, 'hello'), (2, 'world');\n";
+
   it("collects gzipped stdout and resolves on exit 0", async () => {
     const child = makeFakeChild();
     const spawnFn = fakeSpawnReturning(child);
     const promise = pgDumpToBuffer("postgres://x", spawnFn);
 
-    child.pushStdout("-- dump body line 1\n");
-    child.pushStdout("-- dump body line 2\n");
+    child.pushStdout(REAL_DUMP);
     child.finish(0);
 
     const buf = await promise;
     expect(buf.length).toBeGreaterThan(0);
-    expect(gunzipSync(buf).toString()).toBe("-- dump body line 1\n-- dump body line 2\n");
+    expect(gunzipSync(buf).toString()).toBe(REAL_DUMP);
   });
 
   it("rejects with stderr content when pg_dump exits non-zero", async () => {
@@ -99,6 +105,33 @@ describe("pgDumpToBuffer", () => {
     child.finish(1);
 
     await expect(promise).rejects.toThrow(/pg_dump exited with code 1: connection refused/);
+  });
+
+  it("rejects when pg_dump exits non-zero AFTER gzip drains (race fix)", async () => {
+    // Repro the production bug: pg_dump writes an error to stderr, closes
+    // stdout immediately (so gzip 'end' fires first), THEN exits with code 1.
+    // The race-free implementation should still reject with the stderr.
+    const child = makeFakeChild();
+    const spawnFn = fakeSpawnReturning(child);
+    const promise = pgDumpToBuffer("postgres://bad", spawnFn);
+
+    child.pushStderr("server version mismatch");
+    child.stdout.end();
+    await new Promise((r) => setImmediate(r));
+    child.finish(1);
+
+    await expect(promise).rejects.toThrow(/pg_dump exited with code 1: server version mismatch/);
+  });
+
+  it("rejects when pg_dump exits 0 but produces a near-empty gzip (silent fail floor)", async () => {
+    const child = makeFakeChild();
+    const spawnFn = fakeSpawnReturning(child);
+    const promise = pgDumpToBuffer("postgres://x", spawnFn);
+
+    child.pushStderr("permission denied");
+    child.finish(0); // misleading clean exit
+
+    await expect(promise).rejects.toThrow(/exited 0 but produced only \d+ bytes.*permission denied/);
   });
 
   it("rejects on spawn error", async () => {
@@ -131,7 +164,12 @@ describe("runBackup", () => {
       spawnFn,
     });
 
-    child.pushStdout("dump-bytes");
+    const REAL_DUMP =
+      "-- PostgreSQL database dump\n" +
+      "SET statement_timeout = 0;\nSET client_encoding = 'UTF8';\n" +
+      "CREATE TABLE foo (id int PRIMARY KEY, label text);\n" +
+      "INSERT INTO foo VALUES (1, 'hello');\n";
+    child.pushStdout(REAL_DUMP);
     child.finish(0);
 
     const result = await promise;
@@ -144,7 +182,7 @@ describe("runBackup", () => {
       ContentType: "application/gzip",
     });
     expect(cmd.input.Body).toBeInstanceOf(Buffer);
-    expect(gunzipSync(cmd.input.Body as Buffer).toString()).toBe("dump-bytes");
+    expect(gunzipSync(cmd.input.Body as Buffer).toString()).toBe(REAL_DUMP);
     expect(result.key).toBe("home-systems/2026-05-11T0315Z.sql.gz");
     expect(result.bytes).toBeGreaterThan(0);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);

@@ -40,6 +40,14 @@ export function makeR2Client(r2: R2Config): S3Client {
   });
 }
 
+/**
+ * Empty-gzip sanity floor. A real pg_dump always emits at least the SET / SET
+ * SESSION / `-- PostgreSQL database dump` banners (hundreds of bytes raw,
+ * tens-of-bytes-plus compressed). If the gzip is smaller than this floor, the
+ * process likely failed before emitting anything meaningful.
+ */
+const MIN_GZIP_BYTES = 100;
+
 export async function pgDumpToBuffer(
   databaseUrl: string,
   spawnFn: SpawnFn = nodeSpawn as SpawnFn,
@@ -49,17 +57,39 @@ export async function pgDumpToBuffer(
     const gzip = createGzip();
     const chunks: Buffer[] = [];
     let stderr = "";
+    let exitCode: number | null = null;
+    let gzipEnded = false;
     let settled = false;
+
+    // Wait for BOTH dump 'exit' and gzip 'end' before deciding success/failure.
+    // gzip 'end' fires when the upstream stdout closes — that can happen
+    // BEFORE pg_dump has emitted its non-zero exit code (it writes the error
+    // to stderr and closes stdout immediately). Without this barrier, an empty
+    // gzip race-resolves before the failure registers.
+    const finish = () => {
+      if (settled) return;
+      if (exitCode === null || !gzipEnded) return;
+      settled = true;
+      if (exitCode !== 0) {
+        reject(new Error(`pg_dump exited with code ${exitCode}: ${stderr.trim()}`));
+        return;
+      }
+      const buf = Buffer.concat(chunks);
+      if (buf.length < MIN_GZIP_BYTES) {
+        reject(
+          new Error(
+            `pg_dump exited 0 but produced only ${buf.length} bytes (gzipped). stderr: ${stderr.trim() || "(empty)"}`,
+          ),
+        );
+        return;
+      }
+      resolve(buf);
+    };
 
     const fail = (err: Error) => {
       if (settled) return;
       settled = true;
       reject(err);
-    };
-    const done = (buf: Buffer) => {
-      if (settled) return;
-      settled = true;
-      resolve(buf);
     };
 
     dump.stdout.pipe(gzip);
@@ -69,9 +99,13 @@ export async function pgDumpToBuffer(
     dump.on("error", fail);
     gzip.on("error", fail);
     gzip.on("data", (chunk: Buffer) => chunks.push(chunk));
-    gzip.on("end", () => done(Buffer.concat(chunks)));
+    gzip.on("end", () => {
+      gzipEnded = true;
+      finish();
+    });
     dump.on("exit", (code) => {
-      if (code !== 0) fail(new Error(`pg_dump exited with code ${code}: ${stderr.trim()}`));
+      exitCode = code;
+      finish();
     });
   });
 }
