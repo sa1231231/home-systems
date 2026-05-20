@@ -36,8 +36,10 @@ import { makeTrelloClient } from "./integrations/trello/client.js";
 import { registerTrelloReversers } from "./sync/trello-actions.js";
 import { makeTrelloRouter } from "./api/trello.js";
 import { makeScraperRouter } from "./api/scraper.js";
+import { makeAdminRouter } from "./api/admin.js";
 import { requireAuth } from "./web/auth.js";
 import { makeWebRouter } from "./web/index.js";
+import type { BackupCronOptions } from "./crons/backup.js";
 
 const config = getConfig();
 
@@ -91,6 +93,26 @@ app.use(
   }),
 );
 
+function resolveBackupOptions(): BackupCronOptions | undefined {
+  const endpoint =
+    config.R2_ENDPOINT ||
+    (config.R2_ACCOUNT_ID ? r2EndpointForAccount(config.R2_ACCOUNT_ID) : undefined);
+  if (!endpoint || !config.R2_ACCESS_KEY_ID || !config.R2_SECRET_ACCESS_KEY || !config.R2_BUCKET) {
+    return undefined;
+  }
+  return {
+    schedule: config.BACKUP_CRON_SCHEDULE,
+    databaseUrl: config.DATABASE_URL,
+    r2: {
+      endpoint,
+      accessKeyId: config.R2_ACCESS_KEY_ID,
+      secretAccessKey: config.R2_SECRET_ACCESS_KEY,
+      bucket: config.R2_BUCKET,
+    },
+  };
+}
+const backupOptions = resolveBackupOptions();
+
 app.use("/contacts", apiGate, makeContactsRouter());
 app.use("/changes", apiGate, makeChangesRouter());
 app.use("/ai-calls", apiGate, makeAiCallsRouter());
@@ -99,6 +121,7 @@ app.use("/needs-review", apiGate, makeNeedsReviewRouter());
 app.use("/emails", apiGate, makeEmailsRouter());
 app.use("/trello", apiGate, makeTrelloRouter());
 app.use("/scraper", apiGate, makeScraperRouter());
+app.use("/admin", apiGate, makeAdminRouter({ backup: backupOptions }));
 
 app.get("/db-ping", async (_req, res) => {
   try {
@@ -179,24 +202,12 @@ async function start() {
     timezone: config.CRON_TZ,
   });
 
-  const r2Endpoint =
-    config.R2_ENDPOINT ||
-    (config.R2_ACCOUNT_ID ? r2EndpointForAccount(config.R2_ACCOUNT_ID) : undefined);
-  if (!r2Endpoint || !config.R2_ACCESS_KEY_ID || !config.R2_SECRET_ACCESS_KEY || !config.R2_BUCKET) {
+  if (!backupOptions) {
     console.error(
       "[cron] r2 backup NOT scheduled: need R2_ENDPOINT (or R2_ACCOUNT_ID) + R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY + R2_BUCKET",
     );
   } else {
-    startBackupCron({
-      schedule: config.BACKUP_CRON_SCHEDULE,
-      databaseUrl: config.DATABASE_URL,
-      r2: {
-        endpoint: r2Endpoint,
-        accessKeyId: config.R2_ACCESS_KEY_ID,
-        secretAccessKey: config.R2_SECRET_ACCESS_KEY,
-        bucket: config.R2_BUCKET,
-      },
-    });
+    startBackupCron(backupOptions);
   }
 
   const shutdown = async (signal: string) => {
