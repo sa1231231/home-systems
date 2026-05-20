@@ -59,6 +59,12 @@ export const ConfigSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
   BACKUP_CRON_SCHEDULE: z.string().default("15 3 * * *"),
+  // GitHub source-tree backup (nightly tarball → R2). Disabled unless
+  // GITHUB_TOKEN + GITHUB_BACKUP_REPO are both set.
+  GITHUB_TOKEN: z.string().optional(),
+  GITHUB_BACKUP_REPO: z.string().optional(),
+  GITHUB_BACKUP_REF: z.string().default("main"),
+  GITHUB_BACKUP_CRON_SCHEDULE: z.string().default("20 3 * * *"),
   UI_AUTH_ENABLED: z
     .string()
     .optional()

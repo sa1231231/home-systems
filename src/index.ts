@@ -26,6 +26,7 @@ import {
   stopTransactionTriageCron,
 } from "./crons/transaction-triage.js";
 import { startBackupCron, stopBackupCron } from "./crons/backup.js";
+import { startGithubBackupCron, stopGithubBackupCron } from "./crons/github-backup.js";
 import { r2EndpointForAccount } from "./backup/pg_dump.js";
 import {
   startTrelloReorderCron,
@@ -40,6 +41,7 @@ import { makeAdminRouter } from "./api/admin.js";
 import { requireAuth } from "./web/auth.js";
 import { makeWebRouter } from "./web/index.js";
 import type { BackupCronOptions } from "./crons/backup.js";
+import type { GithubBackupCronOptions } from "./crons/github-backup.js";
 
 const config = getConfig();
 
@@ -93,7 +95,12 @@ app.use(
   }),
 );
 
-function resolveBackupOptions(): BackupCronOptions | undefined {
+function resolveR2(): {
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+} | undefined {
   const endpoint =
     config.R2_ENDPOINT ||
     (config.R2_ACCOUNT_ID ? r2EndpointForAccount(config.R2_ACCOUNT_ID) : undefined);
@@ -101,17 +108,35 @@ function resolveBackupOptions(): BackupCronOptions | undefined {
     return undefined;
   }
   return {
-    schedule: config.BACKUP_CRON_SCHEDULE,
-    databaseUrl: config.DATABASE_URL,
-    r2: {
-      endpoint,
-      accessKeyId: config.R2_ACCESS_KEY_ID,
-      secretAccessKey: config.R2_SECRET_ACCESS_KEY,
-      bucket: config.R2_BUCKET,
-    },
+    endpoint,
+    accessKeyId: config.R2_ACCESS_KEY_ID,
+    secretAccessKey: config.R2_SECRET_ACCESS_KEY,
+    bucket: config.R2_BUCKET,
   };
 }
-const backupOptions = resolveBackupOptions();
+
+const r2 = resolveR2();
+
+const backupOptions: BackupCronOptions | undefined = r2
+  ? {
+      schedule: config.BACKUP_CRON_SCHEDULE,
+      databaseUrl: config.DATABASE_URL,
+      r2,
+    }
+  : undefined;
+
+const githubBackupOptions: GithubBackupCronOptions | undefined =
+  r2 && config.GITHUB_TOKEN && config.GITHUB_BACKUP_REPO
+    ? {
+        schedule: config.GITHUB_BACKUP_CRON_SCHEDULE,
+        github: {
+          repo: config.GITHUB_BACKUP_REPO,
+          ref: config.GITHUB_BACKUP_REF,
+          token: config.GITHUB_TOKEN,
+        },
+        r2,
+      }
+    : undefined;
 
 app.use("/contacts", apiGate, makeContactsRouter());
 app.use("/changes", apiGate, makeChangesRouter());
@@ -121,7 +146,11 @@ app.use("/needs-review", apiGate, makeNeedsReviewRouter());
 app.use("/emails", apiGate, makeEmailsRouter());
 app.use("/trello", apiGate, makeTrelloRouter());
 app.use("/scraper", apiGate, makeScraperRouter());
-app.use("/admin", apiGate, makeAdminRouter({ backup: backupOptions }));
+app.use(
+  "/admin",
+  apiGate,
+  makeAdminRouter({ backup: backupOptions, githubBackup: githubBackupOptions }),
+);
 
 app.get("/db-ping", async (_req, res) => {
   try {
@@ -210,12 +239,21 @@ async function start() {
     startBackupCron(backupOptions);
   }
 
+  if (!githubBackupOptions) {
+    console.log(
+      "[cron] github backup NOT scheduled: set GITHUB_TOKEN + GITHUB_BACKUP_REPO (and R2 vars) to enable",
+    );
+  } else {
+    startGithubBackupCron(githubBackupOptions);
+  }
+
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, draining connections`);
     stopContactsSyncCron();
     stopEmailTriageCron();
     stopTransactionTriageCron();
     stopBackupCron();
+    stopGithubBackupCron();
     stopTrelloReorderCron();
     server.close(() => {
       console.log("http server closed");
