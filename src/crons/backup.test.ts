@@ -25,7 +25,7 @@ const OPTS = {
   schedule: "15 3 * * *",
   databaseUrl: "postgres://test",
   r2: {
-    accountId: "acct",
+    endpoint: "https://acct.r2.cloudflarestorage.com",
     accessKeyId: "k",
     secretAccessKey: "s",
     bucket: "b",

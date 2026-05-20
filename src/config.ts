@@ -53,6 +53,7 @@ export const ConfigSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   TRANSACTION_TRIAGE_CRON_SCHEDULE: z.string().default("0 8 * * *"),
   TRANSACTION_TRIAGE_CRON_LIMIT: z.coerce.number().int().positive().max(500).default(50),
+  R2_ENDPOINT: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

@@ -3,7 +3,7 @@ import { createGzip } from "zlib";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export type R2Config = {
-  accountId: string;
+  endpoint: string;
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
@@ -24,14 +24,15 @@ export function pgDumpArgs(databaseUrl: string): string[] {
   return ["--no-owner", "--no-privileges", "--format=plain", databaseUrl];
 }
 
-export function r2Endpoint(accountId: string): string {
+/** Build the standard R2 S3 endpoint from a Cloudflare account ID. */
+export function r2EndpointForAccount(accountId: string): string {
   return `https://${accountId}.r2.cloudflarestorage.com`;
 }
 
 export function makeR2Client(r2: R2Config): S3Client {
   return new S3Client({
     region: "auto",
-    endpoint: r2Endpoint(r2.accountId),
+    endpoint: r2.endpoint,
     credentials: {
       accessKeyId: r2.accessKeyId,
       secretAccessKey: r2.secretAccessKey,

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   pgDumpArgs,
   pgDumpToBuffer,
-  r2Endpoint,
+  r2EndpointForAccount,
   r2ObjectKey,
   runBackup,
   type SpawnFn,
@@ -69,9 +69,9 @@ describe("pgDumpArgs", () => {
   });
 });
 
-describe("r2Endpoint", () => {
+describe("r2EndpointForAccount", () => {
   it("builds the cloudflarestorage URL from account id", () => {
-    expect(r2Endpoint("abc123")).toBe("https://abc123.r2.cloudflarestorage.com");
+    expect(r2EndpointForAccount("abc123")).toBe("https://abc123.r2.cloudflarestorage.com");
   });
 });
 
@@ -121,7 +121,7 @@ describe("runBackup", () => {
     const promise = runBackup({
       databaseUrl: "postgres://u:p@h/db",
       r2: {
-        accountId: "acct",
+        endpoint: "https://acct.r2.cloudflarestorage.com",
         accessKeyId: "ak",
         secretAccessKey: "sk",
         bucket: "home-systems-backups",
@@ -158,7 +158,7 @@ describe("runBackup", () => {
 
     const promise = runBackup({
       databaseUrl: "postgres://x",
-      r2: { accountId: "a", accessKeyId: "b", secretAccessKey: "c", bucket: "d" },
+      r2: { endpoint: "https://a.r2.cloudflarestorage.com", accessKeyId: "b", secretAccessKey: "c", bucket: "d" },
       s3: fakeS3,
       spawnFn,
     });
