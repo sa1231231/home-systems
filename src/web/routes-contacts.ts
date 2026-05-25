@@ -13,6 +13,7 @@ import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import {
   appendTag,
+  AUDIT_KEEP_TAG,
   findAuditIssues,
   emailsInRow,
   phonesInRow,
@@ -636,6 +637,86 @@ export function makeContactsUiRouter(): Router {
         .status(500)
         .send(
           `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">mark DNDB failed: ${msg}</td></tr>`,
+        );
+    }
+  });
+
+  const KeepRowParams = z.coerce.number().int().min(0).max(100_000);
+
+  // POST /ui/contacts/keep-row/:rowIndex — append the KEEP tag to a row's
+  // `tags` column. Lets the user acknowledge an orphan / name-only audit row
+  // as intentional so it stops re-appearing in the sheet audit every load.
+  router.post("/keep-row/:rowIndex", async (req, res) => {
+    if (!hasGoogleCreds()) {
+      res.status(503).send(
+        `<tr><td colspan="5" class="muted">Google credentials not configured.</td></tr>`,
+      );
+      return;
+    }
+    let rowIndex: number;
+    try {
+      rowIndex = KeepRowParams.parse(req.params.rowIndex);
+    } catch {
+      res.status(400).send("invalid row");
+      return;
+    }
+    try {
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tabName = getConfig().CONTACTS_TAB;
+      const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
+      if (rowIndex >= tab.rows.length) {
+        res
+          .status(404)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">Row ${rowIndex} no longer exists. Reload.</td></tr>`,
+          );
+        return;
+      }
+      const record = tab.rows[rowIndex].record;
+      const colIdx = tab.headers.indexOf("tags");
+      if (colIdx === -1) {
+        res
+          .status(500)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">tags column not found in ${tabName}.</td></tr>`,
+          );
+        return;
+      }
+      const before = (record.tags ?? "").trim();
+      const after = appendTag(before, AUDIT_KEEP_TAG);
+      if (after === before) {
+        res.status(200).send("");
+        return;
+      }
+      const fullName = (record.full_name ?? "").trim();
+      const sheetRow = rowIndex + 2;
+      const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
+      await withChangelog(
+        {
+          caller: "ui:contacts.keep-row",
+          sessionId: req.sessionId,
+          operation: "contacts.audit.keep_row",
+          targetKind: "contact_row",
+          targetId: `${tabName}!row${rowIndex}`,
+          intent: `keep ${fullName || `row ${rowIndex}`} — exempt from sheet audit`,
+          before: { row_index: rowIndex, full_name: fullName, tags: before },
+          after: { row_index: rowIndex, full_name: fullName, tags: after },
+          externalTarget: `google.sheet:${creds.sheetId}!${range}`,
+        },
+        async () => {
+          await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
+        },
+      );
+      res.status(200).send("");
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res
+        .status(500)
+        .send(
+          `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">keep failed: ${msg}</td></tr>`,
         );
     }
   });

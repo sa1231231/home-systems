@@ -280,6 +280,25 @@ describe("appendTag", () => {
   });
 });
 
+describe("findAuditIssues KEEP-tag exemption", () => {
+  it("skips orphan and name-only rows tagged KEEP", () => {
+    // Two rows share name "Jane Doe":
+    //   - row 0 is the canonical with contact info
+    //   - row 1 is the would-be orphan but it's tagged KEEP → skip
+    // Row 2 is a name-only that's tagged KEEP → skip
+    // Row 3 is an untagged name-only → still flagged
+    const rows = [
+      row({ full_name: "Jane Doe", email: "jane@example.com" }),
+      row({ full_name: "Jane Doe", tags: "KEEP" }),
+      row({ full_name: "Lone Name Kept", tags: "vip, keep" }),
+      row({ full_name: "Lone Name Pending" }),
+    ];
+    const report = findAuditIssues(rows);
+    expect(report.orphans).toEqual([]);
+    expect(report.nameOnly.map((n) => n.fullName)).toEqual(["Lone Name Pending"]);
+  });
+});
+
 describe("findCompanyDndbRows", () => {
   it("flags rows whose company contains D&DB but tags don't yet include DNDB", () => {
     const rows = [

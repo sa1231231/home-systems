@@ -228,6 +228,9 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
       if (!anyValue) emptyRows.push({ rowIndex: i });
       return;
     }
+    // User has acknowledged this near-empty row as intentional — skip both
+    // orphan and name-only categorization.
+    if (hasTag(row, AUDIT_KEEP_TAG)) return;
     const canonicalRowIndex = canonicalByName.get(name);
     if (canonicalRowIndex !== undefined && canonicalRowIndex !== i) {
       orphans.push({ rowIndex: i, fullName: name, canonicalRowIndex });
@@ -258,6 +261,14 @@ export const REVIEW_EXEMPT_TAG = "DNDB";
  *  the DNDB tag. Matched case-insensitively; if present, sync auto-adds the
  *  DNDB tag so the contact stops appearing in pending review. */
 const COMPANY_DNDB_MARKER = "D&DB";
+
+/**
+ * Tag that marks a row as intentionally kept — exempt from the orphan /
+ * name-only audit categories. Lets the user acknowledge a near-empty row
+ * (e.g. "just a name, no contact info yet") so it stops re-surfacing every
+ * time the audit runs.
+ */
+export const AUDIT_KEEP_TAG = "KEEP";
 
 /** True iff the row's `tags` CSV contains the given tag (case-insensitive,
  *  exact token match — "DNDB-foo" doesn't count). */

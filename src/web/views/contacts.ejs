@@ -29,13 +29,6 @@
 <%- include("partials/_triage-status", { run: locals.run, statusUrl: "/ui/contacts/triage-status" }) %>
 <div id="sync-result"></div>
 
-<%- include("partials/_rules-section", {
-  rules,
-  description: "Contacts sync is currently fully deterministic — there are no AI classifications and no rules to maintain yet. This panel is here for when contact tagging/grouping rules graduate from approvals later.",
-  emptyText: "No contact rules yet.",
-  sectionId: "contact-rules",
-}) %>
-
 <section style="margin-bottom: 32px;">
   <% const noGroupCount = (audit && audit.noGroup) ? audit.noGroup.length : 0; %>
   <h3 style="margin: 0 0 6px;">
@@ -219,6 +212,13 @@
   <% } %>
 </section>
 
+<%- include("partials/_rules-section", {
+  rules,
+  description: "Contacts sync is currently fully deterministic — there are no AI classifications and no rules to maintain yet. This panel is here for when contact tagging/grouping rules graduate from approvals later.",
+  emptyText: "No contact rules yet.",
+  sectionId: "contact-rules",
+}) %>
+
 <% if (audit) { %>
 <section style="margin-bottom: 32px;">
   <h3 style="margin: 0 0 6px;">
@@ -257,7 +257,7 @@
             <td><%= o.fullName %></td>
             <td><span class="pill rejected">orphan dupe</span></td>
             <td class="muted">→ row <%= o.canonicalRowIndex %></td>
-            <td>
+            <td style="display: flex; gap: 6px; flex-wrap: wrap;">
               <button
                 hx-post="/ui/contacts/delete-orphan/<%= o.rowIndex %>"
                 hx-target="#audit-row-orphan-<%= o.rowIndex %>"
@@ -265,6 +265,14 @@
                 hx-confirm="Delete row <%= o.rowIndex %> ('<%= o.fullName %>')? The canonical row <%= o.canonicalRowIndex %> stays."
                 style="padding: 4px 10px; border: 1px solid var(--danger); color: var(--danger); background: #fff; border-radius: 3px; cursor: pointer;"
               >Delete</button>
+              <button
+                hx-post="/ui/contacts/keep-row/<%= o.rowIndex %>"
+                hx-target="#audit-row-orphan-<%= o.rowIndex %>"
+                hx-swap="outerHTML"
+                hx-confirm="Keep row <%= o.rowIndex %> ('<%= o.fullName %>') and exempt it from future audits?"
+                title="Tags KEEP — won't appear in audit again"
+                style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; cursor: pointer;"
+              >Keep</button>
             </td>
           </tr>
         <% }); %>
@@ -291,7 +299,7 @@
             <td><%= n.fullName %></td>
             <td><span class="pill pending">name only</span></td>
             <td class="muted">no match (might be intentional)</td>
-            <td>
+            <td style="display: flex; gap: 6px; flex-wrap: wrap;">
               <button
                 hx-post="/ui/contacts/delete-orphan/<%= n.rowIndex %>"
                 hx-target="#audit-row-nameonly-<%= n.rowIndex %>"
@@ -299,6 +307,14 @@
                 hx-confirm="Delete row <%= n.rowIndex %> ('<%= n.fullName %>')? This row has no Google contact backing — it may be a manual entry you actually want."
                 style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; cursor: pointer;"
               >Delete</button>
+              <button
+                hx-post="/ui/contacts/keep-row/<%= n.rowIndex %>"
+                hx-target="#audit-row-nameonly-<%= n.rowIndex %>"
+                hx-swap="outerHTML"
+                hx-confirm="Keep row <%= n.rowIndex %> ('<%= n.fullName %>') and exempt it from future audits?"
+                title="Tags KEEP — won't appear in audit again"
+                style="padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 3px; cursor: pointer;"
+              >Keep</button>
             </td>
           </tr>
         <% }); %>
