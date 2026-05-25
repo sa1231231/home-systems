@@ -43,6 +43,7 @@ function emptyPlan(): SyncPlan {
     headers: ["google_resource_name", "full_name", "email"],
     needsHeaderUpdate: false,
     resourceNameColIndex: 0,
+    headersAppended: [],
     inserts: [],
     refreshes: [],
     ambiguous: [],

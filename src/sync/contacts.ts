@@ -40,9 +40,19 @@ export const IDENTITY_COLUMNS = [
   "phone",
   "phones",
   "address",
+  "birthday",
 ] as const;
 
 type IdentityCol = (typeof IDENTITY_COLUMNS)[number];
+
+/**
+ * Identity columns that sync will auto-append to the sheet header if missing.
+ * Without this, the sync silently skips columns the sheet doesn't have —
+ * fine for legacy columns the user may have deleted on purpose, but for
+ * newly-added sync targets (like `birthday`) we want one nightly run to be
+ * enough to make the column appear.
+ */
+const AUTO_ADD_IDENTITY_COLUMNS: readonly IdentityCol[] = ["birthday"];
 
 /**
  * - `auto`: Google changed, the sheet field is untouched since last sync —
@@ -87,9 +97,14 @@ export type SyncPlan = {
   spreadsheetId: string;
   tab: string;
   headers: string[];
-  /** true when the Sheet was missing google_resource_name and we will append it */
+  /** True when at least one header was missing from the sheet and will be
+   *  appended on apply (kept as a boolean for back-compat with the JSON API). */
   needsHeaderUpdate: boolean;
   resourceNameColIndex: number;
+  /** All headers (with their target column index) that this plan will append
+   *  to the sheet — currently `google_resource_name` and any column listed in
+   *  AUTO_ADD_IDENTITY_COLUMNS that's missing. */
+  headersAppended: Array<{ name: string; colIndex: number }>;
   inserts: InsertOp[];
   refreshes: RefreshOp[];
   ambiguous: AmbiguousOp[];
@@ -127,6 +142,10 @@ export function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
     phone: primaryPhone,
     phones: allPhones,
     address: p.address ?? "",
+    // YYYY-MM-DD when Google has the year, MM-DD when it doesn't.
+    // Empty Google birthdays never overwrite a sheet value (see
+    // computeRefreshChanges' empty-google guard).
+    birthday: p.birthday ?? "",
   };
 }
 
@@ -257,16 +276,27 @@ export function planSync(
   snapshots: Map<string, SnapshotFields> = new Map(),
 ): SyncPlan {
   const headers = [...contactsTab.headers];
+  const headersAppended: Array<{ name: string; colIndex: number }> = [];
   // Auto-add the google_resource_name column when missing. It's the stable
   // Google ID for each contact — the only reliable dedupe key. The column
   // can be hidden in the Sheets UI if it's visually noisy.
   let resourceNameColIndex = headers.indexOf(RESOURCE_NAME_COL);
-  let needsHeaderUpdate = false;
   if (resourceNameColIndex === -1) {
     resourceNameColIndex = headers.length;
     headers.push(RESOURCE_NAME_COL);
-    needsHeaderUpdate = true;
+    headersAppended.push({ name: RESOURCE_NAME_COL, colIndex: resourceNameColIndex });
   }
+  // Identity columns we want sync to actually write — append if the sheet
+  // doesn't yet have them. Lets newly-added sync targets (like `birthday`)
+  // light up after one nightly run without manual sheet edits.
+  for (const col of AUTO_ADD_IDENTITY_COLUMNS) {
+    if (headers.indexOf(col) === -1) {
+      const colIndex = headers.length;
+      headers.push(col);
+      headersAppended.push({ name: col, colIndex });
+    }
+  }
+  const needsHeaderUpdate = headersAppended.length > 0;
 
   const idx = buildSheetIndex(contactsTab.rows);
   const headerSet = new Set(headers);
@@ -329,6 +359,7 @@ export function planSync(
     headers,
     needsHeaderUpdate,
     resourceNameColIndex,
+    headersAppended,
     inserts,
     refreshes,
     ambiguous,
@@ -349,8 +380,8 @@ export function summarize(plan: SyncPlan): SyncSummary {
 }
 
 export async function applySyncPlan(client: OAuth2Client, plan: SyncPlan): Promise<void> {
-  if (plan.needsHeaderUpdate) {
-    await setHeaderCell(client, plan.spreadsheetId, plan.tab, plan.resourceNameColIndex, RESOURCE_NAME_COL);
+  for (const h of plan.headersAppended) {
+    await setHeaderCell(client, plan.spreadsheetId, plan.tab, h.colIndex, h.name);
   }
 
   if (plan.refreshes.length > 0) {
@@ -463,14 +494,8 @@ export async function runSync(
     return { plan, summary, applied: true };
   }
   // mode === "queue" — header migration if needed, then route by op kind.
-  if (plan.needsHeaderUpdate) {
-    await setHeaderCell(
-      client,
-      plan.spreadsheetId,
-      plan.tab,
-      plan.resourceNameColIndex,
-      RESOURCE_NAME_COL,
-    );
+  for (const h of plan.headersAppended) {
+    await setHeaderCell(client, plan.spreadsheetId, plan.tab, h.colIndex, h.name);
   }
   // Snapshots to advance once their Google values are reflected in the sheet.
   const snapshotWrites: Array<{ resourceName: string; fields: SnapshotFields }> = [];

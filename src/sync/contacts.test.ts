@@ -48,10 +48,73 @@ describe("planSync", () => {
     const plan = planSync("sheet-123", tab, [p], NOW);
     expect(plan.needsHeaderUpdate).toBe(true);
     expect(plan.resourceNameColIndex).toBe(3);
-    expect(plan.headers).toEqual(["full_name", "email", "groups", "google_resource_name"]);
+    // `birthday` is on the auto-add list, so it gets appended right after.
+    expect(plan.headers).toEqual([
+      "full_name",
+      "email",
+      "groups",
+      "google_resource_name",
+      "birthday",
+    ]);
+    expect(plan.headersAppended).toEqual([
+      { name: "google_resource_name", colIndex: 3 },
+      { name: "birthday", colIndex: 4 },
+    ]);
     expect(plan.inserts).toHaveLength(1);
-    expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", "", "people/c1"]);
+    expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", "", "people/c1", ""]);
     expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0, tombstoned: 0 });
+  });
+
+  it("syncs birthday from Google into the sheet on refresh", () => {
+    // Existing row already has the birthday column. Google contact has a
+    // birthday — refresh proposes it. Since this row has no snapshot yet
+    // it's tiered first_run (queued, not auto-applied) but the change shows.
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "birthday", "google_resource_name", "groups"],
+      rows: [
+        {
+          rowIndex: 0,
+          record: {
+            full_name: "Jane Doe",
+            email: "jane@example.com",
+            birthday: "",
+            google_resource_name: "people/c1",
+            groups: "Friends",
+          },
+        },
+      ],
+    };
+    const p = person({
+      resource_name: "people/c1",
+      display_name: "Jane Doe",
+      emails: ["jane@example.com"],
+      birthday: "1990-05-15",
+    });
+    const plan = planSync("sheet-123", tab, [p], NOW);
+    expect(plan.refreshes).toHaveLength(1);
+    const bday = plan.refreshes[0].updates.find((u) => u.col === "birthday");
+    expect(bday).toBeDefined();
+    expect(bday!.to).toBe("1990-05-15");
+    expect(bday!.tier).toBe("first_run");
+  });
+
+  it("inserts include birthday in the row values when Google has one", () => {
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "birthday", "google_resource_name", "groups"],
+      rows: [],
+    };
+    const p = person({
+      resource_name: "people/c1",
+      display_name: "Jane Doe",
+      birthday: "05-15", // year unknown — People API returns MM-DD
+    });
+    const plan = planSync("sheet-123", tab, [p], NOW);
+    expect(plan.inserts).toHaveLength(1);
+    const headers = plan.headers;
+    const idx = headers.indexOf("birthday");
+    expect(plan.inserts[0].values[idx]).toBe("05-15");
   });
 
   it("matches a name-only sheet row as a name_weak refresh when the contact has a phone", () => {
@@ -134,7 +197,7 @@ describe("planSync", () => {
   it("refreshes a row matched by email, binding google_resource_name", () => {
     const tab: ContactsTab = {
       tab: "dex_contacts",
-      headers: ["full_name", "email", "phone", "updated_at", "google_resource_name", "groups"],
+      headers: ["full_name", "email", "phone", "updated_at", "google_resource_name", "groups", "birthday"],
       rows: [
         {
           rowIndex: 0,
@@ -145,6 +208,7 @@ describe("planSync", () => {
             updated_at: "2025-01-01T00:00:00Z",
             google_resource_name: "",
             groups: "Real Estate",
+            birthday: "",
           },
         },
       ],
