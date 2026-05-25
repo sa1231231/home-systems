@@ -247,12 +247,32 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
 }
 
 /**
+ * Tag that marks a contact as deliberately exempt from "pending review".
+ * Stands for "do not do business" — these people legitimately have no group
+ * because the user doesn't plan to use them for outreach, and re-surfacing
+ * them every sync is noise.
+ */
+const REVIEW_EXEMPT_TAG = "DNDB";
+
+/** True iff the row's `tags` CSV contains the given tag (case-insensitive,
+ *  exact token match — "DNDB-foo" doesn't count). */
+export function hasTag(row: SheetRow, tag: string): boolean {
+  const raw = (row.tags ?? "").trim();
+  if (!raw) return false;
+  const want = tag.toLowerCase();
+  return raw
+    .split(/[,;]/)
+    .some((t) => t.trim().toLowerCase() === want);
+}
+
+/**
  * Rows that have a name + Google ID (or contact info) but no value in
  * `groups`. These are the new "pending review" — the user needs to
  * assign a group from groups before the row counts as filed away.
  *
  * Excludes empty rows and rows with no name (those land in other audit
- * categories).
+ * categories), and rows tagged `DNDB` (do not do business — intentionally
+ * group-less, not awaiting review).
  */
 export function findNoGroupRows(rows: SheetRow[]): NoGroupRow[] {
   const out: NoGroupRow[] = [];
@@ -261,6 +281,7 @@ export function findNoGroupRows(rows: SheetRow[]): NoGroupRow[] {
     if (!name) return;
     const group = get(row, "groups");
     if (group) return;
+    if (hasTag(row, REVIEW_EXEMPT_TAG)) return;
     out.push({
       rowIndex: i,
       fullName: name,

@@ -95,6 +95,10 @@ export type SyncPlan = {
   unchanged: number;
   /** Matched contacts with no proposed changes — used to seed missing snapshots. */
   unchangedPersons: GooglePerson[];
+  /** Google contacts whose row was previously synced (has a snapshot) but is
+   *  no longer in the sheet — user deleted the row, so we suppress the
+   *  would-be insert instead of resurrecting it. */
+  tombstoned: GooglePerson[];
 };
 
 export type SyncSummary = {
@@ -102,6 +106,8 @@ export type SyncSummary = {
   refreshed: number;
   unchanged: number;
   ambiguous: number;
+  /** Inserts suppressed because the user previously deleted that sheet row. */
+  tombstoned: number;
 };
 
 export function personToIdentity(p: GooglePerson): Record<IdentityCol, string> {
@@ -264,10 +270,21 @@ export function planSync(
   const idx = buildSheetIndex(contactsTab.rows);
   const headerSet = new Set(headers);
 
+  // Set of google_resource_name values currently in the sheet. Combined with
+  // snapshots (which exist for every contact we've previously synced), this
+  // tells us "user deleted a synced row" — those re-inserts get suppressed
+  // instead of resurrected. See `tombstoned` on SyncPlan.
+  const sheetResourceNames = new Set<string>();
+  for (const row of contactsTab.rows) {
+    const rn = (row.record[RESOURCE_NAME_COL] ?? "").trim();
+    if (rn) sheetResourceNames.add(rn);
+  }
+
   const inserts: InsertOp[] = [];
   const refreshes: RefreshOp[] = [];
   const ambiguous: AmbiguousOp[] = [];
   const unchangedPersons: GooglePerson[] = [];
+  const tombstoned: GooglePerson[] = [];
 
   for (const person of people) {
     if (!person.resource_name) continue;
@@ -277,6 +294,15 @@ export function planSync(
       continue;
     }
     if (match.kind === "none") {
+      // Snapshot exists but no sheet row carries this resource_name → user
+      // deleted the row in a prior session. Don't resurrect it.
+      if (
+        snapshots.has(person.resource_name) &&
+        !sheetResourceNames.has(person.resource_name)
+      ) {
+        tombstoned.push(person);
+        continue;
+      }
       inserts.push({ person, values: buildInsertRow(headers, person, nowIso) });
       continue;
     }
@@ -307,6 +333,7 @@ export function planSync(
     ambiguous,
     unchanged: unchangedPersons.length,
     unchangedPersons,
+    tombstoned,
   };
 }
 
@@ -316,6 +343,7 @@ export function summarize(plan: SyncPlan): SyncSummary {
     refreshed: plan.refreshes.length,
     unchanged: plan.unchanged,
     ambiguous: plan.ambiguous.length,
+    tombstoned: plan.tombstoned.length,
   };
 }
 
@@ -507,6 +535,12 @@ export async function runSync(
   if (delta.deleted.length > 0) {
     await deleteSnapshots(delta.deleted);
     console.log(`[contacts-sync] ${delta.deleted.length} contact(s) deleted in Google — snapshots dropped`);
+  }
+
+  if (plan.tombstoned.length > 0) {
+    console.log(
+      `[contacts-sync] suppressed ${plan.tombstoned.length} would-be insert(s) — sheet row previously deleted by user`,
+    );
   }
 
   // Only field-diff refreshes + ambiguous go to the review queue. Drop the

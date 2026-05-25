@@ -47,6 +47,8 @@ function emptyPlan(): SyncPlan {
     refreshes: [],
     ambiguous: [],
     unchanged: 0,
+    unchangedPersons: [],
+    tombstoned: [],
   };
 }
 

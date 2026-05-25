@@ -248,4 +248,16 @@ describe("findNoGroupRows", () => {
     ];
     expect(findNoGroupRows(rows)[0].primaryPhone).toBe("555-1111, 555-2222");
   });
+
+  it("excludes rows tagged DNDB (do-not-do-business, intentionally group-less)", () => {
+    const rows = [
+      row({ full_name: "Excluded", email: "ex@example.com", tags: "DNDB" }),
+      row({ full_name: "Excluded Multi", email: "em@example.com", tags: "vip, DNDB, lead" }),
+      row({ full_name: "Excluded Lower", email: "el@example.com", tags: "dndb" }),
+      row({ full_name: "Still Pending", email: "sp@example.com", tags: "vip" }),
+      row({ full_name: "Not DNDB-foo", email: "ndf@example.com", tags: "DNDB-foo" }),
+    ];
+    const out = findNoGroupRows(rows);
+    expect(out.map((r) => r.fullName).sort()).toEqual(["Not DNDB-foo", "Still Pending"]);
+  });
 });

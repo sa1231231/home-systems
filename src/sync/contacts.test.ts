@@ -51,7 +51,7 @@ describe("planSync", () => {
     expect(plan.headers).toEqual(["full_name", "email", "groups", "google_resource_name"]);
     expect(plan.inserts).toHaveLength(1);
     expect(plan.inserts[0].values).toEqual(["Jane Doe", "jane@example.com", "", "people/c1"]);
-    expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0 });
+    expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0, tombstoned: 0 });
   });
 
   it("matches a name-only sheet row as a name_weak refresh when the contact has a phone", () => {
@@ -84,6 +84,51 @@ describe("planSync", () => {
     expect(plan.refreshes).toHaveLength(1);
     expect(plan.refreshes[0].via).toBe("name_weak");
     expect(plan.refreshes[0].updates.some((u) => u.col === "google_resource_name")).toBe(true);
+  });
+
+  it("does NOT re-insert a Google contact whose sheet row the user previously deleted", () => {
+    // Snapshot exists (we synced this contact in a prior run) but the sheet
+    // no longer has any row carrying its google_resource_name → the user
+    // deleted it. The contact must land in `tombstoned`, not `inserts`.
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "phone", "google_resource_name", "groups"],
+      rows: [],
+    };
+    const p = person({
+      resource_name: "people/c-sam",
+      display_name: "Sam",
+      emails: ["sam@example.com"],
+    });
+    const snapshots = new Map<string, SnapshotFields>([
+      [
+        "people/c-sam",
+        { full_name: "Sam", email: "sam@example.com", emails: "sam@example.com" } as SnapshotFields,
+      ],
+    ]);
+    const plan = planSync("sheet-123", tab, [p], NOW, snapshots);
+    expect(plan.inserts).toHaveLength(0);
+    expect(plan.tombstoned).toHaveLength(1);
+    expect(plan.tombstoned[0].resource_name).toBe("people/c-sam");
+    expect(summarize(plan).tombstoned).toBe(1);
+  });
+
+  it("does insert a Google contact with no snapshot (first-time sight)", () => {
+    // Sanity check on the tombstone guard: a brand-new Google contact (no
+    // snapshot, not in sheet) is a legit insert, not a deletion.
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "google_resource_name", "groups"],
+      rows: [],
+    };
+    const p = person({
+      resource_name: "people/c-new",
+      display_name: "New Person",
+      emails: ["new@example.com"],
+    });
+    const plan = planSync("sheet-123", tab, [p], NOW);
+    expect(plan.inserts).toHaveLength(1);
+    expect(plan.tombstoned).toHaveLength(0);
   });
 
   it("refreshes a row matched by email, binding google_resource_name", () => {

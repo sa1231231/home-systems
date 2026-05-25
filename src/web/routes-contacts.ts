@@ -315,8 +315,11 @@ export function makeContactsUiRouter(): Router {
         const rememberedNote = remembered > 0
           ? ` Skipped ${remembered} change${remembered === 1 ? '' : 's'} you previously rejected.`
           : '';
+        const tombstonedNote = s.tombstoned > 0
+          ? ` Suppressed ${s.tombstoned} re-insert${s.tombstoned === 1 ? '' : 's'} of contact${s.tombstoned === 1 ? '' : 's'} you previously deleted from the sheet.`
+          : '';
         res.send(
-          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending).${rememberedNote} ${s.unchanged} unchanged.</div>`,
+          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending).${rememberedNote}${tombstonedNote} ${s.unchanged} unchanged.</div>`,
         );
       } else {
         res.send(

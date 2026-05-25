@@ -46,7 +46,8 @@
   </h3>
   <p class="muted" style="margin: 0 0 8px; font-size: 13px;">
     Contacts with no value in <code>groups</code> are pending review. Assign a group in the sheet
-    (values come from the <code>groups</code> tab) and they drop off this list.
+    (values come from the <code>groups</code> tab) and they drop off this list. Tag a contact
+    <code>DNDB</code> (do not do business) to exempt them — they stay group-less but won't show here.
   </p>
   <% if (audit && audit.noGroup && audit.noGroup.length > 0) { %>
     <% const groups = (locals.availableGroups || []); %>
