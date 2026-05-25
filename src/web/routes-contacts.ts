@@ -12,9 +12,11 @@ import {
 import { runSync } from "../sync/contacts.js";
 import { cronInfoForDomain } from "./cron-info.js";
 import {
+  appendTag,
   findAuditIssues,
   emailsInRow,
   phonesInRow,
+  REVIEW_EXEMPT_TAG,
   type AuditReport,
   type DuplicateGroup,
 } from "../sync/contacts-audit.js";
@@ -318,8 +320,11 @@ export function makeContactsUiRouter(): Router {
         const tombstonedNote = s.tombstoned > 0
           ? ` Suppressed ${s.tombstoned} re-insert${s.tombstoned === 1 ? '' : 's'} of contact${s.tombstoned === 1 ? '' : 's'} you previously deleted from the sheet.`
           : '';
+        const dndbNote = q.company_dndb_tagged > 0
+          ? ` Auto-tagged ${q.company_dndb_tagged} row${q.company_dndb_tagged === 1 ? '' : 's'} DNDB (company contained "D&DB").`
+          : '';
         res.send(
-          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending).${rememberedNote}${tombstonedNote} ${s.unchanged} unchanged.</div>`,
+          `<div class="flash ok">Auto-inserted ${q.auto_inserts} new contact${q.auto_inserts === 1 ? '' : 's'} (no groups → pending review). Auto-applied ${q.formatting_refreshes} formatting refresh${q.formatting_refreshes === 1 ? '' : 'es'} + ${q.resource_name_backfills} resource_name backfill${q.resource_name_backfills === 1 ? '' : 's'}. Queued for review: ${q.queued_refreshes} refresh${q.queued_refreshes === 1 ? '' : 'es'}, ${q.queued_ambiguous} ambiguous (${q.skipped_duplicates} already pending).${rememberedNote}${tombstonedNote}${dndbNote} ${s.unchanged} unchanged.</div>`,
         );
       } else {
         res.send(
@@ -549,6 +554,88 @@ export function makeContactsUiRouter(): Router {
         .status(500)
         .send(
           `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">assign failed: ${msg}</td></tr>`,
+        );
+    }
+  });
+
+  const MarkDndbParams = z.coerce.number().int().min(0).max(100_000);
+
+  // POST /ui/contacts/mark-dndb/:rowIndex — append the DNDB tag to a single
+  // row's `tags` column (no-op if already present). Companion to the auto
+  // sweep: lets the user one-click exempt any pending-review contact from
+  // future review surfacing without needing to edit the sheet directly.
+  router.post("/mark-dndb/:rowIndex", async (req, res) => {
+    if (!hasGoogleCreds()) {
+      res.status(503).send(
+        `<tr><td colspan="6" class="muted">Google credentials not configured.</td></tr>`,
+      );
+      return;
+    }
+    let rowIndex: number;
+    try {
+      rowIndex = MarkDndbParams.parse(req.params.rowIndex);
+    } catch {
+      res.status(400).send("invalid row");
+      return;
+    }
+    try {
+      const creds = requireGoogleCreds();
+      const client = getOAuthClient();
+      const tabName = getConfig().CONTACTS_TAB;
+      const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
+      if (rowIndex >= tab.rows.length) {
+        res
+          .status(404)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">Row ${rowIndex} no longer exists. Reload.</td></tr>`,
+          );
+        return;
+      }
+      const record = tab.rows[rowIndex].record;
+      const colIdx = tab.headers.indexOf("tags");
+      if (colIdx === -1) {
+        res
+          .status(500)
+          .send(
+            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">tags column not found in ${tabName}.</td></tr>`,
+          );
+        return;
+      }
+      const before = (record.tags ?? "").trim();
+      const after = appendTag(before, REVIEW_EXEMPT_TAG);
+      if (after === before) {
+        // Already tagged DNDB — just hide it from the list.
+        res.status(200).send("");
+        return;
+      }
+      const fullName = (record.full_name ?? "").trim();
+      const sheetRow = rowIndex + 2;
+      const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
+      await withChangelog(
+        {
+          caller: "ui:contacts.mark-dndb",
+          sessionId: req.sessionId,
+          operation: "contacts.mark_dndb",
+          targetKind: "contact_row",
+          targetId: `${tabName}!row${rowIndex}`,
+          intent: `mark ${fullName || `row ${rowIndex}`} as DNDB`,
+          before: { row_index: rowIndex, full_name: fullName, tags: before },
+          after: { row_index: rowIndex, full_name: fullName, tags: after },
+          externalTarget: `google.sheet:${creds.sheetId}!${range}`,
+        },
+        async () => {
+          await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
+        },
+      );
+      res.status(200).send("");
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err))
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      res
+        .status(500)
+        .send(
+          `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">mark DNDB failed: ${msg}</td></tr>`,
         );
     }
   });

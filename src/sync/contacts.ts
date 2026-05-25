@@ -10,6 +10,7 @@ import {
   type CellUpdate,
   type ContactsTab,
 } from "../integrations/google/sheets.js";
+import { findCompanyDndbRows } from "./contacts-audit.js";
 import { buildSheetIndex, findMatch } from "./match.js";
 import {
   deleteSnapshots,
@@ -389,6 +390,8 @@ export type EnqueueResult = {
   formatting_refreshes: number;
   /** New rows auto-inserted into dex_contacts (Tier-A, no groups assigned). */
   auto_inserts: number;
+  /** Rows whose company contained "D&DB" but tags didn't yet — sync auto-added DNDB. */
+  company_dndb_tagged: number;
 };
 
 export type RunSyncResult = {
@@ -543,6 +546,30 @@ export async function runSync(
     );
   }
 
+  // Sweep: rows whose company field contains "D&DB" but tags don't include
+  // DNDB → auto-add the tag so they drop out of pending review. Keeps the
+  // two markers in lock-step without forcing the user to maintain both.
+  const dndbRows = findCompanyDndbRows(contactsTab.rows.map((r) => r.record));
+  let company_dndb_tagged = 0;
+  if (dndbRows.length > 0) {
+    const tagsColIdx = contactsTab.headers.indexOf("tags");
+    if (tagsColIdx === -1) {
+      console.log(
+        `[contacts-sync] ${dndbRows.length} row(s) match D&DB-company but the sheet has no \`tags\` column — skipping`,
+      );
+    } else {
+      const updates: CellUpdate[] = dndbRows.map((r) => ({
+        range: `${plan.tab}!${colLetter(tagsColIdx)}${r.rowIndex + 2}`,
+        value: r.nextTags,
+      }));
+      await batchUpdateCells(client, plan.spreadsheetId, updates);
+      company_dndb_tagged = dndbRows.length;
+      console.log(
+        `[contacts-sync] auto-tagged ${dndbRows.length} row(s) DNDB (company contained "D&DB")`,
+      );
+    }
+  }
+
   // Only field-diff refreshes + ambiguous go to the review queue. Drop the
   // inserts since we just applied them above.
   const planForQueue: SyncPlan = { ...plan, refreshes: realRefreshes, inserts: [] };
@@ -565,6 +592,7 @@ export async function runSync(
       auto_inserts,
       resource_name_backfills: trivialBackfills.length,
       formatting_refreshes: autoRefreshes.length,
+      company_dndb_tagged,
     },
   };
 }

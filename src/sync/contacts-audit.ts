@@ -252,7 +252,12 @@ export function findAuditIssues(rows: SheetRow[]): AuditReport {
  * because the user doesn't plan to use them for outreach, and re-surfacing
  * them every sync is noise.
  */
-const REVIEW_EXEMPT_TAG = "DNDB";
+export const REVIEW_EXEMPT_TAG = "DNDB";
+
+/** Substring the user puts in the `company` field to mean the same thing as
+ *  the DNDB tag. Matched case-insensitively; if present, sync auto-adds the
+ *  DNDB tag so the contact stops appearing in pending review. */
+const COMPANY_DNDB_MARKER = "D&DB";
 
 /** True iff the row's `tags` CSV contains the given tag (case-insensitive,
  *  exact token match — "DNDB-foo" doesn't count). */
@@ -263,6 +268,51 @@ export function hasTag(row: SheetRow, tag: string): boolean {
   return raw
     .split(/[,;]/)
     .some((t) => t.trim().toLowerCase() === want);
+}
+
+/** Append a tag to a CSV-of-tags, preserving existing tags. No-op if the
+ *  tag is already present (case-insensitive). */
+export function appendTag(currentTags: string, tag: string): string {
+  const current = (currentTags ?? "").trim();
+  if (!current) return tag;
+  const want = tag.toLowerCase();
+  const present = current.split(/[,;]/).some((t) => t.trim().toLowerCase() === want);
+  if (present) return current;
+  return `${current}, ${tag}`;
+}
+
+export type CompanyDndbRow = {
+  rowIndex: number;
+  fullName: string;
+  company: string;
+  currentTags: string;
+  /** What tags should become after appending DNDB. */
+  nextTags: string;
+};
+
+/**
+ * Rows whose `company` field contains "D&DB" but whose `tags` doesn't yet
+ * include DNDB. Sync uses this to keep the two fields in lock-step so the
+ * pending-review exclusion (which keys off the tag) covers anyone the user
+ * has marked via the company field too.
+ */
+export function findCompanyDndbRows(rows: SheetRow[]): CompanyDndbRow[] {
+  const out: CompanyDndbRow[] = [];
+  const needle = COMPANY_DNDB_MARKER.toLowerCase();
+  rows.forEach((row, i) => {
+    const company = (row.company ?? "").trim();
+    if (!company || !company.toLowerCase().includes(needle)) return;
+    if (hasTag(row, REVIEW_EXEMPT_TAG)) return;
+    const currentTags = (row.tags ?? "").trim();
+    out.push({
+      rowIndex: i,
+      fullName: (row.full_name ?? "").trim(),
+      company,
+      currentTags,
+      nextTags: appendTag(currentTags, REVIEW_EXEMPT_TAG),
+    });
+  });
+  return out;
 }
 
 /**

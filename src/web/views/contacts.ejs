@@ -90,6 +90,17 @@
                     Assign
                   </button>
                 </form>
+                <button
+                  type="button"
+                  hx-post="/ui/contacts/mark-dndb/<%= n.rowIndex %>"
+                  hx-target="#audit-row-nogroup-<%= n.rowIndex %>"
+                  hx-swap="outerHTML"
+                  hx-confirm="Mark <%= n.fullName %> as DNDB? They'll stay group-less and stop appearing here."
+                  title="Tag DNDB — exempts from pending review"
+                  style="margin-top: 4px; padding: 3px 8px; background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 11px;"
+                >
+                  Mark DNDB
+                </button>
               <% } else { %>
                 <span class="muted" style="font-size: 12px;">No groups loaded.</span>
                 <% if (locals.sheetUrl) { %>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendTag,
   findAuditIssues,
+  findCompanyDndbRows,
   findDuplicateNameGroups,
   findNoGroupRows,
   type SheetRow,
@@ -259,5 +261,50 @@ describe("findNoGroupRows", () => {
     ];
     const out = findNoGroupRows(rows);
     expect(out.map((r) => r.fullName).sort()).toEqual(["Not DNDB-foo", "Still Pending"]);
+  });
+});
+
+describe("appendTag", () => {
+  it("returns the tag when current is empty", () => {
+    expect(appendTag("", "DNDB")).toBe("DNDB");
+    expect(appendTag("   ", "DNDB")).toBe("DNDB");
+  });
+  it("appends with comma+space when not present", () => {
+    expect(appendTag("vip", "DNDB")).toBe("vip, DNDB");
+    expect(appendTag("vip, lead", "DNDB")).toBe("vip, lead, DNDB");
+  });
+  it("is a no-op when the tag is already present (case-insensitive)", () => {
+    expect(appendTag("DNDB", "DNDB")).toBe("DNDB");
+    expect(appendTag("vip, dndb, lead", "DNDB")).toBe("vip, dndb, lead");
+    expect(appendTag("DNDB ", "DNDB")).toBe("DNDB");
+  });
+});
+
+describe("findCompanyDndbRows", () => {
+  it("flags rows whose company contains D&DB but tags don't yet include DNDB", () => {
+    const rows = [
+      row({ full_name: "Chris Rowe Husband", company: "D&DB", tags: "" }),
+      row({ full_name: "Mixed", company: "Acme D&DB Holdings", tags: "vip" }),
+      row({ full_name: "Lower", company: "d&db", tags: "" }),
+      row({ full_name: "Already Tagged", company: "D&DB", tags: "DNDB" }),
+      row({ full_name: "Already Tagged Lower", company: "D&DB", tags: "vip, dndb" }),
+      row({ full_name: "Unrelated", company: "Acme", tags: "" }),
+      row({ full_name: "Just A Letter", company: "DB", tags: "" }),
+    ];
+    const out = findCompanyDndbRows(rows);
+    expect(out.map((r) => r.fullName).sort()).toEqual([
+      "Chris Rowe Husband",
+      "Lower",
+      "Mixed",
+    ]);
+    const chris = out.find((r) => r.fullName === "Chris Rowe Husband")!;
+    expect(chris.nextTags).toBe("DNDB");
+    const mixed = out.find((r) => r.fullName === "Mixed")!;
+    expect(mixed.nextTags).toBe("vip, DNDB");
+  });
+
+  it("returns empty when no row qualifies", () => {
+    const rows = [row({ full_name: "Plain", company: "Acme", tags: "" })];
+    expect(findCompanyDndbRows(rows)).toEqual([]);
   });
 });
