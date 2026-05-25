@@ -174,4 +174,23 @@ describe("listConnectionsDelta", () => {
     listMock.mockRejectedValueOnce(Object.assign(new Error("boom"), { code: 500 }));
     await expect(listConnectionsDelta(fakeClient, { syncToken: "T" })).rejects.toThrow("boom");
   });
+
+  it("falls back to a full sync when the API returns 400 with the expired-token message", async () => {
+    // In practice the People API often surfaces an expired sync token as HTTP
+    // 400 with the literal message "Sync token is expired. Clear local cache
+    // and retry call without the sync token." — the 410 detection alone
+    // misses it and the error propagates.
+    listMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Sync token is expired. Clear local cache and retry call without the sync token."), {
+          code: 400,
+        }),
+      )
+      .mockResolvedValueOnce({
+        data: { connections: [{ resourceName: "people/a", names: [{ displayName: "A" }] }], nextSyncToken: "TOK4" },
+      });
+    const r = await listConnectionsDelta(fakeClient, { syncToken: "STALE" });
+    expect(r.fullSync).toBe(true);
+    expect(r.nextSyncToken).toBe("TOK4");
+  });
 });

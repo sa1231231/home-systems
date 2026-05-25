@@ -124,11 +124,31 @@ export type ConnectionsDelta = {
   fullSync: boolean;
 };
 
-/** A People API sync token has expired/become invalid → HTTP 410. */
-function isExpiredSyncToken(err: unknown): boolean {
+/**
+ * A People API sync token has expired/become invalid. The docs say 410, but
+ * the API often returns 400 (INVALID_ARGUMENT / FAILED_PRECONDITION) with the
+ * literal message "Sync token is expired. Clear local cache and retry call
+ * without the sync token." Match both status codes plus that message as a
+ * belt-and-suspenders so the fallback to full-sync always triggers.
+ */
+export function isExpiredSyncToken(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown } };
-  return e.code === 410 || e.status === 410 || e.response?.status === 410;
+  const e = err as {
+    code?: unknown;
+    status?: unknown;
+    message?: unknown;
+    response?: { status?: unknown; data?: { error?: { message?: unknown } } };
+  };
+  const httpStatus =
+    typeof e.code === "number" ? e.code :
+    typeof e.status === "number" ? e.status :
+    typeof e.response?.status === "number" ? e.response.status : undefined;
+  if (httpStatus === 410) return true;
+  const candidates: string[] = [];
+  if (typeof e.message === "string") candidates.push(e.message);
+  const apiMsg = e.response?.data?.error?.message;
+  if (typeof apiMsg === "string") candidates.push(apiMsg);
+  return candidates.some((m) => /sync token.*expired|expired_sync_token/i.test(m));
 }
 
 /**
