@@ -65,10 +65,11 @@ describe("planSync", () => {
     expect(summarize(plan)).toEqual({ inserted: 1, refreshed: 0, unchanged: 0, ambiguous: 0, tombstoned: 0 });
   });
 
-  it("syncs birthday from Google into the sheet on refresh", () => {
-    // Existing row already has the birthday column. Google contact has a
-    // birthday — refresh proposes it. Since this row has no snapshot yet
-    // it's tiered first_run (queued, not auto-applied) but the change shows.
+  it("auto-applies a new identity column (birthday) into empty sheet cells for already-synced contacts", () => {
+    // The contact has a pre-existing snapshot (already synced) but the
+    // snapshot has no `birthday` key (column joined IDENTITY_COLUMNS later).
+    // Backfilling Google's birthday into the still-empty sheet cell is
+    // safe → tier `auto`, not queued for review.
     const tab: ContactsTab = {
       tab: "dex_contacts",
       headers: ["full_name", "email", "birthday", "google_resource_name", "groups"],
@@ -91,12 +92,48 @@ describe("planSync", () => {
       emails: ["jane@example.com"],
       birthday: "1990-05-15",
     });
-    const plan = planSync("sheet-123", tab, [p], NOW);
+    const snapshots = new Map<string, SnapshotFields>([
+      ["people/c1", { full_name: "Jane Doe", email: "jane@example.com" } as SnapshotFields],
+    ]);
+    const plan = planSync("sheet-123", tab, [p], NOW, snapshots);
     expect(plan.refreshes).toHaveLength(1);
     const bday = plan.refreshes[0].updates.find((u) => u.col === "birthday");
     expect(bday).toBeDefined();
     expect(bday!.to).toBe("1990-05-15");
-    expect(bday!.tier).toBe("first_run");
+    expect(bday!.tier).toBe("auto");
+  });
+
+  it("treats a new column whose sheet cell is already populated as a conflict", () => {
+    // Same shape as above but the user has hand-typed a birthday already.
+    // Don't overwrite — surface it for review.
+    const tab: ContactsTab = {
+      tab: "dex_contacts",
+      headers: ["full_name", "email", "birthday", "google_resource_name", "groups"],
+      rows: [
+        {
+          rowIndex: 0,
+          record: {
+            full_name: "Jane Doe",
+            email: "jane@example.com",
+            birthday: "1990-12-25",
+            google_resource_name: "people/c1",
+            groups: "Friends",
+          },
+        },
+      ],
+    };
+    const p = person({
+      resource_name: "people/c1",
+      display_name: "Jane Doe",
+      emails: ["jane@example.com"],
+      birthday: "1990-05-15",
+    });
+    const snapshots = new Map<string, SnapshotFields>([
+      ["people/c1", { full_name: "Jane Doe", email: "jane@example.com" } as SnapshotFields],
+    ]);
+    const plan = planSync("sheet-123", tab, [p], NOW, snapshots);
+    const bday = plan.refreshes[0].updates.find((u) => u.col === "birthday");
+    expect(bday!.tier).toBe("conflict");
   });
 
   it("inserts include birthday in the row values when Google has one", () => {

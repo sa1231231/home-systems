@@ -56,7 +56,9 @@ const AUTO_ADD_IDENTITY_COLUMNS: readonly IdentityCol[] = ["birthday"];
 
 /**
  * - `auto`: Google changed, the sheet field is untouched since last sync —
- *   safe to apply without review.
+ *   safe to apply without review. Also covers the schema-extension case
+ *   where a newly-added identity column is being backfilled into a sheet
+ *   cell that's still empty.
  * - `conflict`: both Google and the sheet changed since last sync — must be
  *   reviewed (applying would overwrite a hand edit).
  * - `first_run`: no baseline snapshot for this contact yet — review to be safe.
@@ -230,8 +232,14 @@ function computeRefreshChanges(
     if (fieldEquiv(col, googleNow, sheetNow)) continue;
     const base = snapshot?.[col];
     let tier: ChangeTier;
-    if (base === undefined) {
+    if (snapshot === undefined) {
       tier = "first_run";
+    } else if (base === undefined) {
+      // Schema extension: this contact has a snapshot (we've synced it
+      // before) but no baseline for this column — it just joined
+      // IDENTITY_COLUMNS. Backfilling into an empty sheet cell is safe to
+      // auto-apply; a non-empty sheet cell is a hand edit, so conflict.
+      tier = sheetNow === "" ? "auto" : "conflict";
     } else if (fieldEquiv(col, googleNow, base)) {
       // Google hasn't substantively moved since last sync — leave the sheet
       // (incl. any hand edit) untouched.
