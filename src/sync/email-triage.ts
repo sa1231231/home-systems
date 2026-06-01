@@ -162,6 +162,7 @@ async function recordOutcome(
     outcome: "matched_rule" | "needs_review" | "error";
     outcomeId?: number;
     error?: string;
+    emailMeta?: EmailSubject;
   },
 ): Promise<void> {
   await executor
@@ -173,6 +174,7 @@ async function recordOutcome(
       outcome: values.outcome,
       outcomeId: values.outcomeId ?? null,
       error: values.error ?? null,
+      emailMeta: (values.emailMeta ?? null) as never,
     })
     .onConflictDoUpdate({
       target: [processedEmails.account, processedEmails.id],
@@ -181,6 +183,10 @@ async function recordOutcome(
         outcomeId: values.outcomeId ?? null,
         error: values.error ?? null,
         lastProcessedAt: new Date(),
+        // Only overwrite emailMeta when this run actually captured fresh
+        // metadata (rule-fired or needs_review paths); error retries that
+        // never re-fetched should keep the previous snapshot.
+        ...(values.emailMeta ? { emailMeta: values.emailMeta as never } : {}),
       },
     });
 }
@@ -244,6 +250,7 @@ export async function triageEmails(
           threadId: ref.threadId,
           outcome: "matched_rule",
           outcomeId: match.rule.id,
+          emailMeta: subject,
         });
         items.push({
           gmail_id: ref.id,
@@ -335,6 +342,7 @@ export async function triageEmails(
           threadId: ref.threadId,
           outcome: "needs_review",
           outcomeId: reviewId,
+          emailMeta: subject,
         });
       } else {
         // Insert the review and record the outcome atomically so a crash can
@@ -359,6 +367,7 @@ export async function triageEmails(
             threadId: ref.threadId,
             outcome: "needs_review",
             outcomeId: reviewRow.id,
+            emailMeta: subject,
           });
           return reviewRow.id;
         });

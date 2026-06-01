@@ -140,7 +140,7 @@ const ruleMatchFilter = (domain: string, match: unknown) =>
  * and its action is updated when the category differs (newest decision
  * wins). Returns the rule id, or null when the match is too broad to promote.
  */
-async function promoteRule(
+export async function promoteRule(
   database: typeof defaultDb,
   params: {
     domain: string;
@@ -148,7 +148,7 @@ async function promoteRule(
     match: unknown;
     action: unknown;
     priority?: number;
-    reviewId: number;
+    reviewId: number | null;
     createdBy: string;
   },
 ): Promise<number | null> {
@@ -182,7 +182,7 @@ async function promoteRule(
         action: params.action as never,
         priority: params.priority ?? 100,
         enabled: true,
-        createdFromReviewId: params.reviewId,
+        createdFromReviewId: params.reviewId ?? null,
         createdBy: params.createdBy,
       })
       .returning({ id: rules.id });
@@ -207,7 +207,7 @@ async function promoteRule(
  * shouldn't have to review it again. Each match is approved with the rule's
  * action, and the action is applied to the source.
  */
-async function autoResolveMatching(
+export async function autoResolveMatching(
   database: typeof defaultDb,
   ruleId: number,
   meta: ApplyMeta,

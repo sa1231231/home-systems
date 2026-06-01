@@ -1,0 +1,75 @@
+<%
+  // Phase: "review" — the LLM has proposed a rule and we're rendering the
+  // editable confirmation form. Replaces the innerHTML of the parent form's
+  // body div, so we don't repeat hidden account/message_id inputs here —
+  // they live on the outer form (still posting to /correct/propose). The
+  // Confirm button reuses the same form but switches its hx-post to
+  // /correct/apply via hx-swap-oob; simpler to just emit a self-contained
+  // inner form here.
+  const actionLabels = { noise: "archive", worth_reading: "leave in inbox", needs_reply: "star" };
+  const categoryPill = (cat) => '<span class="pill ' + (cat === 'needs_reply' ? 'success' : cat === 'noise' ? 'rejected' : 'pending') + '">' + cat + '</span>';
+%>
+<div style="font-size: 12px; color: var(--ok); margin-bottom: 6px;">Proposed rule (edit anything below before confirming)</div>
+<form
+  hx-post="/ui/gmail/correct/apply"
+  hx-target="closest tr"
+  hx-swap="outerHTML"
+  hx-disabled-elt="find button[type=submit]"
+>
+  <input type="hidden" name="account" value="<%= account %>" />
+  <input type="hidden" name="message_id" value="<%= messageId %>" />
+  <input type="hidden" name="reason" value="<%= reason %>" />
+  <% if (existingReviewId) { %>
+    <input type="hidden" name="review_id" value="<%= existingReviewId %>" />
+  <% } %>
+
+  <label style="display: block; font-size: 11px; margin-bottom: 2px;">Category</label>
+  <select name="category" style="width: 100%; padding: 4px 6px; font: inherit;">
+    <% ["noise", "worth_reading", "needs_reply"].forEach((cat) => { %>
+      <option value="<%= cat %>" <%= cat === proposal.category ? "selected" : "" %>>
+        <%= cat %> — <%= actionLabels[cat] %>
+      </option>
+    <% }); %>
+  </select>
+
+  <label style="display: block; font-size: 11px; margin: 8px 0 2px;">Reasoning</label>
+  <input
+    type="text"
+    name="reasoning"
+    value="<%= proposal.reasoning %>"
+    maxlength="500"
+    required
+    style="width: 100%; padding: 4px 6px; font: inherit;"
+  />
+
+  <label style="display: block; font-size: 11px; margin: 8px 0 2px;">Rule name</label>
+  <input
+    type="text"
+    name="rule_name"
+    value="<%= proposedRuleName %>"
+    maxlength="200"
+    style="width: 100%; padding: 4px 6px; font: inherit;"
+  />
+
+  <label style="display: block; font-size: 11px; margin: 8px 0 2px;">Match (JSON — edit if needed)</label>
+  <textarea
+    name="match"
+    rows="3"
+    required
+    style="width: 100%; padding: 4px 6px; font: 12px monospace; resize: vertical;"
+  ><%= proposalMatchJson %></textarea>
+
+  <% if (firedRule) { %>
+    <div class="muted" style="font-size: 11px; margin-top: 6px;">
+      Will override rule <strong>#<%= firedRule.id %> <%= firedRule.name %></strong> (priority <%= firedRule.priority %> → new rule will be priority <%= Math.max(1, firedRule.priority - 1) %>).
+    </div>
+  <% } %>
+
+  <div style="display: flex; gap: 6px; margin-top: 10px;">
+    <button
+      type="submit"
+      style="padding: 4px 12px; background: var(--accent); border: 1px solid var(--accent); color: #fff; border-radius: 3px; cursor: pointer; font-size: 12px;"
+    >Confirm correction</button>
+    <span class="htmx-indicator muted" style="font-size: 11px; align-self: center;">applying…</span>
+  </div>
+</form>

@@ -1,0 +1,61 @@
+<%
+  const meta = entry.emailMeta || {};
+  const when = entry.lastProcessedAt ? new Date(entry.lastProcessedAt).toISOString().slice(0, 16).replace("T", " ") : "—";
+  const rowId = "rfr-" + (entry.account || "x").replace(/[^a-z0-9]/gi, "") + "-" + entry.gmailId;
+%>
+<tr id="<%= rowId %>">
+  <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= when %>Z</td>
+  <td>
+    <div style="font-weight: 500;"><%= meta.subject || "(no subject)" %></div>
+    <div class="muted" style="font-size: 12px;"><%= meta.from || "(unknown sender)" %></div>
+    <% if (meta.snippet) { %>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;"><%= String(meta.snippet).slice(0, 140) %></div>
+    <% } %>
+  </td>
+  <td>
+    <% if (entry.ruleName) { %>
+      <span class="muted" style="font-size: 12px;">Rule:</span>
+      <div style="font-size: 12px;"><%= entry.ruleName %></div>
+      <% if (entry.ruleId) { %>
+        <div class="muted" style="font-size: 11px;">#<%= entry.ruleId %></div>
+      <% } %>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;">— rule unknown —</span>
+    <% } %>
+  </td>
+  <td>
+    <button
+      type="button"
+      onclick="(function(el){var f=document.getElementById('<%= rowId %>-form');var open=f.style.display!=='none'&&f.style.display!=='';f.style.display=open?'none':'block';el.textContent=open?'Wrong call':'Cancel';})(this)"
+      style="padding: 4px 12px; background: #fff; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 12px;"
+    >Wrong call</button>
+    <form
+      id="<%= rowId %>-form"
+      hx-post="/ui/gmail/correct/propose"
+      hx-target="#<%= rowId %>-form-body"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button[type=submit]"
+      style="display: none; margin-top: 8px; padding: 10px; background: #fafafa; border: 1px solid var(--border); border-radius: 4px;"
+    >
+      <input type="hidden" name="account" value="<%= entry.account %>" />
+      <input type="hidden" name="message_id" value="<%= entry.gmailId %>" />
+      <div id="<%= rowId %>-form-body">
+        <label style="display: block; font-size: 12px; margin-bottom: 6px;">Why was this wrong?</label>
+        <textarea
+          name="reason"
+          required
+          rows="2"
+          placeholder="e.g. This is a delivery update from Amex about my car, not a promo."
+          style="width: 100%; padding: 6px 8px; font: inherit; resize: vertical;"
+        ></textarea>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button
+            type="submit"
+            style="padding: 4px 12px; background: var(--accent); border: 1px solid var(--accent); color: #fff; border-radius: 3px; cursor: pointer; font-size: 12px;"
+          >Propose rule</button>
+          <span class="htmx-indicator muted" style="font-size: 11px; align-self: center;">synthesizing…</span>
+        </div>
+      </div>
+    </form>
+  </td>
+</tr>

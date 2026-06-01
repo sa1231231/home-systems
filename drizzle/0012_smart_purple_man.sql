@@ -1,0 +1,1 @@
+ALTER TABLE "processed_emails" ADD COLUMN "email_meta" jsonb;

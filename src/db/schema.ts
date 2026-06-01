@@ -146,6 +146,9 @@ export const processedEmails = pgTable(
     outcome: text("outcome").notNull(),
     outcomeId: bigint("outcome_id", { mode: "number" }),
     error: text("error"),
+    // EmailSubject snapshot captured at triage time so the UI can render the
+    // Recent activity strip + Wrong-call form without re-fetching from Gmail.
+    emailMeta: jsonb("email_meta"),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.account, t.id] }),
