@@ -23,6 +23,11 @@ export type NotificationInput = {
   url?: string;
   /** 0xRRGGBB integer for channels that support colored accents (Discord). */
   color?: number;
+  /** Optional plain-text one-liner. Discord puts this in the top-level
+   *  `content` field so the message stays readable even when embeds are
+   *  hidden by channel/role permissions ("Embed Links" off). Plain-text
+   *  channels (Pushover, ntfy) would use this directly as the body. */
+  content?: string;
 };
 
 export type SendOutcome = {
@@ -43,7 +48,14 @@ export async function sendNotification(input: NotificationInput): Promise<SendOu
   const config = getConfig();
   if (config.DISCORD_WEBHOOK_URL) {
     try {
-      await sendDiscordWebhook(config.DISCORD_WEBHOOK_URL, input);
+      await sendDiscordWebhook(config.DISCORD_WEBHOOK_URL, {
+        title: input.title,
+        body: input.body,
+        fields: input.fields,
+        url: input.url,
+        color: input.color,
+        content: input.content,
+      });
       return { delivered: true, channel: "discord" };
     } catch (err) {
       return {

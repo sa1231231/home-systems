@@ -211,6 +211,10 @@ export function formatBirthdayMessage(trig: BirthdayTrigger): {
   body: string;
   fields: NotificationField[];
   color: number;
+  /** Single-line plain-text version. Discord renders this in the visible
+   *  message body so the reminder is readable even when embeds are hidden
+   *  (channel role lacks "Embed Links"). */
+  content: string;
 } {
   const nameLine =
     trig.turning != null ? `${trig.fullName} (turning ${trig.turning})` : trig.fullName;
@@ -221,6 +225,7 @@ export function formatBirthdayMessage(trig: BirthdayTrigger): {
       body: "Don't forget to text!",
       fields: [{ name: "Date", value: dateStr, inline: true }],
       color: 0xff4444, // red — urgent
+      content: `🎂 **${nameLine}**'s birthday is today (${dateStr}) — don't forget to text!`,
     };
   }
   return {
@@ -228,6 +233,7 @@ export function formatBirthdayMessage(trig: BirthdayTrigger): {
     body: dateStr,
     fields: [{ name: "Date", value: dateStr, inline: true }],
     color: 0xffd700, // gold — heads-up
+    content: `🎂 **${nameLine}**'s birthday is in ${trig.lookaheadDays} days — ${dateStr}.`,
   };
 }
 

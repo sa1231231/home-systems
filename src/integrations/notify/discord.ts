@@ -17,6 +17,10 @@ export type DiscordWebhookPayload = {
   url?: string;
   /** 0xRRGGBB integer. Gold = 0xFFD700, red = 0xFF4444. */
   color?: number;
+  /** Plain-text one-liner sent as Discord's top-level `content` field. This
+   *  renders even when the channel/role lacks the "Embed Links" permission
+   *  (otherwise embeds appear blank). Falls back to `title` if omitted. */
+  content?: string;
 };
 
 /** Username shown on the message. Keep it short — appears next to every message. */
@@ -28,6 +32,10 @@ export async function sendDiscordWebhook(
 ): Promise<void> {
   const body = {
     username: WEBHOOK_USERNAME,
+    // Always include a plain-text content line. Embeds can be silently
+    // hidden by Discord (e.g. when the channel role lacks "Embed Links");
+    // the content line is what guarantees the message is actually read.
+    content: payload.content ?? payload.title,
     embeds: [
       {
         title: payload.title,
