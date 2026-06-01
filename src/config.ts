@@ -87,6 +87,20 @@ export const ConfigSchema = z.object({
   TRELLO_REORDER_CRON_SCHEDULE: z.string().default("0 11 * * *"),
   EVENTS_LOCATION: z.string().default("Richmond, VA"),
   EVENTBRITE_API_KEY: z.string().optional(),
+  // Outbound notification channel. Currently only Discord webhook is wired up;
+  // adding Pushover/Telegram/etc. would add new env vars here and a new branch
+  // in src/integrations/notify/client.ts. If unset, sendNotification() no-ops
+  // (so a half-configured Railway env doesn't crash the cron).
+  DISCORD_WEBHOOK_URL: z.string().url().optional(),
+  // Daily birthday-reminder cron. Reads the dex_contacts sheet, finds
+  // contacts whose birthday is 7 days away or today, sends one Discord
+  // message per trigger, and records the send in notification_log to
+  // prevent duplicates if the cron fires more than once a day.
+  BIRTHDAY_REMINDER_CRON_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  BIRTHDAY_REMINDER_CRON_SCHEDULE: z.string().default("0 8 * * *"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

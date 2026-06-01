@@ -32,6 +32,10 @@ import {
   startTrelloReorderCron,
   stopTrelloReorderCron,
 } from "./crons/trello-reorder.js";
+import {
+  startBirthdayReminderCron,
+  stopBirthdayReminderCron,
+} from "./crons/birthday-reminders.js";
 import { hasTrelloCreds, requireTrelloAuth } from "./integrations/trello/auth.js";
 import { makeTrelloClient } from "./integrations/trello/client.js";
 import { registerTrelloReversers } from "./sync/trello-actions.js";
@@ -231,6 +235,12 @@ async function start() {
     timezone: config.CRON_TZ,
   });
 
+  startBirthdayReminderCron({
+    enabled: config.BIRTHDAY_REMINDER_CRON_ENABLED,
+    schedule: config.BIRTHDAY_REMINDER_CRON_SCHEDULE,
+    timezone: config.CRON_TZ,
+  });
+
   if (!backupOptions) {
     console.error(
       "[cron] r2 backup NOT scheduled: need R2_ENDPOINT (or R2_ACCOUNT_ID) + R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY + R2_BUCKET",
@@ -255,6 +265,7 @@ async function start() {
     stopBackupCron();
     stopGithubBackupCron();
     stopTrelloReorderCron();
+    stopBirthdayReminderCron();
     server.close(() => {
       console.log("http server closed");
     });

@@ -293,3 +293,42 @@ export const triageRuns = pgTable(
     statusIdx: index("triage_runs_status_idx").on(t.status, t.startedAt),
   }),
 );
+
+/**
+ * Audit + dedup ledger for outbound notifications. Each row records one
+ * attempt (sent or failed) to deliver one reminder to one channel for one
+ * subject in one calendar year at one lookahead offset.
+ *
+ * Dedup is application-level: before sending we look for a row with the
+ * same (kind, subjectKind, subjectId, refYear, lookaheadDays) and
+ * delivery_status='sent'; if found we skip. Failures are kept for audit
+ * but do NOT block retry — a transient Discord outage will retry on the
+ * next cron tick. Single-instance Railway cron means no concurrent-send
+ * race, so no unique constraint is needed.
+ */
+export const notificationLog = pgTable(
+  "notification_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(), // "birthday" — extensible (future: "trash_day", "rent_due", ...)
+    subjectKind: text("subject_kind").notNull(), // "contact" — extensible
+    subjectId: text("subject_id").notNull(), // contact resource_name (or sheet row key)
+    refYear: integer("ref_year").notNull(), // calendar year of the upcoming event
+    lookaheadDays: integer("lookahead_days").notNull(), // 7 or 0 (configurable later)
+    channel: text("channel").notNull(), // "discord"
+    payload: jsonb("payload"), // what was sent (debug / replay)
+    deliveryStatus: text("delivery_status").notNull(), // "sent" | "failed"
+    deliveryError: text("delivery_error"),
+  },
+  (t) => ({
+    dedupIdx: index("notification_log_dedup_idx").on(
+      t.kind,
+      t.subjectKind,
+      t.subjectId,
+      t.refYear,
+      t.lookaheadDays,
+      t.deliveryStatus,
+    ),
+  }),
+);
