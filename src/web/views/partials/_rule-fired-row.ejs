@@ -2,6 +2,8 @@
   const meta = entry.emailMeta || {};
   const when = entry.lastProcessedAt ? new Date(entry.lastProcessedAt).toISOString().slice(0, 16).replace("T", " ") : "—";
   const rowId = "rfr-" + (entry.account || "x").replace(/[^a-z0-9]/gi, "") + "-" + entry.gmailId;
+  const actionLabels = { noise: "archive", worth_reading: "leave in inbox", needs_reply: "star" };
+  const pillClass = (cat) => cat === 'needs_reply' ? 'success' : cat === 'noise' ? 'rejected' : 'pending';
 %>
 <tr id="<%= rowId %>">
   <td class="muted" style="white-space: nowrap; font-size: 12px;"><%= when %>Z</td>
@@ -13,8 +15,15 @@
     <% } %>
   </td>
   <td>
+    <% if (entry.category) { %>
+      <span class="pill <%= pillClass(entry.category) %>"><%= entry.category %></span>
+      <div class="muted" style="font-size: 11px; margin-top: 2px;">→ <%= actionLabels[entry.category] || entry.category %></div>
+    <% } else { %>
+      <span class="muted" style="font-size: 12px;">—</span>
+    <% } %>
+  </td>
+  <td>
     <% if (entry.ruleName) { %>
-      <span class="muted" style="font-size: 12px;">Rule:</span>
       <div style="font-size: 12px;"><%= entry.ruleName %></div>
       <% if (entry.ruleId) { %>
         <div class="muted" style="font-size: 11px;">#<%= entry.ruleId %></div>

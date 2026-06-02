@@ -31,6 +31,7 @@ export type RecentRuleFiredEmail = {
   account: string;
   ruleId: number | null;
   ruleName: string | null;
+  category: string | null;
   emailMeta: EmailSubject | null;
   lastProcessedAt: Date;
 };
@@ -105,7 +106,8 @@ export function groupByAccount(
 /**
  * Pull recent rule-fired emails for the Recent activity strip. Joins
  * processed_emails to the rule that fired so the UI can show which rule
- * handled the message and offer a Wrong-call button when it got it wrong.
+ * handled the message + what category it landed in, and offer a Wrong-call
+ * button when it got it wrong.
  *
  * Only emails captured with `email_meta` populated render here — legacy rows
  * (processed before the metadata column existed) are skipped because the UI
@@ -126,25 +128,35 @@ export async function loadRecentRuleFiredEmails(limit: number): Promise<RecentRu
     .limit(limit);
 
   const ruleIds = Array.from(new Set(rows.map((r) => r.outcomeId).filter((id): id is number => id != null)));
-  const ruleNameById = new Map<number, string>();
+  const ruleById = new Map<number, { name: string; category: string | null }>();
   if (ruleIds.length > 0) {
     const ruleRows = await db
-      .select({ id: rules.id, name: rules.name })
+      .select({ id: rules.id, name: rules.name, action: rules.action })
       .from(rules)
       .where(inArray(rules.id, ruleIds));
-    for (const r of ruleRows) ruleNameById.set(r.id, r.name);
+    for (const r of ruleRows) {
+      const cat =
+        r.action && typeof r.action === "object"
+          ? ((r.action as { category?: unknown }).category as string | undefined) ?? null
+          : null;
+      ruleById.set(r.id, { name: r.name, category: cat });
+    }
   }
 
   return rows
     .filter((r) => r.emailMeta != null)
-    .map((r) => ({
-      gmailId: r.id,
-      account: r.account,
-      ruleId: r.outcomeId,
-      ruleName: r.outcomeId != null ? ruleNameById.get(r.outcomeId) ?? null : null,
-      emailMeta: r.emailMeta as EmailSubject,
-      lastProcessedAt: r.lastProcessedAt,
-    }));
+    .map((r) => {
+      const rule = r.outcomeId != null ? ruleById.get(r.outcomeId) ?? null : null;
+      return {
+        gmailId: r.id,
+        account: r.account,
+        ruleId: r.outcomeId,
+        ruleName: rule?.name ?? null,
+        category: rule?.category ?? null,
+        emailMeta: r.emailMeta as EmailSubject,
+        lastProcessedAt: r.lastProcessedAt,
+      };
+    });
 }
 
 const ProposeBody = z.object({
@@ -295,7 +307,7 @@ export function makeGmailUiRouter(): Router {
         },
         current: ctx.firedRule
           ? {
-              category: "noise", // placeholder; the actual fired category lives on the rule action
+              category: normalizeCategory(ctx.firedRule.category),
               source: "rule",
               firedRuleName: ctx.firedRule.name,
               firedMatch: ctx.firedRule.match,
@@ -426,4 +438,10 @@ export function makeGmailUiRouter(): Router {
 function defaultRuleName(ctx: { account: string; gmailId: string }): string {
   const account = ctx.account ? ctx.account + " " : "";
   return `auto: correction ${account}${ctx.gmailId}`.slice(0, 200);
+}
+
+/** Coerce a stored rule category to the synthesizer's enum, defaulting to noise. */
+function normalizeCategory(cat: string | null): "noise" | "worth_reading" | "needs_reply" {
+  if (cat === "worth_reading" || cat === "needs_reply") return cat;
+  return "noise";
 }

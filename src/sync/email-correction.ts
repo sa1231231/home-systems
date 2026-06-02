@@ -21,7 +21,14 @@ export type CorrectedEmailContext = {
   /** Subject metadata captured at triage time (used to seed the audit row). */
   emailMeta: EmailSubject;
   /** The rule that originally fired, when this was a rule-fired classification. */
-  firedRule?: { id: number; name: string; priority: number; match: Cond };
+  firedRule?: {
+    id: number;
+    name: string;
+    priority: number;
+    match: Cond;
+    /** Category the rule put this email into ("noise" | "worth_reading" | "needs_reply"). */
+    category: string | null;
+  };
   /** When the original classification was an LLM-fired pending review, its id. */
   existingReviewId?: number;
 };
@@ -118,16 +125,22 @@ export async function loadCorrectionContext(
         name: rules.name,
         priority: rules.priority,
         match: rules.match,
+        action: rules.action,
       })
       .from(rules)
       .where(eq(rules.id, processed.outcomeId))
       .limit(1);
     if (rule) {
+      const category =
+        rule.action && typeof rule.action === "object"
+          ? ((rule.action as { category?: unknown }).category as string | undefined) ?? null
+          : null;
       ctx.firedRule = {
         id: rule.id,
         name: rule.name,
         priority: rule.priority,
         match: rule.match as Cond,
+        category,
       };
     }
   } else if (processed.outcome === "needs_review" && processed.outcomeId != null) {
