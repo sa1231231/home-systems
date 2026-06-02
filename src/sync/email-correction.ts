@@ -11,8 +11,13 @@ import {
   reviewAppliers as defaultAppliers,
   type ApplierRegistry,
 } from "../needs-review/appliers.js";
-import { TRIAGE_DOMAIN, type EmailSubject } from "./email-triage.js";
-import { EMAIL_MODIFY_OP } from "./email-actions.js";
+import {
+  TRIAGE_DOMAIN,
+  mapCategoryToAction,
+  type EmailSubject,
+} from "./email-triage.js";
+import { applyEmailAction, EMAIL_MODIFY_OP } from "./email-actions.js";
+import { getOAuthClient, resolveClientForAccount } from "../integrations/google/oauth.js";
 import { validateCondition, type Cond } from "../rules/dsl.js";
 
 export type CorrectedEmailContext = {
@@ -54,6 +59,9 @@ export type CorrectRuleFiredResult = {
   ruleId: number | null;
   reversedChangelogId: number | null;
   reverseError: string | null;
+  /** Whether the new rule's action was successfully re-applied to the email. */
+  applied: boolean;
+  applyError: string | null;
 };
 
 const PRIORITY_FALLBACK = 50;
@@ -237,7 +245,51 @@ export async function correctRuleFiredEmail(
     }
   }
 
-  // 4. Auto-approve any other pending reviews that the new rule covers.
+  // 4. Apply the new rule's action so the email is immediately labeled with
+  //    the corrected category. Without this the original action's reversal
+  //    leaves the message label-less, and the next triage run skips it
+  //    (the processed_emails row still says matched_rule) — the new rule
+  //    would never get a chance to fire.
+  let applied = false;
+  let applyError: string | null = null;
+  if (ruleId !== null) {
+    try {
+      const client = input.context.account
+        ? await resolveClientForAccount(input.context.account)
+        : getOAuthClient();
+      const action = mapCategoryToAction({
+        category: input.category,
+        reasoning: input.reasoning,
+      });
+      await applyEmailAction(client, input.context.gmailId, action, {
+        sessionId: input.sessionId,
+        caller: input.caller,
+        intent: `correction:rule_fired:${reviewRow.id}`,
+        account: input.context.account,
+      });
+      applied = true;
+      // Re-point processed_emails at the new rule so Recent activity shows
+      // the corrected state and a future triage run skips this message
+      // cleanly (or, on error retry, the new rule wins the evaluation).
+      await database
+        .update(processedEmails)
+        .set({
+          outcome: "matched_rule",
+          outcomeId: ruleId,
+          lastProcessedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(processedEmails.account, input.context.account),
+            eq(processedEmails.id, input.context.gmailId),
+          ),
+        );
+    } catch (err) {
+      applyError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // 5. Auto-approve any other pending reviews that the new rule covers.
   if (ruleId !== null) {
     const meta: ApplyMeta = {
       sessionId: input.sessionId,
@@ -252,5 +304,7 @@ export async function correctRuleFiredEmail(
     ruleId,
     reversedChangelogId,
     reverseError,
+    applied,
+    applyError,
   };
 }

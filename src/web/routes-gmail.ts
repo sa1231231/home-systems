@@ -368,6 +368,9 @@ export function makeGmailUiRouter(): Router {
       res.status(404).send(`<div class="flash err">No triage record for that message.</div>`);
       return;
     }
+    // Always scope new email rules to the account they came from — prevents
+    // cross-account false matches and keeps rules out of the "(unscoped)" tab.
+    match = wrapMatchWithAccount(match, ctx.account);
     try {
       // LLM-fired path: there's already a pending needs_review row — route
       // through the existing correctEntry so all the standard audit fields
@@ -409,8 +412,13 @@ export function makeGmailUiRouter(): Router {
         : result.reverseError
           ? ` Could not reverse action: ${escapeHtml(result.reverseError)}`
           : "";
+      const applyNote = result.applied
+        ? ` Re-applied new label.`
+        : result.applyError
+          ? ` Re-label failed: ${escapeHtml(result.applyError)}`
+          : "";
       res.send(
-        `<div class="flash ok">Correction saved as rule #${result.ruleId ?? "—"} (review #${result.reviewId}).${reverseNote}</div>`,
+        `<div class="flash ok">Correction saved as rule #${result.ruleId ?? "—"} (review #${result.reviewId}).${reverseNote}${applyNote}</div>`,
       );
     } catch (err) {
       if (err instanceof InvalidConditionError) {
@@ -444,4 +452,27 @@ function defaultRuleName(ctx: { account: string; gmailId: string }): string {
 function normalizeCategory(cat: string | null): "noise" | "worth_reading" | "needs_reply" {
   if (cat === "worth_reading" || cat === "needs_reply") return cat;
   return "noise";
+}
+
+/**
+ * Force the synthesized match to be account-scoped. Email rules without an
+ * `account` leaf would fire across every Gmail account in the system — and
+ * also bucket into an "(unscoped)" tab in the UI. We always prepend the
+ * leaf for the email's account, unless one is already present.
+ */
+function wrapMatchWithAccount(match: Cond, account: string): Cond {
+  if (!account) return match;
+  const accountLeaf: Cond = { field: "account", op: "equals", value: account };
+  const hasAccountLeaf = (c: Cond): boolean => {
+    if (typeof c !== "object" || c == null) return false;
+    if ("all" in c && Array.isArray(c.all)) return c.all.some(hasAccountLeaf);
+    if ("any" in c && Array.isArray(c.any)) return c.any.some(hasAccountLeaf);
+    if ("field" in c) return c.field === "account" && c.op === "equals";
+    return false;
+  };
+  if (hasAccountLeaf(match)) return match;
+  if (typeof match === "object" && match != null && "all" in match && Array.isArray(match.all)) {
+    return { all: [accountLeaf, ...match.all] };
+  }
+  return { all: [accountLeaf, match] };
 }
