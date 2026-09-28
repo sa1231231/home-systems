@@ -18,8 +18,8 @@ export type TestAppOptions = {
  *   const app = makeTestApp();
  *   app.set("view engine", "ejs");
  *   app.set("views", viewsPath);
- *   app.use("/ui/gmail", makeGmailUiRouter());
- *   const res = await request(app).get("/ui/gmail");
+ *   app.use("/ui/transactions", makeTransactionsUiRouter());
+ *   const res = await request(app).get("/ui/transactions");
  */
 export function makeTestApp(opts: TestAppOptions = {}): express.Express {
   const parseBody = opts.parseBody !== false;

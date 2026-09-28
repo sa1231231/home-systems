@@ -257,9 +257,9 @@ describe("routes-transactions", () => {
 
     it("ignores runs from other domains", async () => {
       await db.insert(triageRuns).values({
-        domain: "email",
+        domain: "contact",
         sessionId: "s",
-        caller: "ui:gmail.triage",
+        caller: "ui:contacts.sync",
         status: "running",
       });
       const res = await request(buildApp({ sheetId: "sheet" })).get(

@@ -10,60 +10,60 @@ describe("tryApply", () => {
   it("returns applied=false with no_applier message when no applier is registered", async () => {
     const registry = new ApplierRegistry();
     const out = await tryApply(
-      "email",
-      "msg1",
+      "transaction",
+      "tx1",
       { foo: 1 },
       { sessionId: "s", caller: "test" },
       registry,
     );
-    expect(out).toEqual({ applied: false, apply_error: "no applier registered for 'email'" });
+    expect(out).toEqual({ applied: false, apply_error: "no applier registered for 'transaction'" });
   });
 
   it("returns applied=true with the applier's result on success", async () => {
     const registry = new ApplierRegistry();
-    registry.register("email", async (subjectId, decision, meta) => ({
+    registry.register("transaction", async (subjectId, decision, meta) => ({
       subjectId,
       decision,
       caller: meta.caller,
     }));
     const out = await tryApply(
-      "email",
-      "msg1",
-      { action: "archive" },
+      "transaction",
+      "tx1",
+      { action: "categorize" },
       { sessionId: "s", caller: "test:caller", intent: "i" },
       registry,
     );
     expect(out).toEqual({
       applied: true,
-      apply_result: { subjectId: "msg1", decision: { action: "archive" }, caller: "test:caller" },
+      apply_result: { subjectId: "tx1", decision: { action: "categorize" }, caller: "test:caller" },
     });
   });
 
   it("captures applier errors as apply_error", async () => {
     const registry = new ApplierRegistry();
-    registry.register("email", async () => {
-      throw new Error("gmail says no");
+    registry.register("transaction", async () => {
+      throw new Error("applier says no");
     });
     const out = await tryApply(
-      "email",
-      "msg1",
+      "transaction",
+      "tx1",
       { foo: 1 },
       { sessionId: "s", caller: "test" },
       registry,
     );
     expect(out.applied).toBe(false);
-    expect(out.apply_error).toBe("gmail says no");
+    expect(out.apply_error).toBe("applier says no");
   });
 
   it("stringifies non-Error throws", async () => {
     const registry = new ApplierRegistry();
-    registry.register("email", async () => {
+    registry.register("transaction", async () => {
       // eslint-disable-next-line @typescript-eslint/no-throw-literal
       throw "boom";
     });
     const out = await tryApply(
-      "email",
-      "msg1",
+      "transaction",
+      "tx1",
       {},
       { sessionId: "s", caller: "test" },
       registry,
@@ -87,37 +87,27 @@ describe("rule promotion (approve/correct)", () => {
     await handle.reset();
   });
 
-  function emailMatch(account: string, from: string) {
-    return {
-      all: [
-        { op: "equals", field: "account", value: account },
-        { op: "equals", field: "from", value: from },
-      ],
-    };
+  function merchantMatch(fullDescription: string) {
+    return { op: "equals", field: "full_description", value: fullDescription };
   }
 
-  async function insertEmailReview(opts: {
-    account: string;
-    from: string;
+  async function insertMerchantReview(opts: {
+    fullDescription: string;
     category?: string;
   }): Promise<number> {
     seq += 1;
     const [row] = await db
       .insert(needsReview)
       .values({
-        domain: "email",
+        domain: "transaction",
         subject: {
-          account: opts.account,
-          from: opts.from,
-          subject: "hi",
-          snippet: "",
-          labels: [],
-          to: null,
-          received_at: null,
+          full_description: opts.fullDescription,
+          description: opts.fullDescription,
+          transaction_id: `tx-${seq}`,
         } as never,
-        subjectKind: "email",
-        subjectId: `msg-${seq}`,
-        proposedAction: { category: opts.category ?? "noise", reasoning: "ai" } as never,
+        subjectKind: "transaction",
+        subjectId: `tx-${seq}`,
+        proposedAction: { category: opts.category ?? "Groceries", reasoning: "ai" } as never,
         status: "pending",
       })
       .returning({ id: needsReview.id });
@@ -127,18 +117,18 @@ describe("rule promotion (approve/correct)", () => {
   function recordingRegistry(): { registry: ApplierRegistry; applied: string[] } {
     const applied: string[] = [];
     const registry = new ApplierRegistry();
-    registry.register("email", async (subjectId) => {
+    registry.register("transaction", async (subjectId) => {
       applied.push(subjectId);
       return "ok";
     });
     return { registry, applied };
   }
 
-  it("reuses the existing rule instead of creating a duplicate for the same sender", async () => {
+  it("reuses the existing rule instead of creating a duplicate for the same merchant", async () => {
     const { registry } = recordingRegistry();
-    const match = emailMatch("a@gmail.com", "noise@x.com");
+    const match = merchantMatch("AMAZON MERCHANT");
 
-    const id1 = await insertEmailReview({ account: "a@gmail.com", from: "noise@x.com" });
+    const id1 = await insertMerchantReview({ fullDescription: "AMAZON MERCHANT" });
     const r1 = await approveEntry(
       id1,
       { promoteToRule: { name: "auto", match }, sessionId: "s", caller: "test" },
@@ -146,7 +136,7 @@ describe("rule promotion (approve/correct)", () => {
     );
     // Insert the second review only after the first is decided so auto-resolve
     // doesn't sweep it — this isolates the idempotent-promotion path.
-    const id2 = await insertEmailReview({ account: "a@gmail.com", from: "noise@x.com" });
+    const id2 = await insertMerchantReview({ fullDescription: "AMAZON MERCHANT" });
     const r2 = await approveEntry(
       id2,
       { promoteToRule: { name: "auto", match }, sessionId: "s", caller: "test" },
@@ -157,29 +147,29 @@ describe("rule promotion (approve/correct)", () => {
     expect(r2.promotedRuleId).toBe(r1.promotedRuleId);
     const ruleRows = await db.select().from(rules);
     expect(ruleRows).toHaveLength(1);
-    expect(ruleRows[0].action).toMatchObject({ category: "noise" });
+    expect(ruleRows[0].action).toMatchObject({ category: "Groceries" });
   });
 
   it("updates the existing rule's category when a later correction differs (newest wins)", async () => {
     const { registry } = recordingRegistry();
-    const match = emailMatch("a@gmail.com", "person@x.com");
+    const match = merchantMatch("COSTCO #11");
 
-    const id1 = await insertEmailReview({ account: "a@gmail.com", from: "person@x.com" });
+    const id1 = await insertMerchantReview({ fullDescription: "COSTCO #11" });
     await correctEntry(
       id1,
       {
-        decision: { category: "needs_reply", reasoning: "corrected" },
+        decision: { category: "Dining", reasoning: "corrected" },
         promoteToRule: { name: "auto", match },
         sessionId: "s",
         caller: "test",
       },
       { registry },
     );
-    const id2 = await insertEmailReview({ account: "a@gmail.com", from: "person@x.com" });
+    const id2 = await insertMerchantReview({ fullDescription: "COSTCO #11" });
     await correctEntry(
       id2,
       {
-        decision: { category: "noise", reasoning: "corrected again" },
+        decision: { category: "Groceries", reasoning: "corrected again" },
         promoteToRule: { name: "auto", match },
         sessionId: "s",
         caller: "test",
@@ -189,16 +179,16 @@ describe("rule promotion (approve/correct)", () => {
 
     const ruleRows = await db.select().from(rules);
     expect(ruleRows).toHaveLength(1);
-    expect(ruleRows[0].action).toMatchObject({ category: "noise" });
+    expect(ruleRows[0].action).toMatchObject({ category: "Groceries" });
   });
 
   it("does not promote a rule for an unsafe (present) match — entry is still decided", async () => {
     const { registry } = recordingRegistry();
-    const id = await insertEmailReview({ account: "a@gmail.com", from: "x@y.com" });
+    const id = await insertMerchantReview({ fullDescription: "SOME STORE" });
     const result = await approveEntry(
       id,
       {
-        promoteToRule: { name: "auto", match: { op: "present", field: "from" } },
+        promoteToRule: { name: "auto", match: { op: "present", field: "full_description" } },
         sessionId: "s",
         caller: "test",
       },
@@ -209,14 +199,14 @@ describe("rule promotion (approve/correct)", () => {
     expect(await db.select().from(rules)).toHaveLength(0);
   });
 
-  it("auto-resolves other pending reviews from the same sender when a rule is created", async () => {
+  it("auto-resolves other pending reviews from the same merchant when a rule is created", async () => {
     const { registry, applied } = recordingRegistry();
-    const match = emailMatch("a@gmail.com", "bulk@x.com");
+    const match = merchantMatch("BULK MART");
 
-    const idA = await insertEmailReview({ account: "a@gmail.com", from: "bulk@x.com" });
-    const idB = await insertEmailReview({ account: "a@gmail.com", from: "bulk@x.com" });
-    // A different sender must NOT be swept.
-    const idOther = await insertEmailReview({ account: "a@gmail.com", from: "other@x.com" });
+    const idA = await insertMerchantReview({ fullDescription: "BULK MART" });
+    const idB = await insertMerchantReview({ fullDescription: "BULK MART" });
+    // A different merchant must NOT be swept.
+    const idOther = await insertMerchantReview({ fullDescription: "OTHER STORE" });
 
     await approveEntry(
       idA,

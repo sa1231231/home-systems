@@ -23,8 +23,8 @@ describe("routes-auth", () => {
     });
 
     it("preserves a same-origin ?next param", async () => {
-      const res = await request(buildApp()).get("/ui/login?next=/ui/gmail");
-      expect(res.text).toContain("/ui/gmail");
+      const res = await request(buildApp()).get("/ui/login?next=/ui/transactions");
+      expect(res.text).toContain("/ui/transactions");
     });
 
     it("rejects an external ?next param and falls back to /ui", async () => {
@@ -69,9 +69,9 @@ describe("routes-auth", () => {
       const res = await request(buildApp())
         .post("/ui/login")
         .type("form")
-        .send({ password: PASSWORD, next: "/ui/gmail" });
+        .send({ password: PASSWORD, next: "/ui/transactions" });
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe("/ui/gmail");
+      expect(res.headers.location).toBe("/ui/transactions");
     });
 
     it("falls back to /ui when ?next is external", async () => {

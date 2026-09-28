@@ -67,12 +67,10 @@ function compute(schedule: string, enabled: boolean, scheduleTz: string): CronIn
   }
 }
 
-export function cronInfoForDomain(domain: "email" | "contact" | "transaction" | "trello"): CronInfo {
+export function cronInfoForDomain(domain: "contact" | "transaction" | "trello"): CronInfo {
   const c = getConfig();
   const tz = c.CRON_TZ;
   switch (domain) {
-    case "email":
-      return compute(c.EMAIL_TRIAGE_CRON_SCHEDULE, c.EMAIL_TRIAGE_CRON_ENABLED, tz);
     case "contact":
       return compute(c.CONTACTS_SYNC_CRON_SCHEDULE, c.CONTACTS_SYNC_CRON_ENABLED, tz);
     case "transaction":

@@ -17,9 +17,8 @@ import { getDomainConfig, UnknownDomainError } from "../needs-review/domains.js"
 const IdParam = z.coerce.number().int().positive();
 
 function partialFor(domain: string): string {
-  if (domain === "transaction") return "partials/_transaction-review-row";
   if (domain === "contact") return "partials/_contact-review-row";
-  return "partials/_review-row";
+  return "partials/_transaction-review-row";
 }
 
 const RejectBody = z.object({

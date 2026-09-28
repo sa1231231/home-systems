@@ -3,7 +3,6 @@ import { requireAuth } from "./auth.js";
 import { makeAuthRouter } from "./routes-auth.js";
 import { makeChangesUiRouter } from "./routes-changes.js";
 import { makeContactsUiRouter } from "./routes-contacts.js";
-import { makeGmailUiRouter } from "./routes-gmail.js";
 import { makeReviewUiRouter } from "./routes-review.js";
 import { makeRulesUiRouter } from "./routes-rules.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
@@ -38,12 +37,11 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
     : passthrough;
 
   router.get("/", gate, (_req, res) => {
-    res.redirect(302, "/ui/gmail");
+    res.redirect(302, "/ui/transactions");
   });
 
   router.use("/changes", gate, makeChangesUiRouter());
   router.use("/sessions", gate, makeSessionsUiRouter());
-  router.use("/gmail", gate, makeGmailUiRouter());
   router.use(
     "/transactions",
     gate,

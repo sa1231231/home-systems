@@ -25,87 +25,6 @@ export type DomainConfig = {
   supportsCorrect?: boolean;
 };
 
-const EmailCategoryEnum = z.enum(["noise", "worth_reading", "needs_reply"]);
-const EmailRuleScopeEnum = z.enum([
-  "exact",
-  "from_domain",
-  "from_contains",
-  "subject_contains",
-  "once",
-]);
-const EmailCorrectBody = z.object({
-  category: EmailCategoryEnum,
-  rule_scope: EmailRuleScopeEnum.optional(),
-  rule_value: z.string().trim().max(200).optional(),
-});
-
-const emailConfig: DomainConfig = {
-  validateCorrection: (body) => EmailCorrectBody.parse(body),
-  defaultRuleName: (entry) => {
-    const subj = (entry.subject ?? {}) as Record<string, unknown>;
-    const account = typeof subj.account === "string" ? subj.account : "";
-    const from = typeof subj.from === "string" ? subj.from : "";
-    if (from) return `auto: ${account ? account + " " : ""}from=${from.slice(0, 80)}`;
-    return `auto: review #${entry.id}`;
-  },
-  // Email rules are scoped per Gmail account: the match is a compound `all`
-  // condition with an `account` leaf plus the sender (or subject) leaf.
-  defaultMatch: (entry) => {
-    const subj = (entry.subject ?? {}) as Record<string, unknown>;
-    const account = typeof subj.account === "string" && subj.account ? subj.account : null;
-    const accountLeaf = account
-      ? [{ op: "equals", field: "account", value: account }]
-      : [];
-    if (typeof subj.from === "string" && subj.from) {
-      return { all: [...accountLeaf, { op: "equals", field: "from", value: subj.from }] };
-    }
-    if (typeof subj.subject === "string" && subj.subject) {
-      return { all: [...accountLeaf, { op: "equals", field: "subject", value: subj.subject }] };
-    }
-    return { all: [...accountLeaf, { op: "present", field: "from" }] };
-  },
-  buildCorrectedDecision: (category, previousCategory) => ({
-    category,
-    reasoning: `user-corrected (was ${previousCategory})`,
-  }),
-  buildPromoteFromCorrection: (entry, body) => {
-    const b = body as { rule_scope?: string; rule_value?: string };
-    const scope = b.rule_scope ?? "exact";
-    if (scope === "once") return undefined;
-    if (scope === "exact") {
-      return { name: emailConfig.defaultRuleName(entry), match: emailConfig.defaultMatch(entry) };
-    }
-    const value = (b.rule_value ?? "").trim();
-    if (!value) {
-      throw new Error(`rule_value is required for rule_scope=${scope}`);
-    }
-    const subj = (entry.subject ?? {}) as Record<string, unknown>;
-    const account = typeof subj.account === "string" && subj.account ? subj.account : "";
-    const accountLeaf = account ? [{ op: "equals", field: "account", value: account }] : [];
-    const acctPrefix = account ? account + " " : "";
-    if (scope === "from_domain") {
-      const dom = value.startsWith("@") ? value : `@${value}`;
-      return {
-        name: `auto: ${acctPrefix}from contains ${dom}`,
-        match: { all: [...accountLeaf, { op: "contains", field: "from", value: dom }] },
-      };
-    }
-    if (scope === "from_contains") {
-      return {
-        name: `auto: ${acctPrefix}from contains ${value.slice(0, 80)}`,
-        match: { all: [...accountLeaf, { op: "contains", field: "from", value }] },
-      };
-    }
-    if (scope === "subject_contains") {
-      return {
-        name: `auto: ${acctPrefix}subject contains ${value.slice(0, 80)}`,
-        match: { all: [...accountLeaf, { op: "contains", field: "subject", value }] },
-      };
-    }
-    throw new Error(`unknown rule_scope: ${scope}`);
-  },
-};
-
 const TransactionCorrectBody = z.object({ category: z.string().min(1).max(200) });
 
 const transactionConfig: DomainConfig = {
@@ -151,7 +70,6 @@ const contactConfig: DomainConfig = {
 };
 
 const configs: Record<string, DomainConfig> = {
-  email: emailConfig,
   transaction: transactionConfig,
   contact: contactConfig,
 };

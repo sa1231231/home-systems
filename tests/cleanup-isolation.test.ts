@@ -4,7 +4,6 @@ import { db } from "../src/db/client.js";
 import {
   changelog,
   needsReview,
-  processedEmails,
   processedTransactions,
   rules,
   aiCalls,
@@ -33,7 +32,6 @@ describe("test isolation", () => {
     expect(await db.select().from(needsReview)).toEqual([]);
     expect(await db.select().from(changelog)).toEqual([]);
     expect(await db.select().from(aiCalls)).toEqual([]);
-    expect(await db.select().from(processedEmails)).toEqual([]);
     expect(await db.select().from(processedTransactions)).toEqual([]);
   }
 
@@ -43,9 +41,9 @@ describe("test isolation", () => {
 
   it("inserts into many tables — should not leak to the next test", async () => {
     await db.insert(rules).values({
-      domain: "email",
+      domain: "transaction",
       name: "marker",
-      match: { op: "present", field: "from" } as never,
+      match: { op: "present", field: "full_description" } as never,
       action: {} as never,
       createdBy: "test",
     });
@@ -60,13 +58,12 @@ describe("test isolation", () => {
       status: "success",
     });
     await db.insert(needsReview).values({
-      domain: "email",
+      domain: "transaction",
       subject: {} as never,
-      subjectKind: "email",
+      subjectKind: "transaction",
       subjectId: "m",
       proposedAction: {} as never,
     });
-    await db.insert(processedEmails).values({ id: "m", threadId: "t", outcome: "matched_rule" });
     await db.insert(processedTransactions).values({ id: "tx", outcome: "matched_rule" });
     await db.insert(aiCalls).values({
       classifier: "x",

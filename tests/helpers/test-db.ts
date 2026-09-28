@@ -27,7 +27,6 @@ const ALL_TABLES = [
   "ai_calls",
   "rules",
   "needs_review",
-  "processed_emails",
   "processed_transactions",
   "daily_op_counters",
   "triage_runs",

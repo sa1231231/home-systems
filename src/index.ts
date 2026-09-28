@@ -11,16 +11,12 @@ import { makeChangesRouter } from "./api/changes.js";
 import { makeAiCallsRouter } from "./api/ai-calls.js";
 import { makeRulesRouter } from "./api/rules.js";
 import { makeNeedsReviewRouter } from "./api/needs-review.js";
-import { makeEmailsRouter } from "./api/emails.js";
-import { registerEmailReverser } from "./sync/email-actions.js";
-import { registerEmailApplier } from "./sync/email-triage.js";
 import { registerTransactionApplier } from "./sync/transaction-triage.js";
 import { registerContactReviewAppliers } from "./sync/contacts-applier.js";
 import { sessionIdMiddleware } from "./changelog/index.js";
 import { getOAuthClient, hasGoogleCreds, requireGoogleCreds } from "./integrations/google/oauth.js";
 import { registerContactReversers } from "./changelog/reversers/contacts.js";
 import { startContactsSyncCron, stopContactsSyncCron } from "./crons/contacts-sync.js";
-import { startEmailTriageCron, stopEmailTriageCron } from "./crons/email-triage.js";
 import {
   startTransactionTriageCron,
   stopTransactionTriageCron,
@@ -147,7 +143,6 @@ app.use("/changes", apiGate, makeChangesRouter());
 app.use("/ai-calls", apiGate, makeAiCallsRouter());
 app.use("/rules", apiGate, makeRulesRouter());
 app.use("/needs-review", apiGate, makeNeedsReviewRouter());
-app.use("/emails", apiGate, makeEmailsRouter());
 app.use("/trello", apiGate, makeTrelloRouter());
 app.use("/scraper", apiGate, makeScraperRouter());
 app.use(
@@ -177,10 +172,8 @@ async function start() {
     const oauth = getOAuthClient();
     const sheetCreds = requireGoogleCreds();
     registerContactReversers(oauth);
-    registerEmailReverser();
-    registerEmailApplier();
     registerContactReviewAppliers(oauth, { spreadsheetId: sheetCreds.sheetId });
-    console.log("contact + email reversers + email/contact appliers registered");
+    console.log("contact reversers + contact appliers registered");
 
     if (config.TRANSACTIONS_SHEET_ID) {
       registerTransactionApplier(oauth, {
@@ -206,12 +199,6 @@ async function start() {
   startContactsSyncCron({
     enabled: config.CONTACTS_SYNC_CRON_ENABLED,
     schedule: config.CONTACTS_SYNC_CRON_SCHEDULE,
-    timezone: config.CRON_TZ,
-  });
-
-  startEmailTriageCron({
-    enabled: config.EMAIL_TRIAGE_CRON_ENABLED,
-    schedule: config.EMAIL_TRIAGE_CRON_SCHEDULE,
     timezone: config.CRON_TZ,
   });
 
@@ -260,7 +247,6 @@ async function start() {
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, draining connections`);
     stopContactsSyncCron();
-    stopEmailTriageCron();
     stopTransactionTriageCron();
     stopBackupCron();
     stopGithubBackupCron();

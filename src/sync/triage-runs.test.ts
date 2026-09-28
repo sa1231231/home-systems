@@ -26,13 +26,13 @@ describe("triage-runs", () => {
 
   describe("startRun", () => {
     it("inserts a row with status=running and returns the id", async () => {
-      const id = await startRun("email", "session-a", "ui:gmail.triage");
+      const id = await startRun("transaction", "session-a", "ui:transaction.triage");
       expect(id).toBeGreaterThan(0);
       const [row] = await db.select().from(triageRuns).where(eq(triageRuns.id, id));
       expect(row).toMatchObject({
-        domain: "email",
+        domain: "transaction",
         sessionId: "session-a",
-        caller: "ui:gmail.triage",
+        caller: "ui:transaction.triage",
         status: "running",
         summary: null,
         error: null,
@@ -72,7 +72,7 @@ describe("triage-runs", () => {
 
   describe("withTriageRun", () => {
     it("wraps a happy-path run, records summary, returns the inner value", async () => {
-      const result = await withTriageRun("email", "s", "test:caller", async () => "done");
+      const result = await withTriageRun("transaction", "s", "test:caller", async () => "done");
       expect(result).toBe("done");
       const [row] = await db.select().from(triageRuns);
       expect(row.status).toBe("success");
@@ -80,7 +80,7 @@ describe("triage-runs", () => {
 
     it("records failure and rethrows on inner error", async () => {
       await expect(
-        withTriageRun("email", "s", "test:caller", async () => {
+        withTriageRun("transaction", "s", "test:caller", async () => {
           throw new Error("inner died");
         }),
       ).rejects.toThrow("inner died");
@@ -91,7 +91,7 @@ describe("triage-runs", () => {
 
     it("writes the running row BEFORE the inner function executes", async () => {
       let observedRunning = false;
-      await withTriageRun("email", "s", "test:caller", async () => {
+      await withTriageRun("transaction", "s", "test:caller", async () => {
         const [r] = await db.select().from(triageRuns);
         observedRunning = r?.status === "running";
       });
@@ -101,35 +101,35 @@ describe("triage-runs", () => {
 
   describe("latestRunFor / isRunning", () => {
     it("returns null when no recent run exists", async () => {
-      expect(await latestRunFor("email")).toBeNull();
-      expect(await isRunning("email")).toBe(false);
+      expect(await latestRunFor("transaction")).toBeNull();
+      expect(await isRunning("transaction")).toBe(false);
     });
 
     it("returns the most recent run for the requested domain only", async () => {
-      const a = await startRun("email", "s1", "c1");
-      await startRun("transaction", "s2", "c2");
-      const b = await startRun("email", "s3", "c3");
-      const latest = await latestRunFor("email");
+      const a = await startRun("transaction", "s1", "c1");
+      await startRun("contact", "s2", "c2");
+      const b = await startRun("transaction", "s3", "c3");
+      const latest = await latestRunFor("transaction");
       expect(latest?.id).toBe(b);
       expect(latest?.id).not.toBe(a);
     });
 
     it("isRunning is true only while status is 'running'", async () => {
-      const id = await startRun("email", "s", "c");
-      expect(await isRunning("email")).toBe(true);
+      const id = await startRun("transaction", "s", "c");
+      expect(await isRunning("transaction")).toBe(true);
       await completeRun(id, {});
-      expect(await isRunning("email")).toBe(false);
+      expect(await isRunning("transaction")).toBe(false);
     });
 
     it("respects the lookback window", async () => {
-      const id = await startRun("email", "s", "c");
+      const id = await startRun("transaction", "s", "c");
       // Manually backdate the row 2 hours so it falls outside default 1h window.
       await db
         .update(triageRuns)
         .set({ startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
         .where(eq(triageRuns.id, id));
-      expect(await latestRunFor("email")).toBeNull();
-      expect(await latestRunFor("email", { lookbackMs: 4 * 60 * 60 * 1000 })).not.toBeNull();
+      expect(await latestRunFor("transaction")).toBeNull();
+      expect(await latestRunFor("transaction", { lookbackMs: 4 * 60 * 60 * 1000 })).not.toBeNull();
     });
 
     it("self-heals a run stuck 'running' past the timeout to 'error'", async () => {

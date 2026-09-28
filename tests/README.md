@@ -55,7 +55,7 @@ import { clearAppliers, setApplier } from "../../tests/helpers/registry.js";
 
 beforeEach(() => {
   clearAppliers();             // empties the map
-  setApplier("email", async () => {});
+  setApplier("transaction", async () => {});
 });
 ```
 
@@ -64,16 +64,16 @@ beforeEach(() => {
 Per-file `vi.mock` against the integration module. Examples:
 
 ```ts
-vi.mock("../sync/email-triage.js", async () => {
-  const actual = await vi.importActual<typeof import("../sync/email-triage.js")>(
-    "../sync/email-triage.js",
+vi.mock("../sync/transaction-triage.js", async () => {
+  const actual = await vi.importActual<typeof import("../sync/transaction-triage.js")>(
+    "../sync/transaction-triage.js",
   );
-  return { ...actual, triageEmails: vi.fn() };
+  return { ...actual, triageTransactions: vi.fn() };
 });
 ```
 
 This pattern preserves the module's other exports so dependent code keeps
-working, and gives you a `vi.mocked(triageEmails)` handle to `.mockResolvedValueOnce()`
+working, and gives you a `vi.mocked(triageTransactions)` handle to `.mockResolvedValueOnce()`
 in each test.
 
 Note: `vi.resetModules()` is **incompatible** with `vi.mock` — resetting the

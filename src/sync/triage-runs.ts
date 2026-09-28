@@ -2,7 +2,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { db as defaultDb } from "../db/client.js";
 import { triageRuns } from "../db/schema.js";
 
-export type TriageRunDomain = "email" | "transaction" | "contact" | "trello";
+export type TriageRunDomain = "transaction" | "contact" | "trello";
 
 export type TriageRunRow = typeof triageRuns.$inferSelect;
 
