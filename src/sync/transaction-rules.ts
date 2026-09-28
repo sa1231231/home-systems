@@ -147,18 +147,25 @@ export async function inferTransactionRules(
   return result;
 }
 
+export type MerchantMatchField = "description" | "full_description";
+
 /**
  * A "merchant contains" match: fires when `value` (a lowercased token like
- * "amazon") is a substring of the short OR full description. This survives
- * the per-transaction suffix noise banks add ("AMZN MKTP US*2H4…").
+ * "amazon") is a substring of one of `fields`. Matching `description` alone
+ * keys off the clean merchant name; adding `full_description` also survives
+ * the per-transaction suffix noise banks add ("AMZN MKTP US*2H4…") but carries
+ * the merchant's street address/city, so a broad token can collide with an
+ * unrelated merchant's address. Defaults to both fields to preserve the
+ * historical behavior; callers that mint broad tokens (consolidation) should
+ * scope to `["description"]`.
  */
-export function containsMerchantMatch(value: string): unknown {
+export function containsMerchantMatch(
+  value: string,
+  fields: ReadonlyArray<MerchantMatchField> = ["description", "full_description"],
+): unknown {
   const v = value.trim();
   return {
-    any: [
-      { op: "contains", field: "description", value: v },
-      { op: "contains", field: "full_description", value: v },
-    ],
+    any: fields.map((field) => ({ op: "contains", field, value: v })),
   };
 }
 
@@ -221,6 +228,103 @@ export type ConsolidationSuggestion = {
 };
 
 /**
+ * Minimum length for a token to seed a consolidated `contains` rule. Raised
+ * from 4 to 5: 4-char tokens ("park", "wash", "line", "cafe") collide with
+ * unrelated merchant names and street addresses too readily to safely mint a
+ * broad substring rule from — a 4-char transportation token once
+ * mis-categorized a restaurant whose address contained it.
+ */
+export const MIN_CONSOLIDATION_TOKEN_LENGTH = 5;
+
+/**
+ * Words that must never seed a consolidated `contains` rule even when they
+ * clear the length floor. These are generic merchant/category words and
+ * street/direction words that recur across unrelated merchants and ride in via
+ * the address-bearing `full_description`, so a `contains` rule built on one
+ * fires far too broadly. Matched case-insensitively against whole tokens.
+ */
+export const CONSOLIDATION_STOP_TOKENS: ReadonlySet<string> = new Set<string>([
+  // generic merchant / category words
+  "park",
+  "wash",
+  "line",
+  "express",
+  "plaza",
+  "center",
+  "centre",
+  "store",
+  "stores",
+  "shop",
+  "shops",
+  "cafe",
+  "grill",
+  "grille",
+  "kitchen",
+  "market",
+  "food",
+  "foods",
+  "pizza",
+  "house",
+  "diner",
+  "bistro",
+  "eatery",
+  "restaurant",
+  "coffee",
+  "bakery",
+  "deli",
+  "club",
+  "outlet",
+  "outlets",
+  "mall",
+  // street / address / direction words (carried in full_description)
+  "street",
+  "avenue",
+  "boulevard",
+  "road",
+  "drive",
+  "lane",
+  "court",
+  "place",
+  "square",
+  "highway",
+  "parkway",
+  "freeway",
+  "terrace",
+  "circle",
+  "suite",
+  "unit",
+  "floor",
+  "apt",
+  "apartment",
+  "building",
+  "north",
+  "south",
+  "east",
+  "west",
+  // corporate / filler
+  "the",
+  "and",
+  "inc",
+  "llc",
+  "ltd",
+  "corp",
+  "company",
+  "services",
+]);
+
+/**
+ * Whether a token is safe to seed a consolidated `contains` rule: long enough,
+ * not a generic/address word, and not a bare number (store/terminal numbers
+ * carry no merchant identity).
+ */
+function isConsolidatableToken(token: string): boolean {
+  if (token.length < MIN_CONSOLIDATION_TOKEN_LENGTH) return false;
+  if (CONSOLIDATION_STOP_TOKENS.has(token)) return false;
+  if (/^\d+$/.test(token)) return false;
+  return true;
+}
+
+/**
  * Find groups of near-duplicate exact-match rules: enabled `equals` rules that
  * share the same category and a common merchant token. Each suggestion can be
  * consolidated into one `containsMerchantMatch` rule.
@@ -244,7 +348,7 @@ export function findConsolidations(ruleRows: RuleRow[]): ConsolidationSuggestion
       r.value
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter((t) => t.length >= 4),
+        .filter(isConsolidatableToken),
     );
     let tokenMap = byCat.get(r.category);
     if (!tokenMap) {
@@ -286,7 +390,10 @@ export async function consolidateRules(
   const token = params.token.trim();
   if (!token) throw new Error("consolidation token is required");
   if (params.ruleIds.length === 0) throw new Error("no rules to consolidate");
-  const match = containsMerchantMatch(token);
+  // Scope the broad substring match to the clean `description` field only.
+  // `full_description` carries the merchant's street address/city, so a broad
+  // consolidated token there collides with unrelated merchants' addresses.
+  const match = containsMerchantMatch(token, ["description"]);
   const action = {
     category: params.category,
     reasoning: `consolidated from ${params.ruleIds.length} exact rules`,

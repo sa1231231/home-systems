@@ -229,7 +229,7 @@ function exactRule(id: number, value: string, category: string, enabled = true):
 }
 
 describe("containsMerchantMatch", () => {
-  it("builds an any/contains condition over both description fields", () => {
+  it("builds an any/contains condition over both description fields by default", () => {
     expect(containsMerchantMatch("  Amazon ")).toEqual({
       any: [
         { op: "contains", field: "description", value: "Amazon" },
@@ -237,37 +237,74 @@ describe("containsMerchantMatch", () => {
       ],
     });
   });
+
+  it("scopes to the given fields when asked (description-only)", () => {
+    expect(containsMerchantMatch("  Amazon ", ["description"])).toEqual({
+      any: [{ op: "contains", field: "description", value: "Amazon" }],
+    });
+  });
 });
 
 describe("findConsolidations", () => {
   it("suggests consolidating exact rules sharing a token and category", () => {
     const s = findConsolidations([
-      exactRule(1, "AMZN Mktp US*1A2B", "Shopping"),
-      exactRule(2, "AMZN Mktp US*9X8Y", "Shopping"),
-      exactRule(3, "AMZN Mktp US*ZZZZ", "Shopping"),
+      exactRule(1, "Amazon Mktp US*1A2B", "Shopping"),
+      exactRule(2, "Amazon Mktp US*9X8Y", "Shopping"),
+      exactRule(3, "Amazon Mktp US*ZZZZ", "Shopping"),
       exactRule(4, "STARBUCKS #441", "Dining"),
     ]);
-    const amzn = s.find((x) => x.token === "amzn");
-    expect(amzn).toBeDefined();
-    expect(amzn!.category).toBe("Shopping");
-    expect(amzn!.rules.map((r) => r.id).sort()).toEqual([1, 2, 3]);
+    const amazon = s.find((x) => x.token === "amazon");
+    expect(amazon).toBeDefined();
+    expect(amazon!.category).toBe("Shopping");
+    expect(amazon!.rules.map((r) => r.id).sort()).toEqual([1, 2, 3]);
   });
 
   it("does not group rules across different categories", () => {
     const s = findConsolidations([
-      exactRule(1, "AMZN Mktp one", "Shopping"),
-      exactRule(2, "AMZN Mktp two", "Groceries"),
+      exactRule(1, "Amazon Mktp one", "Shopping"),
+      exactRule(2, "Amazon Mktp two", "Groceries"),
     ]);
     expect(s).toHaveLength(0);
   });
 
   it("ignores disabled rules and non-equals rules", () => {
     const s = findConsolidations([
-      exactRule(1, "AMZN Mktp one", "Shopping", false),
-      exactRule(2, "AMZN Mktp two", "Shopping"),
-      { id: 3, enabled: true, match: containsMerchantMatch("amzn"), action: { category: "Shopping" } } as never,
+      exactRule(1, "Amazon Mktp one", "Shopping", false),
+      exactRule(2, "Amazon Mktp two", "Shopping"),
+      { id: 3, enabled: true, match: containsMerchantMatch("amazon"), action: { category: "Shopping" } } as never,
     ]);
     expect(s).toHaveLength(0);
+  });
+
+  it("does not mint a token shorter than the length floor", () => {
+    // "park" is a shared 4-char token across two Transportation merchants.
+    // Before the floor was raised it would consolidate into `contains "park"`
+    // and mis-fire on any restaurant whose name/address contains "park".
+    const s = findConsolidations([
+      exactRule(1, "PARK 0007", "Transportation"),
+      exactRule(2, "PARK 0042", "Transportation"),
+    ]);
+    expect(s.some((x) => x.token === "park")).toBe(false);
+    expect(s).toHaveLength(0);
+  });
+
+  it("does not mint generic/address stop-list tokens even above the floor", () => {
+    // Both share the 7-char token "express" (a generic word) and the address
+    // word "avenue" — neither should seed a broad contains rule.
+    const s = findConsolidations([
+      exactRule(1, "CITY EXPRESS 100 AVENUE", "Transportation"),
+      exactRule(2, "CITY EXPRESS 200 AVENUE", "Transportation"),
+    ]);
+    expect(s.some((x) => x.token === "express")).toBe(false);
+    expect(s.some((x) => x.token === "avenue")).toBe(false);
+  });
+
+  it("does not mint bare numeric tokens", () => {
+    const s = findConsolidations([
+      exactRule(1, "TERMINAL 55501", "Transportation"),
+      exactRule(2, "KIOSK 55501", "Transportation"),
+    ]);
+    expect(s.some((x) => x.token === "55501")).toBe(false);
   });
 });
 
@@ -336,7 +373,9 @@ describe("consolidateRules", () => {
       category: "Shopping",
       ruleIds: inserted.map((r) => r.id),
     });
-    expect(rule.match).toEqual(containsMerchantMatch("amzn"));
+    // Consolidated rules are scoped to the clean description field so they
+    // can't collide with an unrelated merchant's address.
+    expect(rule.match).toEqual(containsMerchantMatch("amzn", ["description"]));
     expect(rule.action).toMatchObject({ category: "Shopping" });
     const remaining = await db.select().from(rules);
     expect(remaining.map((r) => r.id)).toEqual([rule.id]);

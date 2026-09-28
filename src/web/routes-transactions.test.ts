@@ -470,7 +470,7 @@ describe("routes-transactions", () => {
       expect(res.headers["hx-refresh"]).toBe("true");
       const rs = await db.select().from(rules);
       expect(rs).toHaveLength(1);
-      expect(rs[0].match).toEqual(containsMerchantMatch("amzn"));
+      expect(rs[0].match).toEqual(containsMerchantMatch("amzn", ["description"]));
     });
   });
 });
