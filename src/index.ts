@@ -36,7 +36,6 @@ import { hasTrelloCreds, requireTrelloAuth } from "./integrations/trello/auth.js
 import { makeTrelloClient } from "./integrations/trello/client.js";
 import { registerTrelloReversers } from "./sync/trello-actions.js";
 import { makeTrelloRouter } from "./api/trello.js";
-import { makeScraperRouter } from "./api/scraper.js";
 import { makeAdminRouter } from "./api/admin.js";
 import { requireAuth } from "./web/auth.js";
 import { makeWebRouter } from "./web/index.js";
@@ -144,7 +143,6 @@ app.use("/ai-calls", apiGate, makeAiCallsRouter());
 app.use("/rules", apiGate, makeRulesRouter());
 app.use("/needs-review", apiGate, makeNeedsReviewRouter());
 app.use("/trello", apiGate, makeTrelloRouter());
-app.use("/scraper", apiGate, makeScraperRouter());
 app.use(
   "/admin",
   apiGate,

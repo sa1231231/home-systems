@@ -57,8 +57,6 @@ export const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   TRELLO_REORDER_CRON_SCHEDULE: z.string().default("0 11 * * *"),
-  EVENTS_LOCATION: z.string().default("Richmond, VA"),
-  EVENTBRITE_API_KEY: z.string().optional(),
   // Outbound notification channel. Currently only Discord webhook is wired up;
   // adding Pushover/Telegram/etc. would add new env vars here and a new branch
   // in src/integrations/notify/client.ts. If unset, sendNotification() no-ops
