@@ -4,6 +4,9 @@
   <% } else { %>
     <span><strong>Cron</strong> <span class="pill rejected">disabled</span></span>
   <% } %>
+  <% if (cron.humanLabel) { %>
+    <span><strong><%= cron.humanLabel %></strong></span>
+  <% } %>
   <span class="muted">schedule</span> <code><%= cron.schedule %></code> <span class="muted"><%= cron.scheduleTz %></span>
   <% if (cron.parseError) { %>
     <span style="color: var(--danger);">invalid schedule: <%= cron.parseError %></span>
