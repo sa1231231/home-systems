@@ -94,6 +94,7 @@ app.use(
     transactionRulesTab: config.TRANSACTION_RULES_TAB,
     transactionSituationalTab: config.TRANSACTION_SITUATIONAL_TAB,
     transactionReviewTab: config.TRANSACTION_REVIEW_TAB,
+    transactionAutoCatTab: config.TRANSACTION_AUTOCAT_TAB,
   }),
 );
 
@@ -215,6 +216,7 @@ async function start() {
           rulesTab: config.TRANSACTION_RULES_TAB,
           situationalTab: config.TRANSACTION_SITUATIONAL_TAB,
           reviewTab: config.TRANSACTION_REVIEW_TAB,
+          autoCatTab: config.TRANSACTION_AUTOCAT_TAB,
         }
       : undefined,
     timezone: config.CRON_TZ,

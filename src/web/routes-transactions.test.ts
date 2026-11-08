@@ -23,6 +23,9 @@ vi.mock("../integrations/google/sheets-transactions.js", async () => {
   );
   return { ...actual, readCategoriesEnum: vi.fn(), readTransactionsSheet: vi.fn() };
 });
+vi.mock("../sync/transaction-autocat-migrate.js", () => ({
+  migrateDbRulesToAutoCat: vi.fn(),
+}));
 
 import { applyRuleToSheet, triageTransactions } from "../sync/transaction-triage.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
@@ -31,7 +34,10 @@ import {
   readTransactionsSheet,
 } from "../integrations/google/sheets-transactions.js";
 import { containsMerchantMatch } from "../sync/transaction-rules.js";
+import { migrateDbRulesToAutoCat } from "../sync/transaction-autocat-migrate.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
+
+const migrateMock = vi.mocked(migrateDbRulesToAutoCat);
 
 const triageMock = vi.mocked(triageTransactions);
 const applyRuleMock = vi.mocked(applyRuleToSheet);
@@ -214,11 +220,41 @@ describe("routes-transactions", () => {
         sheetId: "sheet",
         transactionsTab: "Transactions",
         categoriesTab: "Categories",
-        rulesTab: "HS Rules",
-        situationalTab: "HS Situational",
-        reviewTab: undefined,
+        autoCatTab: "AutoCat",
       });
       expect(opts.caller).toBe("ui:transactions.triage");
+    });
+
+    it("migrate-autocat runs the migration and returns a summary", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      migrateMock.mockResolvedValueOnce({
+        appended: 3,
+        skippedExisting: 1,
+        skippedUnsupported: 0,
+        tabMissing: false,
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/migrate-autocat",
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).toMatch(/3 rule\(s\) added/);
+    });
+
+    it("migrate-autocat 404s when the AutoCat tab is missing", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      migrateMock.mockResolvedValueOnce({
+        appended: 0,
+        skippedExisting: 0,
+        skippedUnsupported: 0,
+        tabMissing: true,
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/migrate-autocat",
+      );
+      expect(res.status).toBe(404);
+      expect(res.text).toMatch(/No "AutoCat" tab/);
     });
 
     it("returns a 500 banner when triage throws", async () => {

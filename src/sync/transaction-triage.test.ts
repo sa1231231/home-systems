@@ -24,15 +24,13 @@ vi.mock("./transaction-actions.js", () => ({
   TRANSACTION_CATEGORIZE_OP: "transaction.categorize",
 }));
 
-// Mock the sheet-rule loader so triage falls back to DB rules by default; a
-// dedicated test overrides it to exercise the sheet-rule path. pickSheetMatch
-// and the parsers stay real.
-vi.mock("./transaction-rule-sheet.js", async () => {
+// Mock the AutoCat reader so triage falls back to DB rules by default; a
+// dedicated test overrides it to exercise the AutoCat path. parseAutoCatRules
+// and matchAutoCat stay real.
+vi.mock("./transaction-autocat.js", async () => {
   const actual =
-    await vi.importActual<typeof import("./transaction-rule-sheet.js")>(
-      "./transaction-rule-sheet.js",
-    );
-  return { ...actual, loadSheetTransactionRules: vi.fn(async () => []) };
+    await vi.importActual<typeof import("./transaction-autocat.js")>("./transaction-autocat.js");
+  return { ...actual, readAutoCat: vi.fn(async () => null) };
 });
 
 import {
@@ -43,10 +41,7 @@ import {
 } from "../integrations/google/sheets-transactions.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { applyTransactionCategory } from "./transaction-actions.js";
-import {
-  loadSheetTransactionRules,
-  parseRulesTabValues,
-} from "./transaction-rule-sheet.js";
+import { parseAutoCatRules, readAutoCat } from "./transaction-autocat.js";
 import {
   applyRuleToSheet,
   registerTransactionApplier,
@@ -59,7 +54,7 @@ const readSheet = vi.mocked(readTransactionsSheet);
 const readEnum = vi.mocked(readCategoriesEnum);
 const classifyMock = vi.mocked(classify);
 const applyMock = vi.mocked(applyTransactionCategory);
-const loadSheetRulesMock = vi.mocked(loadSheetTransactionRules);
+const readAutoCatMock = vi.mocked(readAutoCat);
 
 const TARGET = {
   sheetId: "sheet-1",
@@ -284,8 +279,8 @@ describe("triageTransactions", () => {
     expect(classifyMock).not.toHaveBeenCalled();
   });
 
-  it("prefers seeded sheet rules over DB rules", async () => {
-    // A DB rule would categorize this as "X"; the sheet rule must win.
+  it("prefers AutoCat rules over DB rules when the AutoCat tab is present", async () => {
+    // A DB rule would categorize this as "X"; the AutoCat rule must win.
     await db.insert(rules).values({
       domain: TRIAGE_DOMAIN,
       name: "db-foo",
@@ -295,12 +290,15 @@ describe("triageTransactions", () => {
       enabled: true,
       createdBy: "test",
     });
-    loadSheetRulesMock.mockResolvedValueOnce(
-      parseRulesTabValues([
-        ["Match", "Category"],
-        ["Foo", "Groceries"],
-      ]),
-    );
+    const raw = [
+      ["Description Contains", "Category"],
+      ["Foo", "Groceries"],
+    ];
+    readAutoCatMock.mockResolvedValueOnce({
+      headers: ["Description Contains", "Category"],
+      rules: parseAutoCatRules(raw),
+      raw,
+    });
     readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-s" })]));
     readEnum.mockResolvedValueOnce(["X", "Groceries"]);
     applyMock.mockResolvedValueOnce({
@@ -317,10 +315,10 @@ describe("triageTransactions", () => {
     });
 
     expect(summary.matched).toBe(1);
-    // Applied the sheet rule's category, not the DB rule's.
+    // Applied the AutoCat rule's category, not the DB rule's.
     expect(applyMock.mock.calls[0][2]).toMatchObject({
       category: "Groceries",
-      categorizedBy: "rule: Foo",
+      categorizedBy: "autocat",
     });
     const processed = await db
       .select()

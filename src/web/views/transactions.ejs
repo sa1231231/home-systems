@@ -24,14 +24,14 @@
     <span id="triage-indicator" class="htmx-indicator muted" style="margin-left: 8px; font-size: 12px;">working…</span>
   </form>
   <form
-    hx-post="/ui/transactions/seed-rules"
+    hx-post="/ui/transactions/migrate-autocat"
     hx-target="#triage-result"
     hx-swap="innerHTML"
     hx-disabled-elt="find button"
-    hx-confirm="Mirror your current rules into the HS Rules / HS Situational tabs? Safe to re-run."
+    hx-confirm="Append the app's existing rules into your Tiller AutoCat tab (deduped)? Safe to re-run."
   >
-    <button type="submit" title="One-time: copy existing rules into editable sheet tabs" style="padding: 6px 12px; background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 13px;">
-      Seed rule tabs
+    <button type="submit" title="One-time: copy the app's rules into Tiller's AutoCat tab" style="padding: 6px 12px; background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; cursor: pointer; font-size: 13px;">
+      Migrate rules to AutoCat
     </button>
   </form>
 </div>

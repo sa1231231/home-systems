@@ -6,10 +6,11 @@ import { needsReview, processedTransactions } from "../db/schema.js";
 import { evaluate, isSituational } from "../rules/engine.js";
 import { evaluateCondition, type Cond } from "../rules/dsl.js";
 import {
-  loadSheetTransactionRules,
-  pickSheetMatch,
-  type SheetRule,
-} from "./transaction-rule-sheet.js";
+  AUTOCAT_DEFAULT_TAB,
+  matchAutoCat,
+  readAutoCat,
+  type AutoCatTab,
+} from "./transaction-autocat.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { reviewAppliers } from "../needs-review/appliers.js";
 import {
@@ -224,28 +225,29 @@ export async function triageTransactions(
   const candidates = sheetCandidates.filter((r) => !alreadyDone.has(r.transactionId));
   const window = candidates.slice(0, options.limit);
 
-  // Rule source: our own HS tabs if they're seeded, otherwise the DB rules.
-  // Any read failure degrades to DB so categorization never regresses before
-  // the tabs exist. Loaded once per run.
-  let sheetRules: SheetRule[] = [];
+  // Rule source: Tiller's AutoCat tab (the consolidated store). Tiller applies
+  // it on fill; we also match here so a merchant taught earlier in this same run
+  // doesn't get re-sent to the AI. If AutoCat is absent, fall back to DB rules so
+  // nothing regresses. Loaded once per run.
+  let autocat: AutoCatTab | null = null;
   try {
-    sheetRules = await loadSheetTransactionRules(client, options.target);
+    autocat = await readAutoCat(
+      client,
+      options.target.sheetId,
+      options.target.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
+    );
   } catch {
-    sheetRules = [];
+    autocat = null;
   }
-  const useSheetRules = sheetRules.length > 0;
+  const useAutoCat = autocat !== null && autocat.headers.length > 0;
 
   type ResolvedMatch = { ruleId: number | null; ruleLabel: string; action: unknown };
   const resolveMatch = async (subj: TransactionSubject): Promise<ResolvedMatch | null> => {
-    if (useSheetRules) {
-      const m = pickSheetMatch(sheetRules, subj);
-      if (!m) return null;
-      // Sheet category actions carry no reasoning; add one so the proposal
-      // schema (which requires reasoning) accepts it. Situational passes through.
-      const action = isSituational(m.action)
-        ? m.action
-        : { category: (m.action as { category: string }).category, reasoning: `sheet rule: ${m.rule.name}` };
-      return { ruleId: null, ruleLabel: m.rule.name, action };
+    if (useAutoCat && autocat) {
+      const category = matchAutoCat(autocat.rules, subj);
+      return category
+        ? { ruleId: null, ruleLabel: "autocat", action: { category, reasoning: "AutoCat rule" } }
+        : null;
     }
     const m = await evaluate(TRIAGE_DOMAIN, subj);
     return m ? { ruleId: m.rule.id, ruleLabel: `rule:${m.rule.id}`, action: m.action } : null;

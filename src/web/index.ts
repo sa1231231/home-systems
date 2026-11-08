@@ -20,6 +20,7 @@ export type WebRouterOptions = {
   transactionRulesTab?: string;
   transactionSituationalTab?: string;
   transactionReviewTab?: string;
+  transactionAutoCatTab?: string;
 };
 
 const passthrough: express.RequestHandler = (_req, _res, next) => next();
@@ -54,6 +55,7 @@ export function makeWebRouter(opts: WebRouterOptions): Router {
       rulesTab: opts.transactionRulesTab,
       situationalTab: opts.transactionSituationalTab,
       reviewTab: opts.transactionReviewTab,
+      autoCatTab: opts.transactionAutoCatTab,
     }),
   );
   router.use("/contacts", gate, makeContactsUiRouter());

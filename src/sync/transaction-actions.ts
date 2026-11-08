@@ -70,6 +70,8 @@ export type TransactionTarget = {
   rulesTab?: string;
   situationalTab?: string;
   reviewTab?: string;
+  /** Tiller's AutoCat tab — the consolidated rules store. */
+  autoCatTab?: string;
 };
 
 export type ApplyTransactionInput = {

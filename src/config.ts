@@ -24,6 +24,8 @@ export const ConfigSchema = z.object({
   TRANSACTION_RULES_TAB: z.string().default("HS Rules"),
   TRANSACTION_SITUATIONAL_TAB: z.string().default("HS Situational"),
   TRANSACTION_REVIEW_TAB: z.string().default("HS Review"),
+  // Tiller's native rules tab — the single rules store we consolidate onto.
+  TRANSACTION_AUTOCAT_TAB: z.string().default("AutoCat"),
   TRANSACTION_TRIAGE_CRON_ENABLED: z
     .string()
     .optional()

@@ -9,11 +9,8 @@ import {
   readTransactionsSheet,
 } from "../integrations/google/sheets-transactions.js";
 import { buildTransactionAnalytics } from "../sync/transaction-analytics.js";
-import { seedRuleTabsFromDb } from "../sync/transaction-rule-migrate.js";
-import {
-  DEFAULT_RULES_TAB,
-  DEFAULT_SITUATIONAL_TAB,
-} from "../sync/transaction-rule-sheet.js";
+import { migrateDbRulesToAutoCat } from "../sync/transaction-autocat-migrate.js";
+import { AUTOCAT_DEFAULT_TAB } from "../sync/transaction-autocat.js";
 import {
   cashflowBars,
   categoryBars,
@@ -117,6 +114,7 @@ export type TransactionsRouterOptions = {
   rulesTab?: string;
   situationalTab?: string;
   reviewTab?: string;
+  autoCatTab?: string;
 };
 
 export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Router {
@@ -127,15 +125,14 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       sheetId: opts.sheetId!,
       transactionsTab: opts.transactionsTab,
       categoriesTab: opts.categoriesTab,
-      rulesTab: opts.rulesTab ?? DEFAULT_RULES_TAB,
-      situationalTab: opts.situationalTab ?? DEFAULT_SITUATIONAL_TAB,
-      reviewTab: opts.reviewTab,
+      autoCatTab: opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
     };
   }
 
-  // One-shot migration: mirror the current DB transaction rules into our HS
-  // tabs, after which the sheet is the editable source. Safe to re-run.
-  router.post("/seed-rules", async (_req, res) => {
+  // One-shot migration: append the app's DB transaction rules into Tiller's
+  // AutoCat tab (deduped). After this AutoCat is the single rules store. Safe
+  // to re-run.
+  router.post("/migrate-autocat", async (_req, res) => {
     if (!opts.sheetId) {
       res.status(503).send(`<div class="flash err">TRANSACTIONS_SHEET_ID is not configured.</div>`);
       return;
@@ -145,17 +142,24 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       return;
     }
     try {
-      const result = await seedRuleTabsFromDb(getOAuthClient(), {
+      const result = await migrateDbRulesToAutoCat(getOAuthClient(), {
         sheetId: opts.sheetId,
-        rulesTab: opts.rulesTab ?? DEFAULT_RULES_TAB,
-        situationalTab: opts.situationalTab ?? DEFAULT_SITUATIONAL_TAB,
+        autoCatTab: opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
       });
+      if (result.tabMissing) {
+        res
+          .status(404)
+          .send(
+            `<div class="flash err">No "${opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB}" tab found. Enable Tiller AutoCat (or set TRANSACTION_AUTOCAT_TAB) first.</div>`,
+          );
+        return;
+      }
       res.send(
-        `<div class="flash ok">Seeded HS tabs: ${result.rulesWritten} rule(s), ${result.situationalWritten} situational, ${result.skipped} skipped (unsupported shapes).</div>`,
+        `<div class="flash ok">Migrated to AutoCat: ${result.appended} rule(s) added, ${result.skippedExisting} already present, ${result.skippedUnsupported} skipped (unsupported shapes).</div>`,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      res.status(500).send(`<div class="flash err">Seed failed: ${message}</div>`);
+      res.status(500).send(`<div class="flash err">Migration failed: ${message}</div>`);
     }
   });
 

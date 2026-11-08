@@ -1,3 +1,6 @@
+import type { OAuth2Client } from "google-auth-library";
+import { google } from "googleapis";
+import { appendRows } from "../integrations/google/sheets.js";
 import type { RawValues } from "./transaction-rule-sheet.js";
 
 /**
@@ -145,6 +148,72 @@ export type AutoCatCandidate = {
   fullDescriptionContains?: string;
   category: string;
 };
+
+export type AutoCatTab = { headers: string[]; rules: AutoCatRule[]; raw: RawValues };
+
+/** Read the AutoCat tab. Returns null if the tab is absent (so callers fall back). */
+export async function readAutoCat(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+): Promise<AutoCatTab | null> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:ZZ`,
+      valueRenderOption: "FORMATTED_VALUE",
+    });
+    const raw = (res.data.values ?? []) as RawValues;
+    const headers = (raw[0] ?? []).map((h) => String(h ?? "").trim());
+    return { headers, rules: parseAutoCatRules(raw), raw };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/unable to parse range|not found|400/i.test(message)) return null;
+    throw err;
+  }
+}
+
+/** Existing contains->category keys in the tab, for append dedupe. */
+export function autoCatExistingKeys(raw: RawValues): Set<string> {
+  const keys = new Set<string>();
+  if (raw.length < 1) return keys;
+  const headers = (raw[0] ?? []).map((h) => String(h ?? "").trim());
+  const dcCol = headerIndex(headers, COL_DESCRIPTION_CONTAINS);
+  const fdcCol = headerIndex(headers, COL_FULL_DESCRIPTION_CONTAINS);
+  const catCol = headerIndex(headers, COL_CATEGORY);
+  if (catCol < 0) return keys;
+  for (let i = 1; i < raw.length; i++) {
+    const row = raw[i] ?? [];
+    const category = cellStr(row, catCol);
+    if (!category) continue;
+    const dc = cellStr(row, dcCol);
+    const fdc = cellStr(row, fdcCol);
+    if (!dc && !fdc) continue;
+    keys.add(
+      autoCatRuleKey({
+        descriptionContains: dc || undefined,
+        fullDescriptionContains: fdc || undefined,
+        category,
+      }),
+    );
+  }
+  return keys;
+}
+
+/** Append contains->category rules to the AutoCat tab, aligned to its headers. */
+export async function appendAutoCatRules(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+  headers: string[],
+  candidates: AutoCatCandidate[],
+): Promise<number> {
+  const rows = candidates.map((c) => buildAutoCatRow(headers, c));
+  if (rows.length === 0) return 0;
+  await appendRows(client, spreadsheetId, tab, rows);
+  return rows.length;
+}
 
 /**
  * Map a DB rule's match/action to an AutoCat contains rule for migration.
