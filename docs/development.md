@@ -1,6 +1,6 @@
 # Local Development
 
-Setup mechanics for working on home-systems on your laptop. Design philosophy lives in the [README](../README.md); this is the operational notes.
+Setup and operational notes for working on home-systems on your laptop.
 
 ## First-time setup
 
@@ -143,19 +143,19 @@ Both accept `?verbose=true` to include the full per-field diff for refreshes (ot
 
 ### One-time column cleanup
 
-`npm run cleanup:columns` rewrites the Contacts tab to drop legacy Dex auto-tracking columns (`*_last_interaction_*`, `*_message_link`, reminder fields, unused social handles, Dex internal IDs) and rename identity columns from `dex_*` prefixes to clean names (`dex_email` → `email`, `linkedin` → `linkedin_url`, etc.). The canonical 25-column layout is defined in `src/sync/cleanup.ts`.
+`scripts/contacts-cleanup-sheet.ts` deletes the obsolete "Contacts" tab, renames `dex_*` columns in `dex_contacts` to clean names (`dex_email` → `email`, `dex_groups` → `groups`, etc.), and removes the legacy Dex columns (LinkedIn-enhance fields, iMessage/WhatsApp/Instagram interaction tracking, gmail/gcal/phone logs, reminder cadence, social handles, Dex internal IDs). Idempotent — re-runs after the first apply do nothing.
 
 ```bash
 # Dry run (default — prints the plan, writes nothing)
 GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
 GOOGLE_OAUTH_REFRESH_TOKEN=... CRM_SHEET_ID=... \
-npm run cleanup:columns
+npx tsx scripts/contacts-cleanup-sheet.ts
 
 # Apply
-... npm run cleanup:columns -- --apply
+... npx tsx scripts/contacts-cleanup-sheet.ts --apply
 ```
 
-After applying, verify with `curl /contacts/sync/plan` — the resulting sync plan should show `unchanged` ≈ all bound rows. Sheet revision history is rollback.
+After applying, verify with `curl -X POST /contacts/sync/plan` — the resulting sync plan should show `unchanged` ≈ all bound rows. Sheet revision history is rollback.
 
 The sync code reads from BOTH old (`dex_email`, `dex_phone`, `linkedin`) and new (`email`, `phone`, `linkedin_url`) column names, so manual sync calls during the deploy/cleanup window remain safe.
 
@@ -219,16 +219,16 @@ home-systems runs an in-process `node-cron` scheduler. To enable nightly sync on
 
 ```
 CONTACTS_SYNC_CRON_ENABLED=true
-CONTACTS_SYNC_CRON_SCHEDULE=0 7 * * *      # optional; default is 7am UTC = 3am ET
+CONTACTS_SYNC_CRON_SCHEDULE=0 7 * * *      # optional; default is 7am (interpreted in CRON_TZ)
 ```
 
-The cron only runs when `CONTACTS_SYNC_CRON_ENABLED=true` (so dev environments stay quiet). Schedule strings are evaluated in **UTC**, regardless of Railway region. Failures log to stderr but never crash the server. If a sync collides with a redeploy, that night's run is skipped — next night will catch up.
+The cron only runs when `CONTACTS_SYNC_CRON_ENABLED=true` (so dev environments stay quiet). Schedule strings are interpreted in **`CRON_TZ`** (default `America/New_York`, i.e. ET), regardless of Railway region — so the default `0 7 * * *` fires at 7am ET. (The backup crons are the exception: they hardcode UTC.) Failures log to stderr but never crash the server. If a sync collides with a redeploy, that night's run is skipped — next night will catch up.
 
 To trigger a sync on demand at any time, just `curl -X POST` the `/contacts/sync` endpoint.
 
 ## Production notes
 
-- Railway deploys build the Dockerfile (multi-stage, `node:20-alpine`).
+- Railway deploys build the Dockerfile (multi-stage: `node:20-alpine` builder, `node:20-bookworm-slim` runtime — Debian so `postgresql-client-18` installs from PGDG for backups).
 - App startup runs `migrate()` before `listen()`. If migrations fail, the process exits non-zero and Railway will surface the error in deploy logs.
 - `SIGTERM`/`SIGINT` trigger a graceful shutdown: HTTP server stops accepting new connections, then the pg pool closes.
 - Postgres uses `ghcr.io/railwayapp-templates/postgres-ssl:18` — connections require TLS but the cert is self-signed within Railway's private network, so the pg client sets `ssl: { rejectUnauthorized: false }`.

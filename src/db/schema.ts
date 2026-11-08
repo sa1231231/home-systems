@@ -174,12 +174,6 @@ export const dailyOpCounters = pgTable(
 );
 
 /**
- * One row per manual or cron-triggered triage/sync run, used to surface
- * "Triage is currently running" banners that survive page reload. Status
- * transitions running → success | error. Summary is the domain-specific
- * payload (TriageSummary, SyncSummary, ReorderResult counts, etc.).
- */
-/**
  * The set of group names contacts can be filed under (e.g. "Real Estate",
  * "Coaches", "LinkedIn Connections"). Seeded once from the distinct values
  * already present in dex_contacts.groups; new groups can be added directly
@@ -202,6 +196,12 @@ export const contactGroups = pgTable(
   }),
 );
 
+/**
+ * One row per manual or cron-triggered triage/sync run, used to surface
+ * "Triage is currently running" banners that survive page reload. Status
+ * transitions running → success | error. Summary is the domain-specific
+ * payload (TriageSummary, SyncSummary, ReorderResult counts, etc.).
+ */
 export const triageRuns = pgTable(
   "triage_runs",
   {
