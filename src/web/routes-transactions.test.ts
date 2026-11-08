@@ -201,6 +201,7 @@ describe("routes-transactions", () => {
       triageMock.mockResolvedValueOnce({
         total: 3,
         matched: 1,
+        applied: 0,
         queued: 1,
         skipped: 1,
         errors: 0,

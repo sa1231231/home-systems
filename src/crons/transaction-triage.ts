@@ -71,7 +71,7 @@ export async function runTransactionTriageOnce(opts: {
       target: opts.target,
     });
     console.log(
-      `[cron] transaction triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}`,
+      `[cron] transaction triage done: matched=${summary.matched} applied=${summary.applied} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}`,
     );
   } catch (err) {
     if (err instanceof MissingGoogleCredsError) {

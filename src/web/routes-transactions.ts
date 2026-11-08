@@ -298,7 +298,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       );
       res.setHeader("HX-Refresh", "true");
       res.send(
-        `<div class="flash ok">Triage done: matched=${summary.matched} queued=${summary.queued} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,
+        `<div class="flash ok">Triage done: rule-matched=${summary.matched} AI-applied=${summary.applied} skipped=${summary.skipped} errors=${summary.errors} total=${summary.total}</div>`,
       );
     } catch (err) {
       if (err instanceof MissingAnthropicKeyError) {

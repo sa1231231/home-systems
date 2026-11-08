@@ -30,7 +30,11 @@ vi.mock("./transaction-actions.js", () => ({
 vi.mock("./transaction-autocat.js", async () => {
   const actual =
     await vi.importActual<typeof import("./transaction-autocat.js")>("./transaction-autocat.js");
-  return { ...actual, readAutoCat: vi.fn(async () => null) };
+  return {
+    ...actual,
+    readAutoCat: vi.fn(async () => null),
+    appendAutoCatRules: vi.fn(async () => 0),
+  };
 });
 
 import {
@@ -41,7 +45,7 @@ import {
 } from "../integrations/google/sheets-transactions.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { applyTransactionCategory } from "./transaction-actions.js";
-import { parseAutoCatRules, readAutoCat } from "./transaction-autocat.js";
+import { appendAutoCatRules, parseAutoCatRules, readAutoCat } from "./transaction-autocat.js";
 import {
   applyRuleToSheet,
   registerTransactionApplier,
@@ -55,6 +59,7 @@ const readEnum = vi.mocked(readCategoriesEnum);
 const classifyMock = vi.mocked(classify);
 const applyMock = vi.mocked(applyTransactionCategory);
 const readAutoCatMock = vi.mocked(readAutoCat);
+const appendAutoCatMock = vi.mocked(appendAutoCatRules);
 
 const TARGET = {
   sheetId: "sheet-1",
@@ -106,6 +111,10 @@ describe("triageTransactions", () => {
     readEnum.mockReset();
     classifyMock.mockReset();
     applyMock.mockReset();
+    readAutoCatMock.mockReset();
+    readAutoCatMock.mockResolvedValue(null); // default: no AutoCat → DB fallback
+    appendAutoCatMock.mockReset();
+    appendAutoCatMock.mockResolvedValue(0);
   });
 
   it("skips rows that already have a non-empty Category in the sheet", async () => {
@@ -128,9 +137,9 @@ describe("triageTransactions", () => {
       target: TARGET,
     });
 
-    // tx-1 filtered out before we even consider it; tx-2 queued.
+    // tx-1 filtered out before we even consider it; tx-2 AI-applied.
     expect(summary.total).toBe(1);
-    expect(summary.queued).toBe(1);
+    expect(summary.applied).toBe(1);
     expect(classifyMock).toHaveBeenCalledOnce();
   });
 
@@ -212,13 +221,13 @@ describe("triageTransactions", () => {
     // that fit under limit=2. tx-A/B/C are skipped (already done); tx-D and
     // tx-E are newly queued. The classifier is called exactly 2 times.
     expect(summary.skipped).toBe(3);
-    expect(summary.queued).toBe(2);
+    expect(summary.applied).toBe(2);
     expect(classifyMock).toHaveBeenCalledTimes(2);
-    const queuedIds = summary.items
-      .filter((i) => i.outcome === "queued_for_review")
+    const appliedIds = summary.items
+      .filter((i) => i.outcome === "ai_applied")
       .map((i) => i.transaction_id)
       .sort();
-    expect(queuedIds).toEqual(["tx-D", "tx-E"]);
+    expect(appliedIds).toEqual(["tx-D", "tx-E"]);
   });
 
   it("retries rows that previously errored", async () => {
@@ -241,7 +250,7 @@ describe("triageTransactions", () => {
       sessionId: "test",
       target: TARGET,
     });
-    expect(summary.queued).toBe(1);
+    expect(summary.applied).toBe(1);
   });
 
   it("applies a matching rule and records matched_rule outcome", async () => {
@@ -329,7 +338,46 @@ describe("triageTransactions", () => {
     expect(classifyMock).not.toHaveBeenCalled();
   });
 
-  it("queues unmatched rows for review and records the AI call id", async () => {
+  it("auto-teaches AutoCat and matches the learned rule within the same run", async () => {
+    const raw = [["Description Contains", "Category"]]; // header only — no rules yet
+    readAutoCatMock.mockResolvedValueOnce({
+      headers: ["Description Contains", "Category"],
+      rules: parseAutoCatRules(raw),
+      raw,
+    });
+    readSheet.mockResolvedValueOnce(
+      makeTab([
+        makeRow({ transactionId: "d1", description: "Dupe Co", fullDescription: "DUPE CO #1" }),
+        makeRow({ transactionId: "d2", description: "Dupe Co", fullDescription: "DUPE CO #2" }),
+      ]),
+    );
+    readEnum.mockResolvedValueOnce(["Shopping"]);
+    classifyMock.mockResolvedValue({
+      output: { category: "Shopping", reasoning: "store" },
+      callId: 9,
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    } as never);
+    applyMock.mockResolvedValue({ transactionId: "x", rowIndex: 0, category: "Shopping", changed: true });
+
+    const summary = await triageTransactions({} as never, {
+      limit: 10,
+      sessionId: "t",
+      target: TARGET,
+    });
+
+    // First row: AI applied + taught. Second row: matched the learned rule in
+    // memory, so the AI is called only once.
+    expect(classifyMock).toHaveBeenCalledOnce();
+    expect(summary.applied).toBe(1);
+    expect(summary.matched).toBe(1);
+    // Taught exactly one AutoCat rule, appended once at the end.
+    expect(appendAutoCatMock).toHaveBeenCalledOnce();
+    expect(appendAutoCatMock.mock.calls[0][4]).toEqual([
+      { descriptionContains: "Dupe Co", category: "Shopping" },
+    ]);
+  });
+
+  it("auto-applies the AI category for unmatched rows and records the AI call id", async () => {
     readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-q" })]));
     readEnum.mockResolvedValueOnce(["Groceries", "Dining"]);
     classifyMock.mockResolvedValueOnce({
@@ -337,35 +385,29 @@ describe("triageTransactions", () => {
       callId: 123,
       usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
     } as never);
+    applyMock.mockResolvedValueOnce({
+      transactionId: "tx-q",
+      rowIndex: 0,
+      category: "Dining",
+      changed: true,
+    });
 
     const summary = await triageTransactions({} as never, {
       limit: 10,
       sessionId: "test",
       target: TARGET,
     });
-    expect(summary.queued).toBe(1);
+    expect(summary.applied).toBe(1);
 
-    const review = await db
-      .select()
-      .from(needsReview)
-      .where(eq(needsReview.subjectId, "tx-q"));
-    expect(review).toHaveLength(1);
-    expect(review[0]).toMatchObject({
-      domain: TRIAGE_DOMAIN,
-      subjectKind: "transaction",
-      status: "pending",
-      aiCallId: 123,
-    });
-    expect(review[0].proposedAction).toEqual({
-      category: "Dining",
-      reasoning: "merchant looks like dining",
-    });
+    // Applied the AI category straight to the sheet (no review queue).
+    expect(applyMock.mock.calls[0][2]).toMatchObject({ category: "Dining", categorizedBy: "ai" });
+    expect(await db.select().from(needsReview)).toEqual([]);
 
     const processed = await db
       .select()
       .from(processedTransactions)
       .where(eq(processedTransactions.id, "tx-q"));
-    expect(processed[0]).toMatchObject({ outcome: "needs_review", outcomeId: review[0].id });
+    expect(processed[0]).toMatchObject({ outcome: "ai_applied", outcomeId: 123 });
   });
 
   it("does not write to DB in dry-run mode", async () => {
@@ -519,7 +561,7 @@ describe("triageTransactions — situational merchants", () => {
     applyMock.mockReset();
   });
 
-  it("sends a situational-merchant transaction to AI review instead of matching a rule", async () => {
+  it("sends a situational-merchant transaction to the AI instead of matching a rule", async () => {
     await db.insert(rules).values({
       domain: TRIAGE_DOMAIN,
       name: "situational: amazon",
@@ -538,6 +580,12 @@ describe("triageTransactions — situational merchants", () => {
       callId: 7,
       usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
     } as never);
+    applyMock.mockResolvedValueOnce({
+      transactionId: "tx-sit",
+      rowIndex: 0,
+      category: "Shopping",
+      changed: true,
+    });
 
     const summary = await triageTransactions({} as never, {
       limit: 10,
@@ -545,9 +593,11 @@ describe("triageTransactions — situational merchants", () => {
       target: TARGET,
     });
 
-    expect(summary.queued).toBe(1);
+    // The situational marker blocks a rule match, so the row goes to the AI,
+    // which now auto-applies (no queue).
+    expect(summary.applied).toBe(1);
     expect(summary.matched).toBe(0);
-    expect(applyMock).not.toHaveBeenCalled();
+    expect(applyMock.mock.calls[0][2]).toMatchObject({ category: "Shopping", categorizedBy: "ai" });
     expect(classifyMock).toHaveBeenCalledOnce();
   });
 });

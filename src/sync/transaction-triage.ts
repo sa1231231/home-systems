@@ -2,13 +2,17 @@ import type { OAuth2Client } from "google-auth-library";
 import { z } from "zod/v4";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { needsReview, processedTransactions } from "../db/schema.js";
+import { processedTransactions } from "../db/schema.js";
 import { evaluate, isSituational } from "../rules/engine.js";
 import { evaluateCondition, type Cond } from "../rules/dsl.js";
 import {
+  appendAutoCatRules,
+  autoCatExistingKeys,
+  autoCatRuleKey,
   AUTOCAT_DEFAULT_TAB,
   matchAutoCat,
   readAutoCat,
+  type AutoCatCandidate,
   type AutoCatTab,
 } from "./transaction-autocat.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
@@ -102,6 +106,7 @@ export type TriageItem = {
   subject: TransactionSubject;
   outcome:
     | "matched_rule"
+    | "ai_applied"
     | "queued_for_review"
     | "skipped"
     | "error"
@@ -117,6 +122,8 @@ export type TriageItem = {
 export type TriageSummary = {
   total: number;
   matched: number;
+  /** Rows the AI categorized and applied directly. */
+  applied: number;
   queued: number;
   skipped: number;
   errors: number;
@@ -125,7 +132,7 @@ export type TriageSummary = {
 
 async function recordOutcome(values: {
   id: string;
-  outcome: "matched_rule" | "needs_review" | "error";
+  outcome: "matched_rule" | "ai_applied" | "needs_review" | "error";
   outcomeId?: number;
   error?: string;
 }): Promise<void> {
@@ -241,6 +248,13 @@ export async function triageTransactions(
   }
   const useAutoCat = autocat !== null && autocat.headers.length > 0;
 
+  // Auto-teach state: new AutoCat rules learned from AI categorizations this
+  // run. Deduped against what's already in the tab and against each other.
+  const existingAutoCatKeys =
+    useAutoCat && autocat ? autoCatExistingKeys(autocat.raw) : new Set<string>();
+  const taughtKeys = new Set<string>();
+  const taughtCandidates: AutoCatCandidate[] = [];
+
   type ResolvedMatch = { ruleId: number | null; ruleLabel: string; action: unknown };
   const resolveMatch = async (subj: TransactionSubject): Promise<ResolvedMatch | null> => {
     if (useAutoCat && autocat) {
@@ -352,30 +366,52 @@ export async function triageTransactions(
         continue;
       }
 
-      const [reviewRow] = await db
-        .insert(needsReview)
-        .values({
-          domain: TRIAGE_DOMAIN,
-          subject: subject as never,
-          subjectKind: "transaction",
-          subjectId: row.transactionId,
-          aiCallId: aiCallId ?? null,
-          proposedAction: proposed as never,
-          status: "pending",
-        })
-        .returning({ id: needsReview.id });
+      // Auto-apply the AI category and teach AutoCat so Tiller handles this
+      // merchant automatically next time. The AutoCat + Transactions tabs are
+      // the review surface; the changelog/undo covers any corrections.
+      await applyTransactionCategory(
+        client,
+        options.target,
+        {
+          transactionId: row.transactionId,
+          category: proposed.category,
+          categorizedBy: "ai",
+        },
+        { sessionId: options.sessionId, caller, intent: "ai" },
+      );
+
+      if (useAutoCat && autocat) {
+        const token = row.description.trim() || row.fullDescription.trim();
+        if (token) {
+          const candidate: AutoCatCandidate = {
+            descriptionContains: token,
+            category: proposed.category,
+          };
+          const key = autoCatRuleKey(candidate);
+          if (!taughtKeys.has(key) && !existingAutoCatKeys.has(key)) {
+            taughtKeys.add(key);
+            taughtCandidates.push(candidate);
+            // In-run learning: later rows of the same merchant match in memory
+            // without another AI call (Tiller re-applies on its next fill).
+            autocat.rules.push({
+              descriptionContains: token,
+              category: proposed.category,
+              rowNumber: -1,
+            });
+          }
+        }
+      }
 
       await recordOutcome({
         id: row.transactionId,
-        outcome: "needs_review",
-        outcomeId: reviewRow.id,
+        outcome: "ai_applied",
+        outcomeId: aiCallId ?? undefined,
       });
 
       items.push({
         transaction_id: row.transactionId,
         subject,
-        outcome: "queued_for_review",
-        review_id: reviewRow.id,
+        outcome: "ai_applied",
         ai_call_id: aiCallId,
         proposed_action: proposed,
       });
@@ -404,9 +440,28 @@ export async function triageTransactions(
     }
   }
 
+  // Teaching is best-effort and batched: the categories were already applied
+  // row-by-row, so a failed append here just means Tiller relearns next run.
+  if (!options.dryRun && useAutoCat && autocat && taughtCandidates.length > 0) {
+    try {
+      await appendAutoCatRules(
+        client,
+        options.target.sheetId,
+        options.target.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
+        autocat.headers,
+        taughtCandidates,
+      );
+    } catch (err) {
+      console.error(
+        `[triage] AutoCat teach append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   return {
     total: items.length,
     matched: items.filter((i) => i.outcome === "matched_rule" || i.outcome === "would_match").length,
+    applied: items.filter((i) => i.outcome === "ai_applied").length,
     queued: items.filter((i) => i.outcome === "queued_for_review" || i.outcome === "would_queue").length,
     skipped: items.filter((i) => i.outcome === "skipped").length,
     errors: items.filter((i) => i.outcome === "error").length,
