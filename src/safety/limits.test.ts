@@ -161,6 +161,7 @@ describe("enforceConfiguredDailyLimit", () => {
       "contacts.remove_csv.groups",
       "contacts.add_csv.tags",
       "contacts.remove_csv.tags",
+      "contacts.assign_group",
       "contacts.set_bool.is_archived",
       "contacts.set_bool.starred",
     ];

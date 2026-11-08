@@ -205,7 +205,13 @@ export function makeContactsUiRouter(): Router {
             mergePreviewByEntryId[entry.id] = null;
           }
         }
-      } catch {
+      } catch (err) {
+        // Graceful degradation: render the page without the audit panel rather
+        // than 500. Log it so a real People/Sheets API failure isn't invisible.
+        console.error(
+          "[contacts] audit/merge-plan build failed:",
+          err instanceof Error ? err.message : String(err),
+        );
         audit = null;
       }
     }

@@ -34,6 +34,7 @@ export const DAILY_LIMITS: Record<string, number> = {
   "contacts.remove_csv.groups": 200,
   "contacts.add_csv.tags": 200,
   "contacts.remove_csv.tags": 200,
+  "contacts.assign_group": 200,
   "contacts.set_bool.is_archived": 100,
   "contacts.set_bool.starred": 100,
   "trello.move_card": 50,

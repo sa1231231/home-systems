@@ -251,7 +251,10 @@ async function start() {
     startGithubBackupCron(githubBackupOptions);
   }
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return; // SIGTERM + SIGINT can both fire
+    shuttingDown = true;
     console.log(`${signal} received, draining connections`);
     stopContactsSyncCron();
     stopTransactionTriageCron();
@@ -259,9 +262,16 @@ async function start() {
     stopGithubBackupCron();
     stopTrelloReorderCron();
     stopBirthdayReminderCron();
-    server.close(() => {
-      console.log("http server closed");
-    });
+    // Force-exit if a hung connection keeps server.close from resolving.
+    const forceExit = setTimeout(() => {
+      console.error("shutdown timed out, forcing exit");
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+    // Stop accepting new connections and let in-flight requests drain before
+    // closing the pool out from under them.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    console.log("http server closed");
     await pool.end();
     console.log("pg pool closed");
     process.exit(0);
