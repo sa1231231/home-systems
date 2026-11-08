@@ -1,4 +1,9 @@
+import type { OAuth2Client } from "google-auth-library";
+import { google } from "googleapis";
 import { evaluateCondition, type Cond } from "../rules/dsl.js";
+
+export const DEFAULT_RULES_TAB = "HS Rules";
+export const DEFAULT_SITUATIONAL_TAB = "HS Situational";
 
 /**
  * Transaction rules sourced from OUR OWN sheet tabs (never Tiller's auto-filled
@@ -147,6 +152,51 @@ export function pickSheetMatch(rules: SheetRule[], subject: unknown): SheetMatch
     if (evaluateCondition(rule.match, subject)) return { rule, action: rule.action };
   }
   return null;
+}
+
+/** Read a tab's values, tolerating a missing tab (returns null instead of throwing). */
+async function readTabValuesTolerant(
+  client: OAuth2Client,
+  spreadsheetId: string,
+  tab: string,
+): Promise<RawValues | null> {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!A:ZZ`,
+      valueRenderOption: "FORMATTED_VALUE",
+    });
+    return (res.data.values ?? []) as RawValues;
+  } catch (err) {
+    // A missing tab surfaces as a 400 "Unable to parse range". Treat any read
+    // failure as "no sheet rules" so triage falls back to DB rules — never a
+    // regression before the tabs are seeded.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/unable to parse range|not found|400/i.test(message)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Load transaction rules from our own HS Rules + HS Situational tabs. Returns an
+ * empty list when the tabs are absent/empty — the caller treats empty as "use
+ * DB rules instead", so categorization is unchanged until the tabs are seeded.
+ */
+export async function loadSheetTransactionRules(
+  client: OAuth2Client,
+  target: { sheetId: string; rulesTab?: string; situationalTab?: string },
+): Promise<SheetRule[]> {
+  const rulesTab = target.rulesTab ?? DEFAULT_RULES_TAB;
+  const situationalTab = target.situationalTab ?? DEFAULT_SITUATIONAL_TAB;
+  const [rulesVals, sitVals] = await Promise.all([
+    readTabValuesTolerant(client, target.sheetId, rulesTab),
+    readTabValuesTolerant(client, target.sheetId, situationalTab),
+  ]);
+  return [
+    ...parseSituationalTabValues(sitVals ?? []),
+    ...parseRulesTabValues(rulesVals ?? []),
+  ];
 }
 
 /** Build a row for appending/promoting a category rule into the Rules tab. */

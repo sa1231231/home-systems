@@ -24,6 +24,17 @@ vi.mock("./transaction-actions.js", () => ({
   TRANSACTION_CATEGORIZE_OP: "transaction.categorize",
 }));
 
+// Mock the sheet-rule loader so triage falls back to DB rules by default; a
+// dedicated test overrides it to exercise the sheet-rule path. pickSheetMatch
+// and the parsers stay real.
+vi.mock("./transaction-rule-sheet.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("./transaction-rule-sheet.js")>(
+      "./transaction-rule-sheet.js",
+    );
+  return { ...actual, loadSheetTransactionRules: vi.fn(async () => []) };
+});
+
 import {
   readCategoriesEnum,
   readTransactionsSheet,
@@ -32,6 +43,10 @@ import {
 } from "../integrations/google/sheets-transactions.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { applyTransactionCategory } from "./transaction-actions.js";
+import {
+  loadSheetTransactionRules,
+  parseRulesTabValues,
+} from "./transaction-rule-sheet.js";
 import {
   applyRuleToSheet,
   registerTransactionApplier,
@@ -44,6 +59,7 @@ const readSheet = vi.mocked(readTransactionsSheet);
 const readEnum = vi.mocked(readCategoriesEnum);
 const classifyMock = vi.mocked(classify);
 const applyMock = vi.mocked(applyTransactionCategory);
+const loadSheetRulesMock = vi.mocked(loadSheetTransactionRules);
 
 const TARGET = {
   sheetId: "sheet-1",
@@ -265,6 +281,53 @@ describe("triageTransactions", () => {
       .where(eq(processedTransactions.id, "tx-1"));
     expect(processed[0].outcome).toBe("matched_rule");
 
+    expect(classifyMock).not.toHaveBeenCalled();
+  });
+
+  it("prefers seeded sheet rules over DB rules", async () => {
+    // A DB rule would categorize this as "X"; the sheet rule must win.
+    await db.insert(rules).values({
+      domain: TRIAGE_DOMAIN,
+      name: "db-foo",
+      match: { op: "equals", field: "full_description", value: "FOO MERCHANT" } as never,
+      action: { category: "X", reasoning: "auto" } as never,
+      priority: 100,
+      enabled: true,
+      createdBy: "test",
+    });
+    loadSheetRulesMock.mockResolvedValueOnce(
+      parseRulesTabValues([
+        ["Match", "Category"],
+        ["Foo", "Groceries"],
+      ]),
+    );
+    readSheet.mockResolvedValueOnce(makeTab([makeRow({ transactionId: "tx-s" })]));
+    readEnum.mockResolvedValueOnce(["X", "Groceries"]);
+    applyMock.mockResolvedValueOnce({
+      transactionId: "tx-s",
+      rowIndex: 0,
+      category: "Groceries",
+      changed: true,
+    });
+
+    const summary = await triageTransactions({} as never, {
+      limit: 10,
+      sessionId: "test",
+      target: TARGET,
+    });
+
+    expect(summary.matched).toBe(1);
+    // Applied the sheet rule's category, not the DB rule's.
+    expect(applyMock.mock.calls[0][2]).toMatchObject({
+      category: "Groceries",
+      categorizedBy: "rule: Foo",
+    });
+    const processed = await db
+      .select()
+      .from(processedTransactions)
+      .where(eq(processedTransactions.id, "tx-s"));
+    expect(processed[0].outcome).toBe("matched_rule");
+    expect(processed[0].outcomeId).toBeNull();
     expect(classifyMock).not.toHaveBeenCalled();
   });
 

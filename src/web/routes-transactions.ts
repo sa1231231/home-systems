@@ -9,6 +9,11 @@ import {
   readTransactionsSheet,
 } from "../integrations/google/sheets-transactions.js";
 import { buildTransactionAnalytics } from "../sync/transaction-analytics.js";
+import { seedRuleTabsFromDb } from "../sync/transaction-rule-migrate.js";
+import {
+  DEFAULT_RULES_TAB,
+  DEFAULT_SITUATIONAL_TAB,
+} from "../sync/transaction-rule-sheet.js";
 import {
   cashflowBars,
   categoryBars,
@@ -109,6 +114,9 @@ export type TransactionsRouterOptions = {
   sheetId?: string;
   transactionsTab: string;
   categoriesTab: string;
+  rulesTab?: string;
+  situationalTab?: string;
+  reviewTab?: string;
 };
 
 export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Router {
@@ -119,8 +127,37 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       sheetId: opts.sheetId!,
       transactionsTab: opts.transactionsTab,
       categoriesTab: opts.categoriesTab,
+      rulesTab: opts.rulesTab ?? DEFAULT_RULES_TAB,
+      situationalTab: opts.situationalTab ?? DEFAULT_SITUATIONAL_TAB,
+      reviewTab: opts.reviewTab,
     };
   }
+
+  // One-shot migration: mirror the current DB transaction rules into our HS
+  // tabs, after which the sheet is the editable source. Safe to re-run.
+  router.post("/seed-rules", async (_req, res) => {
+    if (!opts.sheetId) {
+      res.status(503).send(`<div class="flash err">TRANSACTIONS_SHEET_ID is not configured.</div>`);
+      return;
+    }
+    if (!hasGoogleCreds()) {
+      res.status(503).send(`<div class="flash err">Google credentials are not configured.</div>`);
+      return;
+    }
+    try {
+      const result = await seedRuleTabsFromDb(getOAuthClient(), {
+        sheetId: opts.sheetId,
+        rulesTab: opts.rulesTab ?? DEFAULT_RULES_TAB,
+        situationalTab: opts.situationalTab ?? DEFAULT_SITUATIONAL_TAB,
+      });
+      res.send(
+        `<div class="flash ok">Seeded HS tabs: ${result.rulesWritten} rule(s), ${result.situationalWritten} situational, ${result.skipped} skipped (unsupported shapes).</div>`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).send(`<div class="flash err">Seed failed: ${message}</div>`);
+    }
+  });
 
   router.get("/", async (_req, res) => {
     const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);

@@ -91,6 +91,9 @@ app.use(
     transactionsSheetId: config.TRANSACTIONS_SHEET_ID,
     transactionsTab: config.TRANSACTIONS_TAB,
     categoriesTab: config.CATEGORIES_TAB,
+    transactionRulesTab: config.TRANSACTION_RULES_TAB,
+    transactionSituationalTab: config.TRANSACTION_SITUATIONAL_TAB,
+    transactionReviewTab: config.TRANSACTION_REVIEW_TAB,
   }),
 );
 
@@ -209,6 +212,9 @@ async function start() {
           sheetId: config.TRANSACTIONS_SHEET_ID,
           transactionsTab: config.TRANSACTIONS_TAB,
           categoriesTab: config.CATEGORIES_TAB,
+          rulesTab: config.TRANSACTION_RULES_TAB,
+          situationalTab: config.TRANSACTION_SITUATIONAL_TAB,
+          reviewTab: config.TRANSACTION_REVIEW_TAB,
         }
       : undefined,
     timezone: config.CRON_TZ,

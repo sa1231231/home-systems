@@ -66,6 +66,10 @@ export type TransactionTarget = {
   sheetId: string;
   transactionsTab: string;
   categoriesTab: string;
+  /** Our own additive tabs. Optional; loaders default by name when absent. */
+  rulesTab?: string;
+  situationalTab?: string;
+  reviewTab?: string;
 };
 
 export type ApplyTransactionInput = {

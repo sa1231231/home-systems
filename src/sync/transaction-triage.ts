@@ -5,6 +5,11 @@ import { db } from "../db/client.js";
 import { needsReview, processedTransactions } from "../db/schema.js";
 import { evaluate, isSituational } from "../rules/engine.js";
 import { evaluateCondition, type Cond } from "../rules/dsl.js";
+import {
+  loadSheetTransactionRules,
+  pickSheetMatch,
+  type SheetRule,
+} from "./transaction-rule-sheet.js";
 import { classify, ClassificationParseError, MissingAnthropicKeyError } from "../ai/index.js";
 import { reviewAppliers } from "../needs-review/appliers.js";
 import {
@@ -219,6 +224,33 @@ export async function triageTransactions(
   const candidates = sheetCandidates.filter((r) => !alreadyDone.has(r.transactionId));
   const window = candidates.slice(0, options.limit);
 
+  // Rule source: our own HS tabs if they're seeded, otherwise the DB rules.
+  // Any read failure degrades to DB so categorization never regresses before
+  // the tabs exist. Loaded once per run.
+  let sheetRules: SheetRule[] = [];
+  try {
+    sheetRules = await loadSheetTransactionRules(client, options.target);
+  } catch {
+    sheetRules = [];
+  }
+  const useSheetRules = sheetRules.length > 0;
+
+  type ResolvedMatch = { ruleId: number | null; ruleLabel: string; action: unknown };
+  const resolveMatch = async (subj: TransactionSubject): Promise<ResolvedMatch | null> => {
+    if (useSheetRules) {
+      const m = pickSheetMatch(sheetRules, subj);
+      if (!m) return null;
+      // Sheet category actions carry no reasoning; add one so the proposal
+      // schema (which requires reasoning) accepts it. Situational passes through.
+      const action = isSituational(m.action)
+        ? m.action
+        : { category: (m.action as { category: string }).category, reasoning: `sheet rule: ${m.rule.name}` };
+      return { ruleId: null, ruleLabel: m.rule.name, action };
+    }
+    const m = await evaluate(TRIAGE_DOMAIN, subj);
+    return m ? { ruleId: m.rule.id, ruleLabel: `rule:${m.rule.id}`, action: m.action } : null;
+  };
+
   for (const row of window) {
     try {
       const subject = buildSubject(row);
@@ -236,7 +268,7 @@ export async function triageTransactions(
       // A situational rule (action `{situational:true}`) matches first by
       // priority but is not a category rule — skip it so the row falls
       // through to AI review every time.
-      const match = await evaluate(TRIAGE_DOMAIN, subject);
+      const match = await resolveMatch(subject);
       if (match && !isSituational(match.action)) {
         const proposal = ProposedActionSchema.parse(match.action);
         if (options.dryRun) {
@@ -244,7 +276,7 @@ export async function triageTransactions(
             transaction_id: row.transactionId,
             subject,
             outcome: "would_match",
-            rule_id: match.rule.id,
+            rule_id: match.ruleId ?? undefined,
             proposed_action: proposal,
           });
           continue;
@@ -255,20 +287,20 @@ export async function triageTransactions(
           {
             transactionId: row.transactionId,
             category: proposal.category,
-            categorizedBy: `rule:${match.rule.id}`,
+            categorizedBy: match.ruleLabel,
           },
-          { sessionId: options.sessionId, caller, intent: `rule:${match.rule.id}` },
+          { sessionId: options.sessionId, caller, intent: match.ruleLabel },
         );
         await recordOutcome({
           id: row.transactionId,
           outcome: "matched_rule",
-          outcomeId: match.rule.id,
+          outcomeId: match.ruleId ?? undefined,
         });
         items.push({
           transaction_id: row.transactionId,
           subject,
           outcome: "matched_rule",
-          rule_id: match.rule.id,
+          rule_id: match.ruleId ?? undefined,
           proposed_action: proposal,
         });
         continue;

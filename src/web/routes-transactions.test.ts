@@ -214,6 +214,9 @@ describe("routes-transactions", () => {
         sheetId: "sheet",
         transactionsTab: "Transactions",
         categoriesTab: "Categories",
+        rulesTab: "HS Rules",
+        situationalTab: "HS Situational",
+        reviewTab: undefined,
       });
       expect(opts.caller).toBe("ui:transactions.triage");
     });
