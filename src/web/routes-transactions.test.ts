@@ -3,7 +3,7 @@ import request from "supertest";
 import { createTestDb, type TestDbHandle } from "../../tests/helpers/test-db.js";
 import { makeTestApp, mountViews } from "../../tests/helpers/test-app.js";
 import { db } from "../db/client.js";
-import { rules, triageRuns } from "../db/schema.js";
+import { triageRuns } from "../db/schema.js";
 
 vi.mock("../sync/transaction-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/transaction-triage.js")>(
@@ -23,19 +23,12 @@ vi.mock("../integrations/google/sheets-transactions.js", async () => {
   );
   return { ...actual, readTransactionsSheet: vi.fn() };
 });
-vi.mock("../sync/transaction-autocat-migrate.js", () => ({
-  migrateDbRulesToAutoCat: vi.fn(),
-}));
-
 import { triageTransactions } from "../sync/transaction-triage.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import {
   readTransactionsSheet,
 } from "../integrations/google/sheets-transactions.js";
-import { migrateDbRulesToAutoCat } from "../sync/transaction-autocat-migrate.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
-
-const migrateMock = vi.mocked(migrateDbRulesToAutoCat);
 
 const triageMock = vi.mocked(triageTransactions);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
@@ -185,38 +178,6 @@ describe("routes-transactions", () => {
       expect(opts.caller).toBe("ui:transactions.triage");
     });
 
-    it("migrate-autocat runs the migration and returns a summary", async () => {
-      hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
-      migrateMock.mockResolvedValueOnce({
-        appended: 3,
-        skippedExisting: 1,
-        skippedUnsupported: 0,
-        tabMissing: false,
-      });
-      const res = await request(buildApp({ sheetId: "sheet" })).post(
-        "/ui/transactions/migrate-autocat",
-      );
-      expect(res.status).toBe(200);
-      expect(res.text).toMatch(/3 rule\(s\) added/);
-    });
-
-    it("migrate-autocat 404s when the AutoCat tab is missing", async () => {
-      hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
-      migrateMock.mockResolvedValueOnce({
-        appended: 0,
-        skippedExisting: 0,
-        skippedUnsupported: 0,
-        tabMissing: true,
-      });
-      const res = await request(buildApp({ sheetId: "sheet" })).post(
-        "/ui/transactions/migrate-autocat",
-      );
-      expect(res.status).toBe(404);
-      expect(res.text).toMatch(/No "AutoCat" tab/);
-    });
-
     it("returns a 500 banner when triage throws", async () => {
       hasCredsMock.mockReturnValue(true);
       oauthMock.mockReturnValue({} as never);
@@ -312,41 +273,6 @@ describe("routes-transactions", () => {
         "/ui/transactions/triage-status",
       );
       expect(res.text).not.toMatch(/Triage running/);
-    });
-  });
-
-  describe("POST /ui/transactions/clear-db-rules", () => {
-    it("deletes only transaction-domain rules and reports the count", async () => {
-      await db.insert(rules).values([
-        {
-          domain: "transaction",
-          name: "t1",
-          match: { op: "equals", field: "full_description", value: "A" } as never,
-          action: { category: "X" } as never,
-          createdBy: "test",
-        },
-        {
-          domain: "transaction",
-          name: "t2",
-          match: { op: "equals", field: "full_description", value: "B" } as never,
-          action: { category: "Y" } as never,
-          createdBy: "test",
-        },
-        {
-          domain: "contact",
-          name: "c1",
-          match: { op: "present", field: "google_resource_name" } as never,
-          action: { category: "z" } as never,
-          createdBy: "test",
-        },
-      ]);
-      const res = await request(buildApp({ sheetId: "sheet" })).post(
-        "/ui/transactions/clear-db-rules",
-      );
-      expect(res.status).toBe(200);
-      expect(res.text).toMatch(/Cleared 2 migrated transaction rule/);
-      const remaining = await db.select().from(rules);
-      expect(remaining.map((r) => r.domain)).toEqual(["contact"]);
     });
   });
 

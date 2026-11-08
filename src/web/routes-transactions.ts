@@ -2,11 +2,10 @@ import { Router } from "express";
 import { and, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { changelog, rules } from "../db/schema.js";
+import { changelog } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readTransactionsSheet } from "../integrations/google/sheets-transactions.js";
 import { buildTransactionAnalytics } from "../sync/transaction-analytics.js";
-import { migrateDbRulesToAutoCat } from "../sync/transaction-autocat-migrate.js";
 import { AUTOCAT_DEFAULT_TAB } from "../sync/transaction-autocat.js";
 import {
   cashflowBars,
@@ -79,58 +78,6 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       autoCatTab: opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
     };
   }
-
-  // One-shot migration: append the app's DB transaction rules into Tiller's
-  // AutoCat tab (deduped). After this AutoCat is the single rules store. Safe
-  // to re-run.
-  router.post("/migrate-autocat", async (_req, res) => {
-    if (!opts.sheetId) {
-      res.status(503).send(`<div class="flash err">TRANSACTIONS_SHEET_ID is not configured.</div>`);
-      return;
-    }
-    if (!hasGoogleCreds()) {
-      res.status(503).send(`<div class="flash err">Google credentials are not configured.</div>`);
-      return;
-    }
-    try {
-      const result = await migrateDbRulesToAutoCat(getOAuthClient(), {
-        sheetId: opts.sheetId,
-        autoCatTab: opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB,
-      });
-      if (result.tabMissing) {
-        res
-          .status(404)
-          .send(
-            `<div class="flash err">No "${opts.autoCatTab ?? AUTOCAT_DEFAULT_TAB}" tab found. Enable Tiller AutoCat (or set TRANSACTION_AUTOCAT_TAB) first.</div>`,
-          );
-        return;
-      }
-      res.send(
-        `<div class="flash ok">Migrated to AutoCat: ${result.appended} rule(s) added, ${result.skippedExisting} already present, ${result.skippedUnsupported} skipped (unsupported shapes).</div>`,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).send(`<div class="flash err">Migration failed: ${message}</div>`);
-    }
-  });
-
-  // One-time cleanup: delete the transaction rules from the DB. They were
-  // mirrored into AutoCat by /migrate-autocat and nothing reads them anymore
-  // (triage is AutoCat-first). Other domains' rules are left untouched.
-  router.post("/clear-db-rules", async (_req, res) => {
-    try {
-      const deleted = await db
-        .delete(rules)
-        .where(eq(rules.domain, "transaction"))
-        .returning({ id: rules.id });
-      res.send(
-        `<div class="flash ok">Cleared ${deleted.length} migrated transaction rule(s) from the database. AutoCat is now the only rules store.</div>`,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res.status(500).send(`<div class="flash err">Clear failed: ${message}</div>`);
-    }
-  });
 
   router.get("/", async (_req, res) => {
     const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
