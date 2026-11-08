@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   autoCatRuleKey,
   buildAutoCatRow,
-  dbRuleToAutoCat,
   matchAutoCat,
   parseAutoCatRules,
 } from "./transaction-autocat.js";
@@ -85,25 +84,6 @@ describe("buildAutoCatRow", () => {
       /Description Contains/,
     );
     expect(() => buildAutoCatRow(["Description Contains"], { category: "Y" })).toThrow(/Category/);
-  });
-});
-
-describe("dbRuleToAutoCat", () => {
-  it("maps equals and contains to a Description Contains rule", () => {
-    expect(dbRuleToAutoCat({ op: "equals", field: "full_description", value: "RENT CO" }, { category: "Rent" })).toEqual(
-      { descriptionContains: "RENT CO", category: "Rent" },
-    );
-    expect(
-      dbRuleToAutoCat(
-        { any: [{ op: "contains", field: "description", value: "amazon" }] },
-        { category: "Shopping" },
-      ),
-    ).toEqual({ descriptionContains: "amazon", category: "Shopping" });
-  });
-
-  it("maps situational and unknown shapes to null", () => {
-    expect(dbRuleToAutoCat({ any: [{ op: "contains", value: "x" }] }, { situational: true })).toBeNull();
-    expect(dbRuleToAutoCat({ all: [] }, { category: "Y" })).toBeNull();
   });
 });
 

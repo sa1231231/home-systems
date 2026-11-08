@@ -216,31 +216,3 @@ export async function appendAutoCatRules(
   return rows.length;
 }
 
-/**
- * Map a DB rule's match/action to an AutoCat contains rule for migration.
- * equals and contains both become a "Description Contains" token (a slight,
- * harmless broadening for merchant text). Situational rules have no AutoCat
- * equivalent (the point is "no rule"), so they map to null.
- */
-export function dbRuleToAutoCat(match: unknown, action: unknown): AutoCatCandidate | null {
-  const a = action as { situational?: unknown; category?: unknown };
-  if (a?.situational === true) return null;
-  const category = typeof a?.category === "string" ? a.category : null;
-  if (!category) return null;
-
-  const m = match as { op?: string; field?: string; value?: unknown; any?: unknown };
-  if (m?.op === "equals" && typeof m.value === "string" && m.value) {
-    return { descriptionContains: m.value, category };
-  }
-  if (m?.op === "contains" && typeof m.value === "string" && m.value) {
-    return { descriptionContains: m.value, category };
-  }
-  if (Array.isArray(m?.any)) {
-    for (const c of m.any as { op?: string; value?: unknown }[]) {
-      if (c?.op === "contains" && typeof c.value === "string" && c.value) {
-        return { descriptionContains: c.value, category };
-      }
-    }
-  }
-  return null;
-}

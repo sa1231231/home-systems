@@ -114,51 +114,6 @@ export async function appendRows(
   });
 }
 
-/**
- * Ensure a tab exists, creating it with a header row if missing. Used for our
- * own additive tabs (never Tiller's). Returns whether it was created.
- */
-export async function ensureTab(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  title: string,
-  headers: string[],
-): Promise<{ created: boolean }> {
-  const sheets = google.sheets({ version: "v4", auth: client });
-  const res = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
-  const exists = res.data.sheets?.some((s) => s.properties?.title === title) ?? false;
-  if (exists) return { created: false };
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title } } }] },
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${title}!A1`,
-    valueInputOption: "RAW",
-    requestBody: { values: [headers] },
-  });
-  return { created: true };
-}
-
-/** Clear a tab and rewrite it as header + rows. For our own fully-managed tabs. */
-export async function replaceTabData(
-  client: OAuth2Client,
-  spreadsheetId: string,
-  title: string,
-  headers: string[],
-  rows: (string | number | boolean)[][],
-): Promise<void> {
-  const sheets = google.sheets({ version: "v4", auth: client });
-  await sheets.spreadsheets.values.clear({ spreadsheetId, range: `${title}!A:ZZ` });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${title}!A1`,
-    valueInputOption: "RAW",
-    requestBody: { values: [headers, ...rows] },
-  });
-}
-
 export type CellUpdate = { range: string; value: string };
 
 export async function batchUpdateCells(

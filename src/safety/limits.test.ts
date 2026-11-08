@@ -136,7 +136,7 @@ describe("enforceConfiguredDailyLimit", () => {
   it("enforces the cap configured in DAILY_LIMITS", async () => {
     const store = new MemoryCounterStore();
     const now = new Date(Date.UTC(2026, 4, 11));
-    const op = "email.modify_labels";
+    const op = "transaction.categorize";
     const limit = DAILY_LIMITS[op]!;
     expect(limit).toBeGreaterThan(0);
     for (let i = 0; i < limit; i++) {
@@ -157,7 +157,6 @@ describe("enforceConfiguredDailyLimit", () => {
     // Sanity: if a future change wires a new write op, this list should be
     // updated. The list mirrors the currently-wired call sites.
     const wired = [
-      "email.modify_labels",
       "contacts.add_csv.groups",
       "contacts.remove_csv.groups",
       "contacts.add_csv.tags",

@@ -35,14 +35,6 @@ export async function setRuleEnabled(
   return row;
 }
 
-export async function toggleRuleEnabled(
-  id: number,
-  database: typeof defaultDb = defaultDb,
-): Promise<RuleRow> {
-  const current = await getRule(id, database);
-  return setRuleEnabled(id, !current.enabled, database);
-}
-
 export async function deleteRule(
   id: number,
   database: typeof defaultDb = defaultDb,

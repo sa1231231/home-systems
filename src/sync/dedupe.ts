@@ -92,10 +92,6 @@ export function findClusters(rows: SheetRow[]): Cluster[] {
   }
 
   const components = new Map<number, number[]>();
-  for (const { rowIndex } of rows) {
-    const visitedKey = byEmail.has(rowIndex.toString()) || byPhone.has(rowIndex.toString());
-    void visitedKey;
-  }
   // Walk only rows that participate in some email/phone group (singletons aren't unioned, so they'd be their own root).
   const participants = new Set<number>();
   for (const arr of byEmail.values()) if (arr.length > 1) for (const r of arr) participants.add(r);

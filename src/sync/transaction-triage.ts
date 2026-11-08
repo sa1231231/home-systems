@@ -103,14 +103,7 @@ export type TriageOptions = {
 export type TriageItem = {
   transaction_id: string;
   subject: TransactionSubject;
-  outcome:
-    | "matched_rule"
-    | "ai_applied"
-    | "queued_for_review"
-    | "skipped"
-    | "error"
-    | "would_match"
-    | "would_queue";
+  outcome: "matched_rule" | "ai_applied" | "skipped" | "error" | "would_match" | "would_queue";
   rule_id?: number;
   review_id?: number;
   proposed_action?: TransactionProposal;
@@ -131,7 +124,7 @@ export type TriageSummary = {
 
 async function recordOutcome(values: {
   id: string;
-  outcome: "matched_rule" | "ai_applied" | "needs_review" | "error";
+  outcome: "matched_rule" | "ai_applied" | "error";
   outcomeId?: number;
   error?: string;
 }): Promise<void> {
@@ -461,7 +454,7 @@ export async function triageTransactions(
     total: items.length,
     matched: items.filter((i) => i.outcome === "matched_rule" || i.outcome === "would_match").length,
     applied: items.filter((i) => i.outcome === "ai_applied").length,
-    queued: items.filter((i) => i.outcome === "queued_for_review" || i.outcome === "would_queue").length,
+    queued: items.filter((i) => i.outcome === "would_queue").length,
     skipped: items.filter((i) => i.outcome === "skipped").length,
     errors: items.filter((i) => i.outcome === "error").length,
     items,
