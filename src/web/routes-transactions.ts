@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { changelog } from "../db/schema.js";
+import { changelog, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
 import { readTransactionsSheet } from "../integrations/google/sheets-transactions.js";
 import { buildTransactionAnalytics } from "../sync/transaction-analytics.js";
@@ -111,6 +111,24 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).send(`<div class="flash err">Migration failed: ${message}</div>`);
+    }
+  });
+
+  // One-time cleanup: delete the transaction rules from the DB. They were
+  // mirrored into AutoCat by /migrate-autocat and nothing reads them anymore
+  // (triage is AutoCat-first). Other domains' rules are left untouched.
+  router.post("/clear-db-rules", async (_req, res) => {
+    try {
+      const deleted = await db
+        .delete(rules)
+        .where(eq(rules.domain, "transaction"))
+        .returning({ id: rules.id });
+      res.send(
+        `<div class="flash ok">Cleared ${deleted.length} migrated transaction rule(s) from the database. AutoCat is now the only rules store.</div>`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).send(`<div class="flash err">Clear failed: ${message}</div>`);
     }
   });
 

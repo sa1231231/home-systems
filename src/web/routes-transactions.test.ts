@@ -3,7 +3,7 @@ import request from "supertest";
 import { createTestDb, type TestDbHandle } from "../../tests/helpers/test-db.js";
 import { makeTestApp, mountViews } from "../../tests/helpers/test-app.js";
 import { db } from "../db/client.js";
-import { triageRuns } from "../db/schema.js";
+import { rules, triageRuns } from "../db/schema.js";
 
 vi.mock("../sync/transaction-triage.js", async () => {
   const actual = await vi.importActual<typeof import("../sync/transaction-triage.js")>(
@@ -312,6 +312,41 @@ describe("routes-transactions", () => {
         "/ui/transactions/triage-status",
       );
       expect(res.text).not.toMatch(/Triage running/);
+    });
+  });
+
+  describe("POST /ui/transactions/clear-db-rules", () => {
+    it("deletes only transaction-domain rules and reports the count", async () => {
+      await db.insert(rules).values([
+        {
+          domain: "transaction",
+          name: "t1",
+          match: { op: "equals", field: "full_description", value: "A" } as never,
+          action: { category: "X" } as never,
+          createdBy: "test",
+        },
+        {
+          domain: "transaction",
+          name: "t2",
+          match: { op: "equals", field: "full_description", value: "B" } as never,
+          action: { category: "Y" } as never,
+          createdBy: "test",
+        },
+        {
+          domain: "contact",
+          name: "c1",
+          match: { op: "present", field: "google_resource_name" } as never,
+          action: { category: "z" } as never,
+          createdBy: "test",
+        },
+      ]);
+      const res = await request(buildApp({ sheetId: "sheet" })).post(
+        "/ui/transactions/clear-db-rules",
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).toMatch(/Cleared 2 migrated transaction rule/);
+      const remaining = await db.select().from(rules);
+      expect(remaining.map((r) => r.domain)).toEqual(["contact"]);
     });
   });
 
