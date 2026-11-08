@@ -19,7 +19,7 @@
     hx-indicator="#triage-indicator"
   >
     <button type="submit" style="padding: 6px 14px; background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; cursor: pointer;">
-      Run triage now
+      Run now
     </button>
     <span id="triage-indicator" class="htmx-indicator muted" style="margin-left: 8px; font-size: 12px;">working…</span>
   </form>
@@ -31,6 +31,77 @@
 
 <% if (locals.warning) { %>
   <div class="flash err" style="margin-bottom: 16px;"><%= warning %></div>
+<% } %>
+
+<style>
+  .dash { margin: 8px 0 28px; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .stat { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: #fff; }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat-value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .stat-value.ok { color: var(--ok); }
+  .stat-value.warn { color: var(--warn); }
+  .stat-value.danger { color: var(--danger); }
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .dash-grid .card { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: #fff; min-width: 0; }
+  .dash-grid .card.wide { grid-column: 1 / -1; }
+  .dash-grid .card h3 { margin: 0 0 10px; font-size: 14px; }
+  .chart-bars { display: flex; flex-direction: column; gap: 6px; }
+  .chart-bar-row { display: grid; grid-template-columns: 130px 1fr 92px; align-items: center; gap: 8px; }
+  .chart-bar-label { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chart-bar-track { background: #f0f0f0; border-radius: 3px; height: 14px; overflow: hidden; }
+  .chart-bar-fill { height: 100%; border-radius: 3px; }
+  .chart-bar-value { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  .chart-bar-value .muted { margin-left: 2px; font-size: 11px; }
+  .chart-svg { width: 100%; height: auto; display: block; }
+  .chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  @media (max-width: 760px) {
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .dash-grid { grid-template-columns: 1fr; }
+    .dash-grid .card.wide { grid-column: auto; }
+  }
+</style>
+
+<% if (locals.dashboard) { %>
+  <section class="dash">
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-label">Income<% if (dashboard.currentMonthLabel) { %> · <%= dashboard.currentMonthLabel %><% } %></div>
+        <div class="stat-value ok"><%= dashboard.totalsFmt.income %></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Expense</div>
+        <div class="stat-value warn"><%= dashboard.totalsFmt.expense %></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Net</div>
+        <div class="stat-value <%= dashboard.totals.net >= 0 ? 'ok' : 'danger' %>"><%= dashboard.totalsFmt.net %></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Uncategorized</div>
+        <div class="stat-value <%= dashboard.uncategorizedCount > 0 ? 'warn' : '' %>"><%= dashboard.uncategorizedCount %></div>
+      </div>
+    </div>
+    <div class="dash-grid">
+      <div class="card">
+        <h3>Spend by category <span class="muted" style="font-weight: normal;"><% if (dashboard.currentMonthLabel) { %>· <%= dashboard.currentMonthLabel %><% } %></span></h3>
+        <%- dashboard.categoryBars %>
+      </div>
+      <div class="card">
+        <h3>Top merchants <span class="muted" style="font-weight: normal;"><% if (dashboard.currentMonthLabel) { %>· <%= dashboard.currentMonthLabel %><% } %></span></h3>
+        <%- dashboard.merchantBars %>
+      </div>
+      <div class="card wide">
+        <h3>Income vs expense by month</h3>
+        <%- dashboard.cashflowBars %>
+      </div>
+      <div class="card wide">
+        <h3>Spending trend</h3>
+        <%- dashboard.trendLine %>
+      </div>
+    </div>
+  </section>
 <% } %>
 
 <section>

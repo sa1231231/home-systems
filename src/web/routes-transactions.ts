@@ -4,7 +4,19 @@ import { z } from "zod";
 import { db } from "../db/client.js";
 import { changelog, needsReview, rules } from "../db/schema.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
-import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
+import {
+  readCategoriesEnum,
+  readTransactionsSheet,
+} from "../integrations/google/sheets-transactions.js";
+import { buildTransactionAnalytics } from "../sync/transaction-analytics.js";
+import {
+  cashflowBars,
+  categoryBars,
+  fmtUsd,
+  merchantBars,
+  monthLabel,
+  trendLine,
+} from "./transaction-charts.js";
 import { applyRuleToSheet, triageTransactions } from "../sync/transaction-triage.js";
 import {
   addSituationalMerchant,
@@ -61,6 +73,36 @@ const ConsolidateBody = z.object({
 
 function escapeHtml(s: string): string {
   return s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+type DashboardViewModel = {
+  currentMonthLabel: string | null;
+  totals: { income: number; expense: number; net: number };
+  totalsFmt: { income: string; expense: string; net: string };
+  uncategorizedCount: number;
+  categoryBars: string;
+  merchantBars: string;
+  cashflowBars: string;
+  trendLine: string;
+};
+
+/** Read-only: aggregate the Tiller rows into chart HTML for the dashboard. */
+function buildDashboard(rows: Parameters<typeof buildTransactionAnalytics>[0]): DashboardViewModel {
+  const a = buildTransactionAnalytics(rows);
+  return {
+    currentMonthLabel: a.currentMonth ? monthLabel(a.currentMonth) : null,
+    totals: a.monthlyTotals,
+    totalsFmt: {
+      income: fmtUsd(a.monthlyTotals.income),
+      expense: fmtUsd(a.monthlyTotals.expense),
+      net: fmtUsd(a.monthlyTotals.net),
+    },
+    uncategorizedCount: a.uncategorizedCount,
+    categoryBars: categoryBars(a.spendByCategory),
+    merchantBars: merchantBars(a.topMerchants),
+    cashflowBars: cashflowBars(a.cashflowByMonth),
+    trendLine: trendLine(a.spendTrend),
+  };
 }
 
 export type TransactionsRouterOptions = {
@@ -121,6 +163,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
 
     let categories: string[] = [];
     let warning: string | null = null;
+    let dashboard: DashboardViewModel | null = null;
     if (!opts.sheetId) {
       warning = "TRANSACTIONS_SHEET_ID is not configured; categorization is disabled.";
     } else if (!hasGoogleCreds()) {
@@ -130,6 +173,18 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
         categories = await readCategoriesEnum(getOAuthClient(), opts.sheetId, opts.categoriesTab);
       } catch (err) {
         warning = `Failed to read Categories tab: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      try {
+        const tab = await readTransactionsSheet(
+          getOAuthClient(),
+          opts.sheetId,
+          opts.transactionsTab,
+        );
+        dashboard = buildDashboard(tab.rows);
+      } catch (err) {
+        warning =
+          warning ??
+          `Failed to read Transactions tab: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
 
@@ -149,6 +204,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
       sheetUrl,
       run,
       sessionGroups,
+      dashboard,
     });
   });
 

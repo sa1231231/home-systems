@@ -21,12 +21,15 @@ vi.mock("../integrations/google/sheets-transactions.js", async () => {
   const actual = await vi.importActual<typeof import("../integrations/google/sheets-transactions.js")>(
     "../integrations/google/sheets-transactions.js",
   );
-  return { ...actual, readCategoriesEnum: vi.fn() };
+  return { ...actual, readCategoriesEnum: vi.fn(), readTransactionsSheet: vi.fn() };
 });
 
 import { applyRuleToSheet, triageTransactions } from "../sync/transaction-triage.js";
 import { hasGoogleCreds, getOAuthClient } from "../integrations/google/oauth.js";
-import { readCategoriesEnum } from "../integrations/google/sheets-transactions.js";
+import {
+  readCategoriesEnum,
+  readTransactionsSheet,
+} from "../integrations/google/sheets-transactions.js";
 import { containsMerchantMatch } from "../sync/transaction-rules.js";
 import { makeTransactionsUiRouter } from "./routes-transactions.js";
 
@@ -35,6 +38,14 @@ const applyRuleMock = vi.mocked(applyRuleToSheet);
 const hasCredsMock = vi.mocked(hasGoogleCreds);
 const oauthMock = vi.mocked(getOAuthClient);
 const readEnumMock = vi.mocked(readCategoriesEnum);
+const readTxnsMock = vi.mocked(readTransactionsSheet);
+
+const emptyTab = {
+  tab: "Transactions",
+  headers: [],
+  columnIndex: { transactionId: -1, category: -1, categorizedBy: -1, categorizedDate: -1 },
+  rows: [],
+};
 
 function buildApp(opts: { sheetId?: string } = {}) {
   const app = makeTestApp();
@@ -65,6 +76,9 @@ describe("routes-transactions", () => {
     hasCredsMock.mockReset();
     oauthMock.mockReset();
     readEnumMock.mockReset();
+    readTxnsMock.mockReset();
+    // Dashboard read defaults to an empty tab; tests that care override it.
+    readTxnsMock.mockResolvedValue(emptyTab);
   });
 
   describe("GET /ui/transactions", () => {
@@ -126,6 +140,39 @@ describe("routes-transactions", () => {
       });
       const res = await request(buildApp({ sheetId: "sheet" })).get("/ui/transactions/");
       expect(res.text).toContain("MARKER MERCHANT");
+    });
+
+    it("renders the analytics dashboard from the transactions tab", async () => {
+      hasCredsMock.mockReturnValue(true);
+      oauthMock.mockReturnValue({} as never);
+      readEnumMock.mockResolvedValueOnce(["Groceries"]);
+      const now = new Date();
+      const thisMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-05`;
+      readTxnsMock.mockResolvedValueOnce({
+        ...emptyTab,
+        rows: [
+          {
+            rowIndex: 0,
+            transactionId: "t1",
+            date: thisMonth,
+            description: "Costco",
+            fullDescription: "COSTCO WHSE",
+            amount: "-120.00",
+            account: "Checking",
+            institution: "Bank",
+            categoryHint: "",
+            source: "",
+            category: "Groceries",
+            categorizedBy: "ai",
+            categorizedDate: thisMonth,
+          },
+        ],
+      });
+      const res = await request(buildApp({ sheetId: "sheet" })).get("/ui/transactions/");
+      expect(res.text).toContain('class="dash"');
+      expect(res.text).toContain("Groceries");
+      expect(res.text).toContain("Costco");
+      expect(res.text).toContain("$120");
     });
   });
 
