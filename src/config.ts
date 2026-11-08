@@ -19,11 +19,6 @@ export const ConfigSchema = z.object({
   TRANSACTIONS_SHEET_ID: z.string().optional(),
   TRANSACTIONS_TAB: z.string().default("Transactions"),
   CATEGORIES_TAB: z.string().default("Categories"),
-  // Our own additive tabs (never Tiller's). Rules live here once seeded; until
-  // then triage falls back to DB rules so nothing regresses.
-  TRANSACTION_RULES_TAB: z.string().default("HS Rules"),
-  TRANSACTION_SITUATIONAL_TAB: z.string().default("HS Situational"),
-  TRANSACTION_REVIEW_TAB: z.string().default("HS Review"),
   // Tiller's native rules tab — the single rules store we consolidate onto.
   TRANSACTION_AUTOCAT_TAB: z.string().default("AutoCat"),
   TRANSACTION_TRIAGE_CRON_ENABLED: z

@@ -66,10 +66,6 @@ export type TransactionTarget = {
   sheetId: string;
   transactionsTab: string;
   categoriesTab: string;
-  /** Our own additive tabs. Optional; loaders default by name when absent. */
-  rulesTab?: string;
-  situationalTab?: string;
-  reviewTab?: string;
   /** Tiller's AutoCat tab — the consolidated rules store. */
   autoCatTab?: string;
 };

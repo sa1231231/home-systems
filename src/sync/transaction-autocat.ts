@@ -1,7 +1,8 @@
 import type { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import { appendRows } from "../integrations/google/sheets.js";
-import type { RawValues } from "./transaction-rule-sheet.js";
+
+export type RawValues = (string | number | boolean | null)[][];
 
 /**
  * Integration with Tiller's native AutoCat tab, the single rules store. AutoCat

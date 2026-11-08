@@ -47,7 +47,6 @@ import { classify, ClassificationParseError, MissingAnthropicKeyError } from "..
 import { applyTransactionCategory } from "./transaction-actions.js";
 import { appendAutoCatRules, parseAutoCatRules, readAutoCat } from "./transaction-autocat.js";
 import {
-  applyRuleToSheet,
   registerTransactionApplier,
   triageTransactions,
   TRIAGE_DOMAIN,
@@ -599,52 +598,5 @@ describe("triageTransactions — situational merchants", () => {
     expect(summary.matched).toBe(0);
     expect(applyMock.mock.calls[0][2]).toMatchObject({ category: "Shopping", categorizedBy: "ai" });
     expect(classifyMock).toHaveBeenCalledOnce();
-  });
-});
-
-describe("applyRuleToSheet", () => {
-  let handle: TestDbHandle;
-  beforeAll(async () => {
-    handle = await createTestDb();
-  });
-  afterAll(async () => {
-    await handle.close();
-  });
-  beforeEach(async () => {
-    await handle.reset();
-    readSheet.mockReset();
-    applyMock.mockReset();
-  });
-
-  it("categorizes uncategorized matching rows and leaves the rest untouched", async () => {
-    readSheet.mockResolvedValueOnce(
-      makeTab([
-        makeRow({ transactionId: "u1", description: "Amazon", category: "" }),
-        makeRow({ transactionId: "u2", description: "Amazon Mktp", category: "" }),
-        makeRow({ transactionId: "c1", description: "Amazon", category: "Shopping" }),
-        makeRow({ transactionId: "x1", description: "Costco", category: "" }),
-      ]),
-    );
-    const rule = { id: 42, match: SITUATIONAL_MATCH, action: { category: "Shopping" } };
-    const res = await applyRuleToSheet({} as never, TARGET, rule, {
-      sessionId: "s",
-      caller: "test",
-    });
-    expect(res.applied).toBe(2);
-    expect(res.errors).toBe(0);
-    expect(applyMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("applies nothing for a situational marker rule (no category)", async () => {
-    readSheet.mockResolvedValueOnce(
-      makeTab([makeRow({ transactionId: "u1", description: "Amazon", category: "" })]),
-    );
-    const res = await applyRuleToSheet({} as never, TARGET, {
-      id: 1,
-      match: SITUATIONAL_MATCH,
-      action: { situational: true },
-    }, { sessionId: "s", caller: "test" });
-    expect(res.applied).toBe(0);
-    expect(applyMock).not.toHaveBeenCalled();
   });
 });
