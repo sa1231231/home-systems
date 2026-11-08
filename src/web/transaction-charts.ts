@@ -95,7 +95,7 @@ export function cashflowBars(months: MonthCashflow[]): string {
   if (months.length === 0) return `<p class="muted">Not enough history yet.</p>`;
   const W = 720;
   const H = 220;
-  const padL = 44;
+  const padL = 64;
   const padR = 12;
   const padT = 10;
   const padB = 26;
@@ -119,7 +119,7 @@ export function cashflowBars(months: MonthCashflow[]): string {
     .join("\n");
 
   const baseline = `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="#ddd" stroke-width="1"/>`;
-  const maxLabel = `<text x="${padL - 6}" y="${padT + 10}" text-anchor="end" font-size="11" fill="#666">${fmtUsd(max)}</text>`;
+  const maxLabel = `<text x="${padL - 8}" y="${padT + 10}" text-anchor="end" font-size="11" fill="#666">${fmtUsd(max)}</text>`;
   const legend = `<div class="chart-legend">
     <span><span class="chart-swatch" style="background:${COLOR_INCOME}"></span>Income</span>
     <span><span class="chart-swatch" style="background:${COLOR_EXPENSE}"></span>Expense</span>
@@ -133,7 +133,7 @@ export function trendLine(months: MonthSpend[]): string {
   if (months.length < 2) return `<p class="muted">Not enough history for a trend yet.</p>`;
   const W = 720;
   const H = 200;
-  const padL = 44;
+  const padL = 64;
   const padR = 12;
   const padT = 10;
   const padB = 26;
@@ -158,7 +158,7 @@ export function trendLine(months: MonthSpend[]): string {
     )
     .join("\n");
   const baseline = `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="#ddd" stroke-width="1"/>`;
-  const maxLabel = `<text x="${padL - 6}" y="${padT + 10}" text-anchor="end" font-size="11" fill="#666">${fmtUsd(max)}</text>`;
+  const maxLabel = `<text x="${padL - 8}" y="${padT + 10}" text-anchor="end" font-size="11" fill="#666">${fmtUsd(max)}</text>`;
   const line = `<polyline points="${points}" fill="none" stroke="${COLOR_ACCENT}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
 
   return `<svg viewBox="0 0 ${W} ${H}" class="chart-svg" role="img" aria-label="Spending trend by month">${baseline}${maxLabel}${line}${dots}${labels}</svg>`;
