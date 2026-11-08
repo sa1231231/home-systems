@@ -115,14 +115,6 @@ describe("routes-transactions", () => {
       expect(res.text).toMatch(/Google credentials/);
     });
 
-    it("renders categories pulled from the Categories tab when creds are present", async () => {
-      hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
-      readEnumMock.mockResolvedValueOnce(["Groceries", "Dining", "Rent"]);
-      const res = await request(buildApp({ sheetId: "sheet" })).get("/ui/transactions/");
-      expect(res.text).toMatch(/Canonical categories: 3/);
-    });
-
     it("renders an error banner when readCategoriesEnum throws", async () => {
       hasCredsMock.mockReturnValue(true);
       oauthMock.mockReturnValue({} as never);
@@ -130,22 +122,6 @@ describe("routes-transactions", () => {
       const res = await request(buildApp({ sheetId: "sheet" })).get("/ui/transactions/");
       expect(res.text).toMatch(/Failed to read Categories/);
       expect(res.text).toMatch(/sheet 404/);
-    });
-
-    it("includes pending transaction reviews", async () => {
-      hasCredsMock.mockReturnValue(true);
-      oauthMock.mockReturnValue({} as never);
-      readEnumMock.mockResolvedValueOnce(["X"]);
-      await db.insert(needsReview).values({
-        domain: "transaction",
-        subject: { description: "MARKER MERCHANT", amount: "-$5" } as never,
-        subjectKind: "transaction",
-        subjectId: "tx-marker",
-        proposedAction: { category: "X", reasoning: "ok" } as never,
-        status: "pending",
-      });
-      const res = await request(buildApp({ sheetId: "sheet" })).get("/ui/transactions/");
-      expect(res.text).toContain("MARKER MERCHANT");
     });
 
     it("renders the analytics dashboard from the transactions tab", async () => {

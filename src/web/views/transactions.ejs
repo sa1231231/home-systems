@@ -115,48 +115,14 @@
   </section>
 <% } %>
 
-<section>
-  <h3 style="margin: 0 0 6px;">Pending review <span class="muted" style="font-weight: normal; font-size: 13px;">(<%= pending.length %>)</span></h3>
-  <p class="muted" style="margin: 0 0 8px;">
-    AI category proposals waiting for your decision. Approving writes the category back to the sheet
-    and promotes a rule so future identical transactions skip the AI.
-    <% if (categories.length > 0) { %>
-      <span style="margin-left: 8px;">Canonical categories: <%= categories.length %>.</span>
-    <% } %>
+<section class="dash" style="margin-top: 0;">
+  <p class="muted" style="font-size: 13px; margin: 0 0 8px;">
+    Rules live in your Tiller <strong>AutoCat</strong> tab (Tiller applies them on fill). The AI
+    categorizes anything AutoCat misses, writes the category, and teaches AutoCat so it's handled
+    automatically next time. Review by glancing at the AutoCat and Transactions tabs; the activity
+    log below can undo a run.
   </p>
-  <% if (pending.length === 0) { %>
-    <p class="muted">No transactions currently waiting for review.</p>
-  <% } else { %>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 100px;">Date</th>
-          <th>Transaction</th>
-          <th style="width: 110px;">Amount</th>
-          <th style="width: 220px;">AI proposal</th>
-          <th style="width: 140px;">Status</th>
-          <th style="width: 320px;">Decide</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% pending.forEach((entry) => { %>
-          <%- include("partials/_transaction-review-row", { entry, applyOutcome: null, categories }) %>
-        <% }); %>
-      </tbody>
-    </table>
-  <% } %>
 </section>
-
-<%- include("partials/_rules-section", {
-  rules,
-  description: "Deterministic matches run first; transactions matching a rule never call the AI.",
-  emptyText: "No rules yet. Approve a review below to create the first one.",
-  sectionId: "transaction-rules",
-}) %>
-
-<%- include("partials/_situational-section", { situationalRules }) %>
-
-<%- include("partials/_cleanup-section", { consolidations }) %>
 
 <%- include("partials/_activity-section", { sessionGroups, label: "Transactions" }) %>
 
