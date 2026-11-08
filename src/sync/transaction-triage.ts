@@ -226,8 +226,10 @@ export async function triageTransactions(
 
   // Rule source: Tiller's AutoCat tab (the consolidated store). Tiller applies
   // it on fill; we also match here so a merchant taught earlier in this same run
-  // doesn't get re-sent to the AI. If AutoCat is absent, fall back to DB rules so
-  // nothing regresses. Loaded once per run.
+  // doesn't get re-sent to the AI. Loaded once per run. resolveMatch keeps a
+  // DB-rule fallback for when AutoCat can't be read, but the transaction-domain
+  // `rules` rows were migrated into AutoCat and cleared, so in prod AutoCat is
+  // effectively the only source (the fallback is vestigial, exercised by tests).
   let autocat: AutoCatTab | null = null;
   try {
     autocat = await readAutoCat(

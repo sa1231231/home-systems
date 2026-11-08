@@ -11,6 +11,7 @@ import { AUTOCAT_DEFAULT_TAB } from "../sync/transaction-autocat.js";
 import {
   cashflowBars,
   categoryBars,
+  escapeHtml,
   fmtUsd,
   merchantBars,
   monthLabel,
@@ -26,10 +27,6 @@ import { groupBySession } from "./session-groups.js";
 const TriageBody = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
-
-function escapeHtml(s: string): string {
-  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 type DashboardViewModel = {
   currentMonthLabel: string | null;
