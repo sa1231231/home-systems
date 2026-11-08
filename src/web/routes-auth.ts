@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { timingSafeEqual } from "crypto";
+import rateLimit from "express-rate-limit";
 import { buildClearCookieHeader, buildSetCookieHeader } from "./auth.js";
 
 export type AuthRouterOptions = {
@@ -31,11 +32,27 @@ function sanitizeNext(value: unknown): string {
 export function makeAuthRouter(opts: AuthRouterOptions): Router {
   const router = Router();
 
+  // The single shared password is the only thing gating all data + outbound
+  // actions, so throttle guesses. Keys on req.ip (see app.set("trust proxy")
+  // in index.ts so this is the real client IP behind Railway's proxy).
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      res.status(429).render("login", {
+        next: sanitizeNext(req.body?.next),
+        error: "Too many attempts. Wait a few minutes and try again.",
+      });
+    },
+  });
+
   router.get("/login", (req, res) => {
     res.render("login", { next: sanitizeNext(req.query.next), error: null });
   });
 
-  router.post("/login", (req, res) => {
+  router.post("/login", loginLimiter, (req, res) => {
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const next = sanitizeNext(req.body?.next);
     if (!password || !safeStringEqual(password, opts.password)) {

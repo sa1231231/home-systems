@@ -60,6 +60,11 @@ const publicPath = path.resolve(__dirname, "../public");
 
 const app = express();
 
+// Railway terminates TLS at a single proxy hop, so trust one proxy. Without
+// this, req.ip is the proxy's address and every express-rate-limit instance
+// (login throttle, contacts writeLimiter) keys globally instead of per-client.
+app.set("trust proxy", 1);
+
 app.set("view engine", "ejs");
 app.set("views", viewsPath);
 
@@ -156,8 +161,10 @@ app.get("/db-ping", async (_req, res) => {
     const metaRows = await db.select().from(meta);
     res.json({ ok: true, db_now: result.rows[0]?.now, meta_rows: metaRows.length });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ ok: false, error: message });
+    // Unauthenticated endpoint: log the detail server-side but don't echo raw
+    // Postgres error text to the browser.
+    console.error("/db-ping failed:", err instanceof Error ? err.message : String(err));
+    res.status(500).json({ ok: false, error: "database unavailable" });
   }
 });
 

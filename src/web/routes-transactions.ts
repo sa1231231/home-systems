@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { and, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
@@ -69,6 +70,17 @@ export type TransactionsRouterOptions = {
 
 export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Router {
   const router = Router();
+
+  // Each triage run fans out to Anthropic + Google Sheets, so cap how often it
+  // can be kicked off (it's already auth-gated; this bounds cost if a session
+  // is left hammering "Run now").
+  const triageLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: `<div class="flash err">Too many triage runs. Wait a few minutes and retry.</div>`,
+  });
 
   function sheetTarget() {
     return {
@@ -153,7 +165,7 @@ export function makeTransactionsUiRouter(opts: TransactionsRouterOptions): Route
 
   // Manual trigger. Returns an HTMX banner with the run summary and signals a
   // full-page refresh so the dashboard and activity reflect the new run.
-  router.post("/triage", async (req, res) => {
+  router.post("/triage", triageLimiter, async (req, res) => {
     if (!opts.sheetId) {
       res
         .status(503)
