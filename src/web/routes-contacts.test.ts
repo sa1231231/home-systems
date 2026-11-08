@@ -172,4 +172,30 @@ describe("routes-contacts", () => {
       expect(res.headers["hx-refresh"]).toBe("true");
     });
   });
+
+  // mark-dndb and keep-row share one appendTagHandler factory; these lock the
+  // per-route wiring (distinct colspan) and the early-return branches.
+  describe("append-tag handlers (mark-dndb / keep-row)", () => {
+    it("mark-dndb 503s with colspan=6 when Google creds are missing", async () => {
+      hasCredsMock.mockReturnValue(false);
+      const res = await request(buildApp()).post("/ui/contacts/mark-dndb/5");
+      expect(res.status).toBe(503);
+      expect(res.text).toContain('colspan="6"');
+      expect(res.text).toContain("Google credentials not configured.");
+    });
+
+    it("keep-row 503s with colspan=5 when Google creds are missing", async () => {
+      hasCredsMock.mockReturnValue(false);
+      const res = await request(buildApp()).post("/ui/contacts/keep-row/5");
+      expect(res.status).toBe(503);
+      expect(res.text).toContain('colspan="5"');
+    });
+
+    it("400s on a non-numeric row index", async () => {
+      hasCredsMock.mockReturnValue(true);
+      const res = await request(buildApp()).post("/ui/contacts/mark-dndb/abc");
+      expect(res.status).toBe(400);
+      expect(res.text).toContain("invalid row");
+    });
+  });
 });

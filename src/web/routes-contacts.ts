@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { and, asc, desc, eq, gte, like, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
@@ -40,6 +40,11 @@ const DOMAIN = "contact";
 
 function sevenDaysAgo(now: Date = new Date()): Date {
   return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+}
+
+/** Escape an error string for safe interpolation into an HTML error row/flash. */
+function escapeHtml(s: string): string {
+  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
@@ -293,9 +298,7 @@ export function makeContactsUiRouter(): Router {
       // Empty body → HTMX outerHTML swap removes the row.
       res.status(200).send("");
     } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      const msg = escapeHtml(err instanceof Error ? err.message : String(err));
       res
         .status(500)
         .send(`<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">${msg}</td></tr>`);
@@ -339,12 +342,8 @@ export function makeContactsUiRouter(): Router {
         );
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      res
-        .status(500)
-        .send(
-          `<div class="flash err">Sync failed: ${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
-        );
+      const message = escapeHtml(err instanceof Error ? err.message : String(err));
+      res.status(500).send(`<div class="flash err">Sync failed: ${message}</div>`);
     }
   });
 
@@ -463,9 +462,7 @@ export function makeContactsUiRouter(): Router {
         includeBulkCheckbox: true,
       });
     } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      const msg = escapeHtml(err instanceof Error ? err.message : String(err));
       res
         .status(500)
         .send(`<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">merge failed: ${msg}</td></tr>`);
@@ -554,9 +551,7 @@ export function makeContactsUiRouter(): Router {
       // Empty body → HTMX outerHTML swap removes the row from the table.
       res.status(200).send("");
     } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      const msg = escapeHtml(err instanceof Error ? err.message : String(err));
       res
         .status(500)
         .send(
@@ -565,167 +560,115 @@ export function makeContactsUiRouter(): Router {
     }
   });
 
-  const MarkDndbParams = z.coerce.number().int().min(0).max(100_000);
+  const RowIndexParam = z.coerce.number().int().min(0).max(100_000);
 
-  // POST /ui/contacts/mark-dndb/:rowIndex — append the DNDB tag to a single
-  // row's `tags` column (no-op if already present). Companion to the auto
-  // sweep: lets the user one-click exempt any pending-review contact from
-  // future review surfacing without needing to edit the sheet directly.
-  router.post("/mark-dndb/:rowIndex", async (req, res) => {
-    if (!hasGoogleCreds()) {
-      res.status(503).send(
-        `<tr><td colspan="6" class="muted">Google credentials not configured.</td></tr>`,
-      );
-      return;
-    }
-    let rowIndex: number;
-    try {
-      rowIndex = MarkDndbParams.parse(req.params.rowIndex);
-    } catch {
-      res.status(400).send("invalid row");
-      return;
-    }
-    try {
-      const creds = requireGoogleCreds();
-      const client = getOAuthClient();
-      const tabName = getConfig().CONTACTS_TAB;
-      const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
-      if (rowIndex >= tab.rows.length) {
+  // mark-dndb and keep-row are the same operation — append a tag to a single
+  // row's `tags` column (no-op if already present), logged via the changelog —
+  // differing only in which tag, the audit metadata, and the error-row width.
+  type AppendTagConfig = {
+    tag: string;
+    colspan: number;
+    caller: string;
+    operation: string;
+    intent: (name: string, rowIndex: number) => string;
+    failLabel: string;
+  };
+  const appendTagHandler =
+    (cfg: AppendTagConfig): RequestHandler =>
+    async (req, res) => {
+      const errRow = (status: number, body: string) =>
         res
-          .status(404)
+          .status(status)
           .send(
-            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">Row ${rowIndex} no longer exists. Reload.</td></tr>`,
+            `<tr style="background:#fcf0f0;"><td colspan="${cfg.colspan}" style="color: var(--danger);">${body}</td></tr>`,
           );
-        return;
-      }
-      const record = tab.rows[rowIndex].record;
-      const colIdx = tab.headers.indexOf("tags");
-      if (colIdx === -1) {
-        res
-          .status(500)
-          .send(
-            `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">tags column not found in ${tabName}.</td></tr>`,
-          );
-        return;
-      }
-      const before = (record.tags ?? "").trim();
-      const after = appendTag(before, REVIEW_EXEMPT_TAG);
-      if (after === before) {
-        // Already tagged DNDB — just hide it from the list.
-        res.status(200).send("");
-        return;
-      }
-      const fullName = (record.full_name ?? "").trim();
-      const sheetRow = rowIndex + 2;
-      const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
-      await withChangelog(
-        {
-          caller: "ui:contacts.mark-dndb",
-          sessionId: req.sessionId,
-          operation: "contacts.mark_dndb",
-          targetKind: "contact_row",
-          targetId: `${tabName}!row${rowIndex}`,
-          intent: `mark ${fullName || `row ${rowIndex}`} as DNDB`,
-          before: { row_index: rowIndex, full_name: fullName, tags: before },
-          after: { row_index: rowIndex, full_name: fullName, tags: after },
-          externalTarget: `google.sheet:${creds.sheetId}!${range}`,
-        },
-        async () => {
-          await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
-        },
-      );
-      res.status(200).send("");
-    } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      res
-        .status(500)
-        .send(
-          `<tr style="background:#fcf0f0;"><td colspan="6" style="color: var(--danger);">mark DNDB failed: ${msg}</td></tr>`,
+      if (!hasGoogleCreds()) {
+        res.status(503).send(
+          `<tr><td colspan="${cfg.colspan}" class="muted">Google credentials not configured.</td></tr>`,
         );
-    }
-  });
-
-  const KeepRowParams = z.coerce.number().int().min(0).max(100_000);
-
-  // POST /ui/contacts/keep-row/:rowIndex — append the KEEP tag to a row's
-  // `tags` column. Lets the user acknowledge an orphan / name-only audit row
-  // as intentional so it stops re-appearing in the sheet audit every load.
-  router.post("/keep-row/:rowIndex", async (req, res) => {
-    if (!hasGoogleCreds()) {
-      res.status(503).send(
-        `<tr><td colspan="5" class="muted">Google credentials not configured.</td></tr>`,
-      );
-      return;
-    }
-    let rowIndex: number;
-    try {
-      rowIndex = KeepRowParams.parse(req.params.rowIndex);
-    } catch {
-      res.status(400).send("invalid row");
-      return;
-    }
-    try {
-      const creds = requireGoogleCreds();
-      const client = getOAuthClient();
-      const tabName = getConfig().CONTACTS_TAB;
-      const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
-      if (rowIndex >= tab.rows.length) {
-        res
-          .status(404)
-          .send(
-            `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">Row ${rowIndex} no longer exists. Reload.</td></tr>`,
-          );
         return;
       }
-      const record = tab.rows[rowIndex].record;
-      const colIdx = tab.headers.indexOf("tags");
-      if (colIdx === -1) {
-        res
-          .status(500)
-          .send(
-            `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">tags column not found in ${tabName}.</td></tr>`,
-          );
+      let rowIndex: number;
+      try {
+        rowIndex = RowIndexParam.parse(req.params.rowIndex);
+      } catch {
+        res.status(400).send("invalid row");
         return;
       }
-      const before = (record.tags ?? "").trim();
-      const after = appendTag(before, AUDIT_KEEP_TAG);
-      if (after === before) {
-        res.status(200).send("");
-        return;
-      }
-      const fullName = (record.full_name ?? "").trim();
-      const sheetRow = rowIndex + 2;
-      const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
-      await withChangelog(
-        {
-          caller: "ui:contacts.keep-row",
-          sessionId: req.sessionId,
-          operation: "contacts.audit.keep_row",
-          targetKind: "contact_row",
-          targetId: `${tabName}!row${rowIndex}`,
-          intent: `keep ${fullName || `row ${rowIndex}`} — exempt from sheet audit`,
-          before: { row_index: rowIndex, full_name: fullName, tags: before },
-          after: { row_index: rowIndex, full_name: fullName, tags: after },
-          externalTarget: `google.sheet:${creds.sheetId}!${range}`,
-        },
-        async () => {
-          await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
-        },
-      );
-      res.status(200).send("");
-    } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err))
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      res
-        .status(500)
-        .send(
-          `<tr style="background:#fcf0f0;"><td colspan="5" style="color: var(--danger);">keep failed: ${msg}</td></tr>`,
+      try {
+        const creds = requireGoogleCreds();
+        const client = getOAuthClient();
+        const tabName = getConfig().CONTACTS_TAB;
+        const tab = await readContactsTab(client, creds.sheetId, { tab: tabName });
+        if (rowIndex >= tab.rows.length) {
+          errRow(404, `Row ${rowIndex} no longer exists. Reload.`);
+          return;
+        }
+        const record = tab.rows[rowIndex].record;
+        const colIdx = tab.headers.indexOf("tags");
+        if (colIdx === -1) {
+          errRow(500, `tags column not found in ${tabName}.`);
+          return;
+        }
+        const before = (record.tags ?? "").trim();
+        const after = appendTag(before, cfg.tag);
+        if (after === before) {
+          // Already tagged — just hide the row.
+          res.status(200).send("");
+          return;
+        }
+        const fullName = (record.full_name ?? "").trim();
+        const sheetRow = rowIndex + 2;
+        const range = `${tabName}!${colLetter(colIdx)}${sheetRow}`;
+        await withChangelog(
+          {
+            caller: cfg.caller,
+            sessionId: req.sessionId,
+            operation: cfg.operation,
+            targetKind: "contact_row",
+            targetId: `${tabName}!row${rowIndex}`,
+            intent: cfg.intent(fullName, rowIndex),
+            before: { row_index: rowIndex, full_name: fullName, tags: before },
+            after: { row_index: rowIndex, full_name: fullName, tags: after },
+            externalTarget: `google.sheet:${creds.sheetId}!${range}`,
+          },
+          async () => {
+            await batchUpdateCells(client, creds.sheetId, [{ range, value: after }]);
+          },
         );
-    }
-  });
+        res.status(200).send("");
+      } catch (err) {
+        errRow(500, `${cfg.failLabel}: ${escapeHtml(err instanceof Error ? err.message : String(err))}`);
+      }
+    };
+
+  // POST /ui/contacts/mark-dndb/:rowIndex — one-click exempt a pending-review
+  // contact from future review surfacing without editing the sheet directly.
+  router.post(
+    "/mark-dndb/:rowIndex",
+    appendTagHandler({
+      tag: REVIEW_EXEMPT_TAG,
+      colspan: 6,
+      caller: "ui:contacts.mark-dndb",
+      operation: "contacts.mark_dndb",
+      intent: (name, rowIndex) => `mark ${name || `row ${rowIndex}`} as DNDB`,
+      failLabel: "mark DNDB failed",
+    }),
+  );
+
+  // POST /ui/contacts/keep-row/:rowIndex — acknowledge an orphan / name-only
+  // audit row as intentional so it stops re-appearing in the sheet audit.
+  router.post(
+    "/keep-row/:rowIndex",
+    appendTagHandler({
+      tag: AUDIT_KEEP_TAG,
+      colspan: 5,
+      caller: "ui:contacts.keep-row",
+      operation: "contacts.audit.keep_row",
+      intent: (name, rowIndex) => `keep ${name || `row ${rowIndex}`} — exempt from sheet audit`,
+      failLabel: "keep failed",
+    }),
+  );
 
   return router;
 }
